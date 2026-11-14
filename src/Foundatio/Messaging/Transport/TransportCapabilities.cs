@@ -75,6 +75,12 @@ public sealed record TransportCapabilities
     /// are slow next to the handlers, such as SQS, which returns at most 10 messages per call. Defaults to 1:
     /// receives are never called concurrently.
     /// </summary>
+    /// <remarks>
+    /// Foundatio runs up to as many receives as it takes to fill the handlers' <c>MaxConcurrency</c> with batches of
+    /// <see cref="MaxReceiveBatchSize"/>, within this limit, and only one of them at a time asks for less than a full
+    /// batch. With <see cref="OrderedGroups"/>, no call may return a message of a group while an earlier one returned
+    /// by another call is unsettled. Failures of receives in flight together count as one toward replacing the receiver.
+    /// </remarks>
     public int MaxConcurrentReceives { get; init; } = 1;
 
     /// <summary>

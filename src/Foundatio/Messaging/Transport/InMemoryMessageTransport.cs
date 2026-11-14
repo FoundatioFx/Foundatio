@@ -49,10 +49,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     /// <see cref="TransportCapabilities.MaxPublishDelay"/> or <see cref="TransportCapabilities.MaxRetryDelay"/> with
     /// <see cref="ArgumentOutOfRangeException"/>; Foundatio emulates longer send and retry delays as it does for the real
     /// transport. Leases and receive batches are cut to <see cref="TransportCapabilities.MaxLeaseDuration"/> and
-    /// <see cref="TransportCapabilities.MaxReceiveBatchSize"/>.
+    /// <see cref="TransportCapabilities.MaxReceiveBatchSize"/>. Receives on one receiver are always safe to call
+    /// concurrently; <see cref="TransportCapabilities.MaxConcurrentReceives"/> decides how many Foundatio makes.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// <paramref name="capabilities"/> cannot be emulated: a batch size below 1, a negative delay limit, a
+    /// <paramref name="capabilities"/> cannot be emulated: a batch size or concurrent receive count below 1, a negative delay limit, a
     /// <see cref="TransportCapabilities.MinRetryDelay"/> above a non-zero <see cref="TransportCapabilities.MaxRetryDelay"/>,
     /// or a message size or lease limit that is not positive.
     /// </exception>
@@ -257,8 +258,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
     internal static void ValidateCapabilities(TransportCapabilities capabilities)
     {
-        if (capabilities.MaxSendBatchSize < 1 || capabilities.MaxReceiveBatchSize < 1)
-            throw new ArgumentException("MaxSendBatchSize and MaxReceiveBatchSize must be at least 1.", nameof(capabilities));
+        if (capabilities.MaxSendBatchSize < 1 || capabilities.MaxReceiveBatchSize < 1 || capabilities.MaxConcurrentReceives < 1)
+            throw new ArgumentException("MaxSendBatchSize, MaxReceiveBatchSize and MaxConcurrentReceives must be at least 1.", nameof(capabilities));
         if (capabilities.MaxDelay < TimeSpan.Zero || capabilities.MaxPublishDelay < TimeSpan.Zero || capabilities.MaxRetryDelay < TimeSpan.Zero || capabilities.MinRetryDelay < TimeSpan.Zero)
             throw new ArgumentException("Delay limits cannot be negative.", nameof(capabilities));
         if (capabilities.MaxRetryDelay is { } maxRetryDelay && maxRetryDelay > TimeSpan.Zero && capabilities.MinRetryDelay > maxRetryDelay)
@@ -299,7 +300,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         private readonly InMemoryMessageTransport _transport;
         private readonly InMemorySource _state;
         private readonly ReceiverOptions _options;
-        private bool _disposed;
+        private volatile bool _disposed;
 
         public Receiver(InMemoryMessageTransport transport, MessageSource source, InMemorySource state, ReceiverOptions options)
         {

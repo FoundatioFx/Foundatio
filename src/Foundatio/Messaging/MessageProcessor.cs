@@ -18,8 +18,6 @@ internal sealed class MessageProcessor : IAsyncDisposable
     // Long enough to be one SQS long poll; stopping cancels a receive in progress, so shutdown does not wait for it.
     private static readonly TimeSpan ReceiveWait = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan AbortGracePeriod = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan MaxReceiveBackoff = TimeSpan.FromSeconds(30);
-    private const int ReplaceReceiverAfterFailures = 5;
 
     private readonly IMessageTransport _transport;
     private readonly MessageProcessorSettings _settings;
@@ -29,12 +27,18 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private readonly ReceiverOptions _receiverOptions;
     private readonly LeaseRenewer _renewer;
     private readonly SemaphoreSlim _slots;
+    private readonly ReceiveBackoff _backoff;
+    private readonly int _maxBatch;
+    private readonly int _concurrentReceives;
     private readonly CancellationTokenSource _stopReceiving = new();
     private readonly CancellationTokenSource _abortHandlers = new();
     private readonly object _lifecycleLock = new();
     private IMessageReceiver? _receiver;
     private Task _receiveLoop = Task.CompletedTask;
     private int _inFlight;
+    private TaskCompletionSource _room = NewSignal();
+    private int _waitingForRoom;
+    private int _partialReceive;
     private bool _started;
     private bool _stopped;
 
@@ -54,6 +58,12 @@ internal sealed class MessageProcessor : IAsyncDisposable
         _receiverOptions = new ReceiverOptions { LeaseDuration = lease, PrefetchCount = settings.MaxConcurrency };
         _renewer = new LeaseRenewer(lease, capabilities.LeaseExpiration, timeProvider, _logger);
         _slots = new SemaphoreSlim(settings.MaxConcurrency, settings.MaxConcurrency);
+        _backoff = new ReceiveBackoff(timeProvider);
+
+        // Enough receives to fill every slot, as far as the transport allows: full batches and one for the rest.
+        _maxBatch = Math.Max(1, capabilities.MaxReceiveBatchSize);
+        int receivesToFill = (int)Math.Min((settings.MaxConcurrency + (long)_maxBatch - 1) / _maxBatch, Int32.MaxValue);
+        _concurrentReceives = Math.Max(1, Math.Min(capabilities.MaxConcurrentReceives, receivesToFill));
     }
 
     public MessageSource Source { get; }
@@ -88,7 +98,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
             return;
         }
 
-        _logger.LogInformation("Receiving {Source} with {Handlers} (concurrency {MaxConcurrency})", Source, _settings.Description, _settings.MaxConcurrency);
+        _logger.LogInformation("Receiving {Source} with {Handlers} (concurrency {MaxConcurrency}, receives in flight {ConcurrentReceives})",
+            Source, _settings.Description, _settings.MaxConcurrency, _concurrentReceives);
     }
 
     /// <summary>
@@ -139,83 +150,184 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Runs the receives on one receiver at a time until the processor stops. When a receive decides the receiver must
+    /// be replaced, the others on it stop, and once all have ended it is replaced and receiving starts on the new one.
+    /// </summary>
     private async Task ReceiveLoopAsync()
     {
         var receiver = _receiver!;
-        int maxBatch = Math.Max(1, _transport.Capabilities.MaxReceiveBatchSize);
-        var backoff = TimeSpan.Zero;
-        int failures = 0;
         var token = _stopReceiving.Token;
-
         while (!token.IsCancellationRequested)
         {
-            try
+            using (var receiving = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
-                await _slots.WaitAsync(token).AnyContext();
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
-            int slots = 1;
-            while (slots < maxBatch && _slots.CurrentCount > 0 && await _slots.WaitAsync(0, CancellationToken.None).AnyContext())
-                slots++;
-
-            IReadOnlyList<IncomingMessage> messages;
-            try
-            {
-                messages = await receiver.ReceiveAsync(slots, ReceiveWait, token).AnyContext();
-                backoff = TimeSpan.Zero;
-                failures = 0;
-                Status.RecordSuccess();
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                _slots.Release(slots);
-                break;
-            }
-            catch (Exception ex)
-            {
-                _slots.Release(slots);
-                Status.RecordFailure(ex);
-                backoff = NextBackoff(backoff);
-                bool replace = ex is MessageReceiverFaultedException || ++failures >= ReplaceReceiverAfterFailures;
-                if (replace)
-                    _logger.LogError(ex, "Receiver for {Source} failed; replacing it in {Backoff}", Source, backoff);
-                else
-                    _logger.LogError(ex, "Error receiving from {Source}; retrying in {Backoff}", Source, backoff);
-
-                await _timeProvider.SafeDelay(backoff, token).AnyContext();
-                if (replace)
+                if (_concurrentReceives == 1)
                 {
-                    if (await ReplaceReceiverAsync(receiver, backoff, token).AnyContext() is not { } replacement)
-                        break;
-
-                    receiver = replacement;
-                    failures = 0;
+                    await ReceiveFromAsync(receiver, receiving).AnyContext();
                 }
+                else
+                {
+                    var receives = new Task[_concurrentReceives];
+                    for (int i = 0; i < receives.Length; i++)
+                        receives[i] = Task.Run(() => ReceiveFromAsync(receiver, receiving), CancellationToken.None);
 
-                continue;
+                    await Task.WhenAll(receives).AnyContext();
+                }
             }
 
-            if (messages.Count < slots)
-                _slots.Release(slots - messages.Count);
-            if (messages.Count == 0)
-                continue;
+            if (token.IsCancellationRequested)
+                break;
 
-            var deliveries = new MessageDelivery[messages.Count];
-            for (int i = 0; i < messages.Count; i++)
-                deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer);
+            await _timeProvider.SafeDelay(_backoff.Remaining, token).AnyContext();
+            if (await ReplaceReceiverAsync(receiver, _backoff.Current, token).AnyContext() is not { } replacement)
+                break;
 
-            _renewer.Track(deliveries);
-            foreach (var sequence in SplitIntoSequences(deliveries))
-            {
-                Interlocked.Add(ref _inFlight, sequence.Count);
-                _ = Task.Run(() => ProcessSequenceAsync(sequence), CancellationToken.None);
-            }
+            receiver = replacement;
+            _backoff.Reset();
         }
     }
+
+    /// <summary>
+    /// One of the receives in flight on <paramref name="receiver"/>: waits for free slots, receives up to that many
+    /// messages and starts handling them, until <paramref name="receiving"/> is cancelled, which it does itself when
+    /// the receiver must be replaced. Every receive shares the slots, so together they never exceed the concurrency.
+    /// Only one at a time asks for less than a full batch; the others wait until a full batch of slots is free, so slots
+    /// that free up one by one under load do not each cost a broker receive.
+    /// </summary>
+    private async Task ReceiveFromAsync(IMessageReceiver receiver, CancellationTokenSource receiving)
+    {
+        var token = receiving.Token;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    await _slots.WaitAsync(token).AnyContext();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                int slots = 1;
+                while (slots < _maxBatch && _slots.CurrentCount > 0 && await _slots.WaitAsync(0, CancellationToken.None).AnyContext())
+                    slots++;
+
+                bool partial = slots < _maxBatch;
+                if (partial && Interlocked.CompareExchange(ref _partialReceive, 1, 0) != 0)
+                {
+                    _slots.Release(slots);
+                    await WaitForRoomAsync(token).AnyContext();
+                    continue;
+                }
+
+                IReadOnlyList<IncomingMessage> messages;
+                try
+                {
+                    long round = _backoff.BeginReceive(out var wait);
+                    if (wait > TimeSpan.Zero)
+                    {
+                        _slots.Release(slots);
+                        await _timeProvider.SafeDelay(wait, token).AnyContext();
+                        continue;
+                    }
+
+                    try
+                    {
+                        messages = await receiver.ReceiveAsync(slots, ReceiveWait, token).AnyContext();
+                        _backoff.RecordSuccess(round);
+                        Status.RecordSuccess();
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        _slots.Release(slots);
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _slots.Release(slots);
+                        Status.RecordFailure(ex);
+                        bool replace = _backoff.RecordFailure(ex, round, out bool counted, out var backoff);
+                        if (replace)
+                        {
+                            _logger.LogError(ex, "Receiver for {Source} failed; replacing it in {Backoff}", Source, backoff);
+                            receiving.Cancel();
+                            break;
+                        }
+
+                        if (counted)
+                            _logger.LogError(ex, "Error receiving from {Source}; retrying in {Backoff}", Source, backoff);
+                        else
+                            _logger.LogDebug(ex, "Another receive from {Source} failed at the same time; retrying in {Backoff}", Source, backoff);
+
+                        continue;
+                    }
+                }
+                finally
+                {
+                    if (partial)
+                    {
+                        Volatile.Write(ref _partialReceive, 0);
+                        SignalRoom();
+                    }
+                }
+
+                if (messages.Count < slots)
+                    _slots.Release(slots - messages.Count);
+                if (messages.Count == 0)
+                    continue;
+
+                var deliveries = new MessageDelivery[messages.Count];
+                for (int i = 0; i < messages.Count; i++)
+                    deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer);
+
+                _renewer.Track(deliveries);
+                foreach (var sequence in SplitIntoSequences(deliveries))
+                {
+                    Interlocked.Add(ref _inFlight, sequence.Count);
+                    _ = Task.Run(() => ProcessSequenceAsync(sequence), CancellationToken.None);
+                }
+            }
+        }
+        catch
+        {
+            // Stop the other receives, so the unexpected error ends the receive loop instead of waiting for them forever.
+            receiving.Cancel();
+            throw;
+        }
+    }
+
+    /// <summary>Waits until no receive asks for a partial batch, or a full batch of slots is free.</summary>
+    private async Task WaitForRoomAsync(CancellationToken token)
+    {
+        Interlocked.Increment(ref _waitingForRoom);
+        try
+        {
+            var room = Volatile.Read(ref _room).Task;
+            if (Volatile.Read(ref _partialReceive) == 0 || _slots.CurrentCount >= _maxBatch)
+                return;
+
+            await room.WaitAsync(token).AnyContext();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _waitingForRoom);
+        }
+    }
+
+    /// <summary>Wakes the receives waiting for room, if any.</summary>
+    private void SignalRoom()
+    {
+        if (Volatile.Read(ref _waitingForRoom) > 0)
+            Interlocked.Exchange(ref _room, NewSignal()).TrySetResult();
+    }
+
+    private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
     /// Lets the failed receiver's in-flight messages finish (up to the replace timeout), disposes it and opens a new
@@ -254,7 +366,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             catch (Exception ex)
             {
                 Status.RecordFailure(ex);
-                backoff = NextBackoff(backoff);
+                backoff = ReceiveBackoff.Next(backoff);
                 _logger.LogError(ex, "Could not open a new receiver for {Source}; retrying in {Backoff}", Source, backoff);
                 await _timeProvider.SafeDelay(backoff, token).AnyContext();
             }
@@ -279,9 +391,6 @@ internal sealed class MessageProcessor : IAsyncDisposable
             _logger.LogWarning(ex, "Error closing a receiver for {Source}", Source);
         }
     }
-
-    private static TimeSpan NextBackoff(TimeSpan backoff)
-        => backoff == TimeSpan.Zero ? TimeSpan.FromSeconds(1) : TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxReceiveBackoff.Ticks));
 
     /// <summary>
     /// Splits a batch into sequences handled one message after another. Without ordered groups every message is its
@@ -353,6 +462,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 await delivery.StopRenewingAsync().AnyContext();
                 Interlocked.Decrement(ref _inFlight);
                 _slots.Release();
+                if (_slots.CurrentCount >= _maxBatch)
+                    SignalRoom();
             }
         }
     }

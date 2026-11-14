@@ -556,6 +556,87 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(20, received.Distinct().Count());
     }
 
+    /// <summary>
+    /// Concurrent receives on one receiver, which Foundatio makes when <see cref="TransportCapabilities.MaxConcurrentReceives"/>
+    /// allows it, never hand out a message twice and, with ordered groups, never hand out a message of a group while an
+    /// earlier one returned by another call is unsettled.
+    /// </summary>
+    [Fact]
+    public async Task ConcurrentReceives_OnOneReceiver_NeverHandOutAMessageTwiceAndKeepGroupsInOrder()
+    {
+        int concurrency = Transport.Capabilities.MaxConcurrentReceives;
+        Assert.SkipWhen(concurrency <= 1, "The transport does not allow concurrent receives.");
+        bool ordered = Transport.Capabilities.OrderedGroups;
+        var source = MessageSource.Queue(NewName("concurrent"));
+        await using var receiver = await CreateReceiverAsync(source);
+
+        const int groups = 4, perGroup = 10, ungrouped = 40;
+        var messages = Enumerable.Range(0, groups * perGroup)
+            .Select(i => Message($"g{i % groups}-{i / groups}", $"g{i % groups}-{i / groups:D2}") with { GroupKey = $"g{i % groups}" })
+            .Concat(Enumerable.Range(0, ungrouped).Select(i => Message($"u{i}", $"u-{i:D2}")))
+            .ToList();
+        int sendBatchSize = Math.Max(1, Transport.Capabilities.MaxSendBatchSize);
+        for (int i = 0; i < messages.Count; i += sendBatchSize)
+            await Transport.SendAsync(MessageDestination.Queue(source.Name), messages.GetRange(i, Math.Min(sendBatchSize, messages.Count - i)), TestCancellationToken);
+
+        var received = new ConcurrentDictionary<string, int>();
+        var groupOrders = new ConcurrentDictionary<string, List<string>>();
+        var heldGroups = new ConcurrentDictionary<string, int>();
+        var violations = new ConcurrentQueue<string>();
+        var deadline = DateTime.UtcNow + DeliveryTimeout * 3;
+
+        async Task ReceiveConcurrentlyAsync(int caller)
+        {
+            while (received.Count < messages.Count && DateTime.UtcNow < deadline)
+            {
+                var batch = await receiver.ReceiveAsync(5, TimeSpan.FromSeconds(1), TestCancellationToken);
+                foreach (var message in batch)
+                {
+                    if (!received.TryAdd(message.MessageId, caller))
+                        violations.Enqueue($"{message.MessageId} was handed out twice.");
+                }
+
+                var grouped = batch.Where(m => m.GroupKey is not null).ToList();
+                if (ordered)
+                {
+                    foreach (string group in grouped.Select(m => m.GroupKey!).Distinct())
+                    {
+                        if (!heldGroups.TryAdd(group, caller))
+                            violations.Enqueue($"Group {group} was handed out to two receive calls at once.");
+                    }
+                }
+
+                foreach (var message in grouped)
+                {
+                    var order = groupOrders.GetOrAdd(message.GroupKey!, _ => []);
+                    lock (order)
+                        order.Add(message.MessageId);
+                }
+
+                // Hold the messages unsettled for a moment, so the other calls receive while they are held.
+                await Task.Delay(10, TestCancellationToken);
+                foreach (var message in batch)
+                {
+                    // Released before the group's last message is completed: until then nothing later of the group may be handed out.
+                    if (ordered && message.GroupKey is { } group && ReferenceEquals(grouped.Last(m => m.GroupKey == group), message))
+                        heldGroups.TryRemove(group, out _);
+
+                    await receiver.CompleteAsync(message, TestCancellationToken);
+                }
+            }
+        }
+
+        await Task.WhenAll(Enumerable.Range(0, Math.Min(concurrency, 8)).Select(caller => Task.Run(() => ReceiveConcurrentlyAsync(caller), TestCancellationToken)));
+
+        Assert.Empty(violations);
+        Assert.Equal(messages.Count, received.Count);
+        if (ordered)
+        {
+            for (int group = 0; group < groups; group++)
+                Assert.Equal(Enumerable.Range(0, perGroup).Select(i => $"g{group}-{i:D2}"), groupOrders[$"g{group}"]);
+        }
+    }
+
     /// <summary>A published message reaches every subscription of the topic.</summary>
     [Fact]
     public async Task Publish_DeliversACopyToEverySubscription()

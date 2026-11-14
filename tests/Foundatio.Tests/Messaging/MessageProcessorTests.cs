@@ -209,19 +209,96 @@ public class MessageProcessorTests : TestWithLoggingBase
         }
     }
 
-    [Fact]
-    public async Task Receive_WhenIdle_LongPollsAndStillStopsPromptly()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public async Task Receive_WhenIdle_LongPollsAndStillStopsPromptly(int maxConcurrentReceives)
     {
         var waits = new ConcurrentQueue<TimeSpan>();
-        var transport = new InterceptingMessageTransport(_transport) { OnReceive = (_, _, wait) => waits.Enqueue(wait) };
-        var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) => Task.CompletedTask));
-        await WaitForAsync(() => !waits.IsEmpty, TimeSpan.FromSeconds(5));
+        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(maxConcurrentReceives)) { OnReceive = (_, _, wait) => waits.Enqueue(wait) };
+        var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) => Task.CompletedTask, new HandlerOptions { MaxConcurrency = 40 }));
+        await WaitForAsync(() => waits.Count >= maxConcurrentReceives, TimeSpan.FromSeconds(5));
 
         var stopwatch = Stopwatch.StartNew();
         await consumer.DisposeAsync();
 
         Assert.Equal(TimeSpan.FromSeconds(20), waits.First());
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"Stopping took {stopwatch.Elapsed}.");
+        Assert.Equal(0, transport.OpenReceivers);
+    }
+
+    [Theory]
+    [InlineData(1, 40, 1)]
+    [InlineData(4, 40, 4)]
+    [InlineData(8, 15, 2)]
+    public async Task Receive_WithConcurrentReceives_KeepsUpToOneReceivePerBatchOfFreeSlotsInFlight(int maxConcurrentReceives, int maxConcurrency, int expectedReceives)
+    {
+        const int count = 200;
+        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(maxConcurrentReceives)) { ReceiveDelay = TimeSpan.FromMilliseconds(50) };
+        await using (var producer = await StartAsync(_transport, _ => { }))
+            await producer.Client.SendBatchAsync(Enumerable.Range(0, count).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+
+        var handled = new ConcurrentDictionary<int, int>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((message, _, _) =>
+        {
+            handled.AddOrUpdate(message.Id, 1, (_, n) => n + 1);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = maxConcurrency }));
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(30), TestCancellationToken));
+        await WaitForAsync(() => transport.MaxReceivesInFlight >= expectedReceives, TimeSpan.FromSeconds(5));
+        Assert.Equal(count, handled.Count);
+        Assert.All(handled.Values, n => Assert.Equal(1, n));
+        Assert.Equal(expectedReceives, transport.MaxReceivesInFlight);
+    }
+
+    [Fact]
+    public async Task Receive_WhenConcurrentReceivesFailTogether_CountsThemAsOneFailureAndKeepsTheReceiver()
+    {
+        int failingReceives = 8, handled = 0;
+        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(4))
+        {
+            ReceiveDelay = TimeSpan.FromMilliseconds(100),
+            OnReceive = (_, _, _) =>
+            {
+                if (Interlocked.Decrement(ref failingReceives) >= 0)
+                    throw new IOException("The broker timed out");
+            }
+        };
+
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) =>
+        {
+            Interlocked.Increment(ref handled);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 40 }));
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => Volatile.Read(ref handled) == 1, TimeSpan.FromSeconds(20));
+        Assert.True(Volatile.Read(ref failingReceives) < 0, "Not every failing receive ran.");
+        Assert.Equal(1, transport.ReceiversCreated);
+        Assert.InRange(Log.LogEntries.Count(e => e.Message.StartsWith("Error receiving from", StringComparison.Ordinal)), 1, 4);
+        Assert.DoesNotContain(Log.LogEntries, e => e.Message.Contains("replacing it", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReplaceReceiver_WithConcurrentReceives_ReplacesTheFaultedReceiverOnceAndKeepsReceiving()
+    {
+        var handled = new ConcurrentQueue<int>();
+        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(4));
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((message, _, _) =>
+        {
+            handled.Enqueue(message.Id);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 40 }));
+        await WaitForAsync(() => transport.MaxReceivesInFlight == 4, TimeSpan.FromSeconds(5));
+
+        transport.FaultReceivers();
+        await WaitForAsync(() => transport.ReceiversCreated == 2 && transport.OpenReceivers == 1, TimeSpan.FromSeconds(20));
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => handled.Count == 1, TimeSpan.FromSeconds(10));
+        Assert.Equal(2, transport.ReceiversCreated);
+        Assert.Equal(1, transport.OpenReceivers);
     }
 
     [Fact]
@@ -373,6 +450,9 @@ public class MessageProcessorTests : TestWithLoggingBase
         => MessagingTestHost.StartAsync(transport, Log, "tests", configure);
 
     private static string QueueName<T>() => typeof(T).FullName!.Replace('+', '.');
+
+    private static TransportCapabilities ConcurrentReceiveCapabilities(int maxConcurrentReceives)
+        => new InMemoryMessageTransport().Capabilities with { MaxReceiveBatchSize = 10, MaxConcurrentReceives = maxConcurrentReceives };
 
     private static void InterlockedMax(ref int target, int value)
     {

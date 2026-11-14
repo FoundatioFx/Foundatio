@@ -14,7 +14,9 @@ namespace Foundatio.Messaging.Transport;
 /// Disposing a receiver for an <see cref="MessageSourceKind.InstanceSubscription"/> removes that subscription; one
 /// left behind by a crashed process must be removed by the transport (for example with a heartbeat and expiry).
 /// Settlement and <see cref="RenewAsync"/> are called concurrently with <see cref="ReceiveAsync"/> and with each other
-/// for different messages. Foundatio stops renewing a message, and waits for a renewal in flight, before it settles it.
+/// for different messages. <see cref="ReceiveAsync"/> is called concurrently with itself only up to
+/// <see cref="TransportCapabilities.MaxConcurrentReceives"/>. Foundatio stops renewing a message, and waits for a
+/// renewal in flight, before it settles it, and never disposes the receiver while a receive is in flight.
 /// </para>
 /// <para>
 /// A delivery's lease is lost once its lease expired and the message was delivered again, once this receiver was
@@ -52,7 +54,8 @@ public interface IMessageReceiver : IAsyncDisposable
     /// Throw <see cref="OperationCanceledException"/> promptly when <paramref name="cancellationToken"/> is cancelled;
     /// a message the broker handed out to the cancelled call must still be delivered again, at the latest when its lease
     /// expires. Throw <see cref="MessageReceiverFaultedException"/> when this receiver can never deliver again, so
-    /// Foundatio replaces it; other exceptions are retried with backoff, and after five in a row Foundatio replaces it too.
+    /// Foundatio replaces it; other exceptions are retried with backoff, and after five in a row Foundatio replaces it too
+    /// (failures of receives in flight together count once).
     /// When the broker, not <see cref="ReceiverOptions.LeaseDuration"/>, decides how long a delivery is leased (a Service
     /// Bus lock), set each message's <see cref="IncomingMessage.LeaseExpiresAt"/>, so Foundatio renews before it ends.
     /// </remarks>

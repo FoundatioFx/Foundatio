@@ -142,6 +142,7 @@ public class InMemoryMessageTransportCapabilitiesTests : TestWithLoggingBase
     {
         new TransportCapabilities { MaxSendBatchSize = 0 },
         new TransportCapabilities { MaxReceiveBatchSize = 0 },
+        new TransportCapabilities { MaxConcurrentReceives = 0 },
         new TransportCapabilities { MaxDelay = TimeSpan.FromSeconds(-1) },
         new TransportCapabilities { MaxPublishDelay = TimeSpan.FromSeconds(-1) },
         new TransportCapabilities { MaxRetryDelay = TimeSpan.FromSeconds(-1) },

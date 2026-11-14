@@ -12,6 +12,8 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 {
     private readonly ConcurrentDictionary<Receiver, byte> _receivers = new();
     private int _receiversCreated;
+    private int _receivesInFlight;
+    private int _maxReceivesInFlight;
 
     public TransportCapabilities Capabilities { get; } = capabilities ?? inner.Capabilities;
 
@@ -21,13 +23,16 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
     /// </summary>
     public TimeSpan? BrokerLeaseDuration { get; init; }
 
+    /// <summary>How long each receive takes before it reaches the inner receiver, like a broker round trip.</summary>
+    public TimeSpan ReceiveDelay { get; init; }
+
     /// <summary>Runs before a receiver is opened.</summary>
     public Func<MessageSource, CancellationToken, Task>? OnCreateReceiver { get; set; }
 
     /// <summary>Runs before each <see cref="IMessageTransport.SendAsync"/>.</summary>
     public Action<MessageDestination, IReadOnlyList<OutgoingMessage>>? OnSend { get; set; }
 
-    /// <summary>Runs before each receive, with the requested batch size and wait.</summary>
+    /// <summary>Runs before each receive, after <see cref="ReceiveDelay"/>, with the requested batch size and wait.</summary>
     public Action<MessageSource, int, TimeSpan>? OnReceive { get; set; }
 
     /// <summary>Runs before each renewal reaches the inner receiver.</summary>
@@ -42,6 +47,9 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
     public int ReceiversCreated => Volatile.Read(ref _receiversCreated);
 
     public int OpenReceivers => _receivers.Count;
+
+    /// <summary>The most <see cref="IMessageReceiver.ReceiveAsync"/> calls that were in flight at once, across every receiver.</summary>
+    public int MaxReceivesInFlight => Volatile.Read(ref _maxReceivesInFlight);
 
     /// <summary>Makes every open receiver throw <see cref="MessageReceiverFaultedException"/> from now on.</summary>
     public void FaultReceivers()
@@ -89,13 +97,22 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
         public async Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default)
         {
-            transport.OnReceive?.Invoke(Source, maxMessages, maxWait);
-            if (_fault.IsCancellationRequested)
-                throw new MessageReceiverFaultedException("This receiver can never deliver again");
+            int inFlight = Interlocked.Increment(ref transport._receivesInFlight);
+            int max;
+            while (inFlight > (max = Volatile.Read(ref transport._maxReceivesInFlight)) && Interlocked.CompareExchange(ref transport._maxReceivesInFlight, inFlight, max) != max)
+            {
+            }
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _fault.Token);
             try
             {
+                if (transport.ReceiveDelay > TimeSpan.Zero)
+                    await Task.Delay(transport.ReceiveDelay, linked.Token);
+
+                transport.OnReceive?.Invoke(Source, maxMessages, maxWait);
+                if (_fault.IsCancellationRequested)
+                    throw new MessageReceiverFaultedException("This receiver can never deliver again");
+
                 var messages = await inner.ReceiveAsync(maxMessages, maxWait, linked.Token);
                 foreach (var message in messages)
                     ReportBrokerLease(message);
@@ -105,6 +122,10 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
             catch (OperationCanceledException) when (_fault.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
                 throw new MessageReceiverFaultedException("This receiver can never deliver again");
+            }
+            finally
+            {
+                Interlocked.Decrement(ref transport._receivesInFlight);
             }
         }
 
