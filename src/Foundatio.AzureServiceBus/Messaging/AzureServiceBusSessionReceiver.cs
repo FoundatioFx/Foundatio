@@ -334,7 +334,14 @@ internal sealed class AzureServiceBusSessionReceiver : IMessageReceiver
             }
             catch (ServiceBusException ex) when (AzureServiceBusMessageTransport.IsFatal(ex))
             {
-                throw new MessageReceiverFaultedException($"{_entity} of {Source} can no longer be received from: {ex.Message}", ex);
+                throw _transport.EntityLost(_entity, Source, ex);
+            }
+            catch (ServiceBusException ex) when (messages.Count > 0)
+            {
+                // What other sessions handed out is returned rather than lost with the error, which would hold back
+                // their groups until their locks expired.
+                _transport.Logger.LogWarning(ex, "Could not receive from session {SessionId} of {Source}", session.SessionId, Source);
+                return;
             }
             catch (ServiceBusException ex)
             {
@@ -378,7 +385,7 @@ internal sealed class AzureServiceBusSessionReceiver : IMessageReceiver
         }
         catch (ServiceBusException ex) when (AzureServiceBusMessageTransport.IsFatal(ex))
         {
-            throw new MessageReceiverFaultedException($"{_entity} of {Source} can no longer be received from: {ex.Message}", ex);
+            throw _transport.EntityLost(_entity, Source, ex);
         }
         catch (ServiceBusException ex)
         {

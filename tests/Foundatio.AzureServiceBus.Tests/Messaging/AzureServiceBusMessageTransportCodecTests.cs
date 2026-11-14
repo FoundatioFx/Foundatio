@@ -98,18 +98,21 @@ public class AzureServiceBusMessageTransportCodecTests
         Assert.Equal("id-1", encoded.ApplicationProperties[AzureServiceBusMessageTransportCodec.MessageIdProperty]);
     }
 
-    [Fact]
-    public void EncodeRetry_CarriesTheDeliveryCountAndANewIdUnderDuplicateDetection()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EncodeRetry_WithOrWithoutDeduplication_CarriesTheDeliveryCountUnderANewServiceBusId(bool deduplication)
     {
-        // Arrange
-        var original = Receive(AzureServiceBusMessageTransportCodec.Encode(Message() with { DeduplicationId = "same" }, new AzureServiceBusEncodeOptions(Now, false, true, null)), deliveryCount: 2);
+        // Arrange: an entity that detects duplicates remembers the original's id whether or not the transport deduplicates.
+        var encoded = AzureServiceBusMessageTransportCodec.Encode(Message() with { DeduplicationId = "same" }, new AzureServiceBusEncodeOptions(Now, false, deduplication, null));
+        var original = Receive(encoded, deliveryCount: 2);
 
         // Act
-        var retry = AzureServiceBusMessageTransportCodec.EncodeRetry(original, deliveryCount: 2, Now.AddMinutes(1), "billing", deduplication: true);
+        var retry = AzureServiceBusMessageTransportCodec.EncodeRetry(original, deliveryCount: 2, Now.AddMinutes(1), "billing");
         var decoded = AzureServiceBusMessageTransportCodec.Decode(Receive(retry), deadLetter: false);
 
         // Assert
-        Assert.NotEqual("same", retry.MessageId);
+        Assert.NotEqual(encoded.MessageId, retry.MessageId);
         Assert.Equal(Now.AddMinutes(1), retry.ScheduledEnqueueTime);
         Assert.Equal("billing", retry.ApplicationProperties[AzureServiceBusMessageTransportCodec.TargetProperty]);
         Assert.Equal("id-1", decoded.MessageId);

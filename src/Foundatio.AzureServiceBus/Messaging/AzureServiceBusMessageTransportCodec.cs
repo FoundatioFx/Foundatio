@@ -119,23 +119,19 @@ internal static class AzureServiceBusMessageTransportCodec
 
     /// <summary>
     /// A copy of a received message to schedule as its retry: the same body, properties and session, with the deliveries
-    /// so far, sent to <paramref name="targetSubscription"/> of the topic when it came from a subscription.
+    /// so far, sent to <paramref name="targetSubscription"/> of the topic when it came from a subscription. The copy
+    /// always gets a new Service Bus id, carrying the message's own: an entity that detects duplicates remembers the
+    /// original's, and would drop the copy, even when the transport does not deduplicate.
     /// </summary>
-    public static ServiceBusMessage EncodeRetry(ServiceBusReceivedMessage message, int deliveryCount, DateTimeOffset scheduledAt, string? targetSubscription, bool deduplication)
+    public static ServiceBusMessage EncodeRetry(ServiceBusReceivedMessage message, int deliveryCount, DateTimeOffset scheduledAt, string? targetSubscription)
     {
-        var copy = new ServiceBusMessage(message) { ScheduledEnqueueTime = scheduledAt };
+        var copy = new ServiceBusMessage(message) { ScheduledEnqueueTime = scheduledAt, MessageId = Guid.NewGuid().ToString("N") };
         copy.ApplicationProperties[DeliveryCountProperty] = deliveryCount;
+        copy.ApplicationProperties.TryAdd(MessageIdProperty, message.MessageId);
         if (targetSubscription is not null)
             copy.ApplicationProperties[TargetProperty] = targetSubscription;
         else
             copy.ApplicationProperties.Remove(TargetProperty);
-
-        if (deduplication)
-        {
-            // The original's id is a deduplication id the entity remembers, which would drop the copy.
-            copy.ApplicationProperties.TryAdd(MessageIdProperty, message.MessageId);
-            copy.MessageId = Guid.NewGuid().ToString("N");
-        }
 
         return copy;
     }

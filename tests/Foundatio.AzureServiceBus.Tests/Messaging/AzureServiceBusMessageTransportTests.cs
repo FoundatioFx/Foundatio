@@ -211,8 +211,10 @@ public class AzureServiceBusMessageTransportTests(ITestOutputHelper output) : Me
         await Assert.ThrowsAsync<ServiceBusException>(() => admin.GetSubscriptionAsync(topicPath, instance.SubscriptionName, TestCancellationToken));
     }
 
-    [Fact]
-    public async Task CreateReceiver_SubscriptionWithOnlyTheDefaultRule_GetsTheTransportsRule()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateReceiver_SubscriptionWithTheDefaultRule_EndsWithOnlyTheTransportsRule(bool replacementStoppedHalfway)
     {
         // Arrange
         string topic = NewName("default-rule");
@@ -221,6 +223,11 @@ public class AzureServiceBusMessageTransportTests(ITestOutputHelper output) : Me
         var admin = CreateAdministrationClient();
         await admin.CreateTopicAsync(topicPath, TestCancellationToken);
         await admin.CreateSubscriptionAsync(new CreateSubscriptionOptions(topicPath, "existing") { RequiresSession = RequiresSession, MaxDeliveryCount = EmulatorMaxDeliveryCount }, TestCancellationToken);
+        if (replacementStoppedHalfway)
+        {
+            await admin.CreateRuleAsync(topicPath, "existing", new CreateRuleOptions(AzureServiceBusMessageTransportEntities.RuleName,
+                new SqlRuleFilter(AzureServiceBusMessageTransportEntities.GetRuleFilter("existing"))), TestCancellationToken);
+        }
 
         // Act
         await using var existing = await CreateReceiverAsync(MessageSource.Subscription(topic, "existing"));
@@ -232,6 +239,43 @@ public class AzureServiceBusMessageTransportTests(ITestOutputHelper output) : Me
         var rule = Assert.Single(await ListRulesAsync(admin, topicPath, "existing"));
         Assert.Equal(AzureServiceBusMessageTransportEntities.RuleName, rule.Name);
         await AssertOnlyReceivedAsync(existing, "id-everyone");
+    }
+
+    [Fact]
+    public async Task Send_ToAQueueAnotherProcessDeleted_CreatesItAgainAndDeliversTheMessage()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("deleted-send"));
+        await (await CreateReceiverAsync(source)).DisposeAsync();
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("before", "id-before")], TestCancellationToken);
+        await CreateAdministrationClient().DeleteQueueAsync(new AzureServiceBusMessageTransportNames(Prefix).Queue(source.Name), TestCancellationToken);
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
+
+        // Assert
+        await using var receiver = await CreateReceiverAsync(source);
+        await AssertOnlyReceivedAsync(receiver, "id-after");
+    }
+
+    [Fact]
+    public async Task Receive_FromAQueueAnotherProcessDeleted_FaultsAndTheReplacementCreatesItAgain()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("deleted-receive"));
+        var receiver = await CreateReceiverAsync(source);
+        await CreateAdministrationClient().DeleteQueueAsync(new AzureServiceBusMessageTransportNames(Prefix).Queue(source.Name), TestCancellationToken);
+        await Assert.ThrowsAsync<MessageReceiverFaultedException>(() => receiver.ReceiveAsync(1, TimeSpan.FromSeconds(5), TestCancellationToken));
+        await receiver.DisposeAsync();
+
+        // Act
+        await using var replacement = await CreateReceiverAsync(source);
+        var received = await replacement.ReceiveAsync(1, TimeSpan.FromSeconds(1), TestCancellationToken);
+
+        // Assert
+        Assert.Empty(received);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
+        await AssertOnlyReceivedAsync(replacement, "id-after");
     }
 
     [Fact]

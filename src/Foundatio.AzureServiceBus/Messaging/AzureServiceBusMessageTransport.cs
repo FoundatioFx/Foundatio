@@ -337,7 +337,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     internal async Task ScheduleRetryAsync(ServiceBusReceiver receiver, AzureServiceBusReceiverEntity entity, AzureServiceBusIncomingMessage delivery, TimeSpan delay,
         MessageSource source, CancellationToken cancellationToken)
     {
-        var copy = AzureServiceBusMessageTransportCodec.EncodeRetry(delivery.Received, delivery.DeliveryCount, DateTimeOffset.UtcNow + delay, entity.Subscription, Options.RequiresDuplicateDetection);
+        var copy = AzureServiceBusMessageTransportCodec.EncodeRetry(delivery.Received, delivery.DeliveryCount, DateTimeOffset.UtcNow + delay, entity.Subscription);
         var sender = GetSender(entity.SendPath);
         if (entity.Queue is not null)
         {
@@ -379,6 +379,18 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     {
         var mapped = TimeProvider.GetUtcNow() + (lockedUntil - DateTimeOffset.UtcNow);
         return lockDuration is { } duration && requestedAt + duration < mapped ? requestedAt + duration : mapped;
+    }
+
+    /// <summary>
+    /// The fault of a receiver whose entity was deleted or disabled. A deleted queue is forgotten, so the receiver that
+    /// replaces this one creates it again.
+    /// </summary>
+    internal MessageReceiverFaultedException EntityLost(AzureServiceBusReceiverEntity entity, MessageSource source, ServiceBusException ex)
+    {
+        if (entity.Queue is not null)
+            Entities.ForgetQueue(entity.Queue);
+
+        return new MessageReceiverFaultedException($"{entity} of {source} can no longer be received from: {ex.Message}", ex);
     }
 
     /// <summary>Errors after which a receiver can never deliver again: its entity was deleted or disabled.</summary>
@@ -451,20 +463,23 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
             try
             {
                 using var batch = await sender.CreateMessageBatchAsync(cancellationToken).ConfigureAwait(false);
-                int start = index;
-                while (index < messages.Count && batch.Count < MaxBatchSize && batch.TryAddMessage(messages[index]))
-                    index++;
+                int next = index;
+                while (next < messages.Count && batch.Count < MaxBatchSize && batch.TryAddMessage(messages[next]))
+                    next++;
 
-                if (index == start)
+                if (next == index)
                 {
                     // Too large for a batch's framing, which a single send does not need.
                     await sender.SendMessageAsync(messages[index], cancellationToken).AnyContext();
-                    index++;
+                    next++;
                 }
                 else
                 {
                     await sender.SendMessagesAsync(batch, cancellationToken).AnyContext();
                 }
+
+                // Only once sent, so a batch the deleted entity refused is sent again once it is created again.
+                index = next;
             }
             catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound && !recreated && Options.CreateEntities)
             {

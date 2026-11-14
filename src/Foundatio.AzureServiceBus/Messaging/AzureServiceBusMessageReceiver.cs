@@ -61,7 +61,7 @@ internal sealed class AzureServiceBusMessageReceiver : IMessageReceiver
         }
         catch (ServiceBusException ex) when (AzureServiceBusMessageTransport.IsFatal(ex))
         {
-            throw new MessageReceiverFaultedException($"{_entity} of {Source} can no longer be received from: {ex.Message}", ex);
+            throw _transport.EntityLost(_entity, Source, ex);
         }
         catch (ServiceBusException ex)
         {

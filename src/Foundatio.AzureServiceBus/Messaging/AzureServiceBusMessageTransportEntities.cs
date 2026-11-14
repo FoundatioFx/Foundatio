@@ -88,8 +88,19 @@ internal sealed class AzureServiceBusMessageTransportEntities
         }
 
         ValidateSessions(properties.RequiresSession, $"Subscription {subscription} of topic {topic}");
-        if (_checkedRules.TryAdd($"{topic}/{subscription}", 0))
-            await CheckRulesAsync(topic, subscription, cancellationToken).AnyContext();
+        string key = $"{topic}/{subscription}";
+        if (_checkedRules.TryAdd(key, 0))
+        {
+            try
+            {
+                await CheckRulesAsync(topic, subscription, cancellationToken).AnyContext();
+            }
+            catch
+            {
+                _checkedRules.TryRemove(key, out _);
+                throw;
+            }
+        }
 
         return properties.LockDuration;
     }
@@ -307,7 +318,10 @@ internal sealed class AzureServiceBusMessageTransportEntities
         return properties;
     }
 
-    /// <summary>Gives an existing subscription the transport's rule when it only has the default rule, which matches every message.</summary>
+    /// <summary>
+    /// Gives an existing subscription the transport's rule when it only has the default rule, which matches every
+    /// message, and finishes a replacement that stopped after adding the transport's rule.
+    /// </summary>
     private async Task CheckRulesAsync(string topic, string subscription, CancellationToken cancellationToken)
     {
         var admin = Admin;
@@ -315,13 +329,33 @@ internal sealed class AzureServiceBusMessageTransportEntities
         await foreach (var rule in admin.GetRulesAsync(topic, subscription, cancellationToken).ConfigureAwait(false))
             rules.Add(rule);
 
-        if (rules.Exists(r => r.Name == RuleName))
+        bool hasRule = rules.Exists(r => r.Name == RuleName);
+        bool onlyDefaultBesides = rules.Count == (hasRule ? 2 : 1) && rules.Exists(r => r.Name == DefaultRuleName && r.Filter is TrueRuleFilter);
+        if (hasRule && !onlyDefaultBesides)
             return;
 
-        if (rules.Count == 1 && rules[0].Name == DefaultRuleName && rules[0].Filter is TrueRuleFilter)
+        if (onlyDefaultBesides)
         {
-            await admin.CreateRuleAsync(topic, subscription, new CreateRuleOptions(RuleName, new SqlRuleFilter(GetRuleFilter(subscription))), cancellationToken).AnyContext();
-            await admin.DeleteRuleAsync(topic, subscription, DefaultRuleName, cancellationToken).AnyContext();
+            if (!hasRule)
+            {
+                try
+                {
+                    await admin.CreateRuleAsync(topic, subscription, new CreateRuleOptions(RuleName, new SqlRuleFilter(GetRuleFilter(subscription))), cancellationToken).AnyContext();
+                }
+                catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityAlreadyExists)
+                {
+                    // Another process is replacing the default rule too.
+                }
+            }
+
+            try
+            {
+                await admin.DeleteRuleAsync(topic, subscription, DefaultRuleName, cancellationToken).AnyContext();
+            }
+            catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+            {
+            }
+
             _logger.LogInformation("Replaced the default rule of subscription {Subscription} of topic {Topic} with rule {Rule}, so it only gets messages sent to the topic or to it", subscription, topic, RuleName);
             return;
         }
