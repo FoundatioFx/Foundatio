@@ -487,6 +487,159 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         Assert.Single(sqsInterceptor.RequestsOf<GetQueueAttributesRequest>(), r => r.AttributeNames.Contains(QueueAttributeName.ApproximateNumberOfMessagesNotVisible));
     }
 
+    [Theory]
+    [InlineData("complete")]
+    [InlineData("renew")]
+    [InlineData("abandon")]
+    public async Task Settle_ManyAtOnceWhileACallIsInFlight_AreSentInBatchesOfTen(string operation)
+    {
+        // Arrange: the first call is held until every settlement has started, so the others gather behind it.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sqsInterceptor.Intercept = async (request, send) =>
+        {
+            if (request is DeleteMessageRequest or DeleteMessageBatchRequest or ChangeMessageVisibilityRequest or ChangeMessageVisibilityBatchRequest)
+                await release.Task;
+
+            return await send();
+        };
+
+        var source = MessageSource.Queue(NewName("settle-batch"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 25).Select(i => Message($"m{i}", $"id-{i:D2}")).ToList(), TestCancellationToken);
+        var messages = await ReceiveAsync(receiver, 25);
+
+        // Act
+        var settlements = messages.Select(m => Settle(receiver, m, operation)).ToList();
+        release.SetResult();
+        await Task.WhenAll(settlements);
+
+        // Assert: the first went out at once on its own, the next ones as soon as ten had gathered, the rest when a call returned.
+        int singles = operation == "complete" ? sqsInterceptor.RequestsOf<DeleteMessageRequest>().Count() : sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>().Count();
+        var batches = operation == "complete"
+            ? sqsInterceptor.RequestsOf<DeleteMessageBatchRequest>().Select(r => r.Entries.Count)
+            : sqsInterceptor.RequestsOf<ChangeMessageVisibilityBatchRequest>().Select(r => r.Entries.Count);
+        Assert.Equal(1, singles);
+        Assert.Equal([10, 10, 4], batches);
+    }
+
+    [Fact]
+    public async Task Settle_EntriesThatFailInABatch_FailOnlyTheirOwnCallers()
+    {
+        // Arrange: the first delete and the first visibility change are held, so the next three of each go out
+        // together. SQS then reports the first of those three lost and the second failed.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sqsInterceptor.Intercept = async (request, send) =>
+        {
+            if (request is DeleteMessageRequest or ChangeMessageVisibilityRequest)
+                await release.Task;
+
+            var response = await send();
+            switch (response)
+            {
+                case DeleteMessageBatchResponse deleted:
+                    deleted.Successful.RemoveAll(e => e.Id is "0" or "1");
+                    deleted.Failed = [Failure("0", "ReceiptHandleIsInvalid", senderFault: true), Failure("1", "InternalError", senderFault: false)];
+                    break;
+                case ChangeMessageVisibilityBatchResponse changed:
+                    changed.Successful.RemoveAll(e => e.Id is "0" or "1");
+                    changed.Failed = [Failure("0", "AWS.SimpleQueueService.MessageNotInflight", senderFault: true), Failure("1", "InternalError", senderFault: false)];
+                    break;
+            }
+
+            return response;
+        };
+
+        var source = MessageSource.Queue(NewName("settle-fail"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 8).Select(i => Message($"m{i}", $"id-{i}")).ToList(), TestCancellationToken);
+        var messages = await ReceiveAsync(receiver, 8);
+
+        // Act
+        var completions = messages.Take(4).Select(m => receiver.CompleteAsync(m, TestCancellationToken)).ToList();
+        var renewals = messages.Skip(4).Select(m => receiver.RenewAsync(m, TestCancellationToken)).ToList();
+        release.SetResult();
+
+        // Assert
+        foreach (var calls in new[] { completions, renewals })
+        {
+            await calls[0];
+            await Assert.ThrowsAsync<MessageLeaseLostException>(() => calls[1]);
+            var failed = await Assert.ThrowsAsync<MessageBusException>(() => calls[2]);
+            Assert.Equal("InternalError", Assert.IsAssignableFrom<AmazonServiceException>(failed.InnerException).ErrorCode);
+            await calls[3];
+        }
+
+        Assert.Equal([3], sqsInterceptor.RequestsOf<DeleteMessageBatchRequest>().Select(r => r.Entries.Count));
+        Assert.Equal([3], sqsInterceptor.RequestsOf<ChangeMessageVisibilityBatchRequest>().Select(r => r.Entries.Count));
+    }
+
+    [Fact]
+    public async Task Settle_CancelledWhileWaitingForABatch_IsNotSent()
+    {
+        // Arrange: the first delete is held, so the next ones wait for it.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sqsInterceptor.Intercept = async (request, send) =>
+        {
+            if (request is DeleteMessageRequest or DeleteMessageBatchRequest)
+                await release.Task;
+
+            return await send();
+        };
+
+        var lease = TimeSpan.FromSeconds(3);
+        var source = MessageSource.Queue(NewName("settle-cancel"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = lease }, TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("first", "id-first"), Message("cancelled", "id-cancelled"), Message("waiting", "id-waiting")], TestCancellationToken);
+        var messages = (await ReceiveAsync(receiver, 3)).ToDictionary(m => m.MessageId);
+        var first = receiver.CompleteAsync(messages["id-first"], TestCancellationToken);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        var cancelled = receiver.CompleteAsync(messages["id-cancelled"], cancellation.Token);
+        var waiting = receiver.CompleteAsync(messages["id-waiting"], TestCancellationToken);
+
+        // Act
+        await cancellation.CancelAsync();
+
+        // Assert: the cancelled completion returns at once, is never sent, and its message comes back after its lease.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+        release.SetResult();
+        await first;
+        await waiting;
+        Assert.Equal(2, sqsInterceptor.RequestsOf<DeleteMessageRequest>().Count());
+        Assert.Empty(sqsInterceptor.RequestsOf<DeleteMessageBatchRequest>());
+        Assert.Equal("id-cancelled", (await ReceiveOneAsync(receiver, lease + DeliveryTimeout)).MessageId);
+    }
+
+    [Theory]
+    [InlineData("complete")]
+    [InlineData("abandon")]
+    public async Task Settle_WhenTheCallFails_DoesNotKeepTheDelivery(string operation)
+    {
+        // Arrange
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        var source = MessageSource.Queue(NewName("settle-forget"));
+        DeleteAfterTest(source);
+        var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("fails", "id-fails")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+        sqsInterceptor.Intercept = (request, send) => request is DeleteMessageRequest or ChangeMessageVisibilityRequest
+            ? Task.FromException<AmazonWebServiceResponse>(new AmazonSQSException("Injected failure.") { ErrorCode = "InternalFailure", ErrorType = ErrorType.Receiver })
+            : send();
+        await Assert.ThrowsAsync<MessageBusException>(() => Settle(receiver, message, operation));
+        sqsInterceptor.Intercept = null;
+
+        // Act
+        await receiver.DisposeAsync();
+
+        // Assert: disposing releases the deliveries the receiver still holds; this one was settled, if unsuccessfully.
+        Assert.Empty(sqsInterceptor.RequestsOf<ChangeMessageVisibilityBatchRequest>());
+    }
+
     [Fact]
     public async Task Delete_Subscription_UnsubscribesAndRevokesTheTopicButKeepsTheQueue()
     {
@@ -1023,6 +1176,15 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
 
         return received;
     }
+
+    private Task Settle(IMessageReceiver receiver, IncomingMessage message, string operation) => operation switch
+    {
+        "complete" => receiver.CompleteAsync(message, TestCancellationToken),
+        "renew" => receiver.RenewAsync(message, TestCancellationToken),
+        _ => receiver.AbandonAsync(message, TimeSpan.FromMinutes(5), TestCancellationToken)
+    };
+
+    private static Amazon.SQS.Model.BatchResultErrorEntry Failure(string id, string code, bool senderFault) => new() { Id = id, Code = code, Message = code, SenderFault = senderFault };
 
     /// <summary>Sends a message straight to SQS, as another producer would.</summary>
     protected Task<SendMessageResponse> RawSendAsync(IAmazonSQS sqs, SendMessageRequest request)

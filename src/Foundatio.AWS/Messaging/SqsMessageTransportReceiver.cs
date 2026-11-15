@@ -23,7 +23,8 @@ namespace Foundatio.Messaging.Transport;
 /// already has <see cref="MaxHiddenInFlight"/> messages in flight, an early message is sent again with a delay of up to
 /// 15 minutes instead, since delayed messages do not count toward SQS's in-flight quota. Receives may run concurrently:
 /// SQS hands a message, and a FIFO group with a message in flight, to one of them only, each receive handles the early
-/// and held-back messages it got itself, and they share one reading of the in-flight count.
+/// and held-back messages it got itself, and they share one reading of the in-flight count. Completions, renewals and
+/// abandons are sent in batches, as a group commit (<see cref="SqsSettlementBatcher{TEntry}"/>).
 /// </summary>
 internal sealed class SqsMessageReceiver : IMessageReceiver
 {
@@ -68,6 +69,8 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     private readonly ConcurrentDictionary<string, SqsIncomingMessage> _inFlight = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _disposing = new();
     private readonly SemaphoreSlim _inFlightCheck = new(1, 1);
+    private readonly SqsSettlementBatcher<SqsIncomingMessage> _completions;
+    private readonly SqsSettlementBatcher<(SqsIncomingMessage Delivery, int Seconds)> _visibilityChanges;
     private Task _heartbeat = Task.CompletedTask;
     private long _inFlightCheckedAt;
     private long _measuredInFlight;
@@ -85,6 +88,8 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         _purgedBefore = purgedBefore;
         _fifo = transport.Options.Fifo;
         _leaseSeconds = ToSeconds(options.LeaseDuration, minimum: 1);
+        _completions = new SqsSettlementBatcher<SqsIncomingMessage>(DeleteDeliveriesAsync);
+        _visibilityChanges = new SqsSettlementBatcher<(SqsIncomingMessage Delivery, int Seconds)>(ChangeDeliveryVisibilityAsync);
     }
 
     public MessageSource Source { get; }
@@ -161,23 +166,21 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         }
     }
 
+    /// <remarks>
+    /// Whether the delete succeeds or not, the receiver forgets the delivery: SQS redelivers a message it did not delete
+    /// once the lease expires.
+    /// </remarks>
     public async Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default)
     {
         var delivery = GetDelivery(message);
         try
         {
-            await _transport.Sqs.DeleteMessageAsync(new DeleteMessageRequest { QueueUrl = _queueUrl, ReceiptHandle = delivery.ReceiptHandle }, cancellationToken).AnyContext();
+            await _completions.SendAsync(delivery, cancellationToken).AnyContext();
         }
-        catch (AmazonServiceException ex) when (SqsMessageTransport.IsLeaseLost(ex))
+        finally
         {
-            throw LeaseLost(delivery, ex);
+            _inFlight.TryRemove(delivery.ReceiptHandle, out _);
         }
-        catch (AmazonServiceException ex)
-        {
-            throw new MessageBusException($"Could not complete message {delivery.MessageId} from {Source}: {ex.Message}", ex);
-        }
-
-        _inFlight.TryRemove(delivery.ReceiptHandle, out _);
     }
 
     /// <remarks>
@@ -187,9 +190,15 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     public async Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
     {
         var delivery = GetDelivery(message);
-        ThrowIfLeaseExpired(delivery);
-        await ChangeVisibilityAsync(delivery, Math.Min(ToSeconds(delay, minimum: 0), RemainingVisibilitySeconds(delivery.ReceivedAt)), cancellationToken).AnyContext();
-        _inFlight.TryRemove(delivery.ReceiptHandle, out _);
+        try
+        {
+            ThrowIfLeaseExpired(delivery);
+            await _visibilityChanges.SendAsync((delivery, Math.Min(ToSeconds(delay, minimum: 0), RemainingVisibilitySeconds(delivery.ReceivedAt))), cancellationToken).AnyContext();
+        }
+        finally
+        {
+            _inFlight.TryRemove(delivery.ReceiptHandle, out _);
+        }
     }
 
     public async Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default)
@@ -222,7 +231,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         if (seconds <= 0)
             throw LeaseLost(delivery, new InvalidOperationException("SQS does not keep a message invisible for more than 12 hours from its receive."));
 
-        await ChangeVisibilityAsync(delivery, seconds, cancellationToken).AnyContext();
+        await _visibilityChanges.SendAsync((delivery, seconds), cancellationToken).AnyContext();
         delivery.LeaseDeadline = started + seconds * Stopwatch.Frequency;
     }
 
@@ -482,24 +491,133 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         }
     }
 
-    private async Task ChangeVisibilityAsync(SqsIncomingMessage delivery, int seconds, CancellationToken cancellationToken)
+    /// <summary>The settlement batcher's call for completions: deletes up to 10 deliveries and returns each one's error.</summary>
+    private async Task<Exception?[]> DeleteDeliveriesAsync(IReadOnlyList<SqsIncomingMessage> deliveries, CancellationToken cancellationToken)
     {
-        try
+        var errors = await DeleteAsync(deliveries.Select(d => d.ReceiptHandle).ToList(), cancellationToken).AnyContext();
+        for (int i = 0; i < errors.Length; i++)
         {
-            await _transport.Sqs.ChangeMessageVisibilityAsync(new ChangeMessageVisibilityRequest
+            if (errors[i] is AmazonServiceException ex)
+                errors[i] = SqsMessageTransport.IsLeaseLost(ex) ? LeaseLost(deliveries[i], ex) : new MessageBusException($"Could not complete message {deliveries[i].MessageId} from {Source}: {ex.Message}", ex);
+        }
+
+        return errors;
+    }
+
+    /// <summary>The settlement batcher's call for renewals and abandons: changes the visibility of up to 10 deliveries and returns each one's error.</summary>
+    private async Task<Exception?[]> ChangeDeliveryVisibilityAsync(IReadOnlyList<(SqsIncomingMessage Delivery, int Seconds)> changes, CancellationToken cancellationToken)
+    {
+        var errors = await ChangeVisibilityAsync(changes.Select(c => (c.Delivery.ReceiptHandle, c.Seconds)).ToList(), cancellationToken).AnyContext();
+        for (int i = 0; i < errors.Length; i++)
+        {
+            if (errors[i] is not AmazonServiceException ex)
+                continue;
+
+            var delivery = changes[i].Delivery;
+            errors[i] = SqsMessageTransport.IsLeaseLost(ex) ? LeaseLost(delivery, ex) : new MessageBusException($"Could not change the visibility of message {delivery.MessageId} from {Source}: {ex.Message}", ex);
+        }
+
+        return errors;
+    }
+
+    /// <summary>
+    /// Deletes messages with DeleteMessage when there is one, otherwise with DeleteMessageBatch calls of up to 10, and
+    /// returns each one's <see cref="AmazonServiceException"/>, or null where it was deleted.
+    /// </summary>
+    private async Task<Exception?[]> DeleteAsync(List<string> receiptHandles, CancellationToken cancellationToken)
+    {
+        var errors = new Exception?[receiptHandles.Count];
+        for (int offset = 0; offset < receiptHandles.Count; offset += SqsMessageTransport.MaxBatchSize)
+        {
+            int count = Math.Min(SqsMessageTransport.MaxBatchSize, receiptHandles.Count - offset);
+            try
             {
-                QueueUrl = _queueUrl,
-                ReceiptHandle = delivery.ReceiptHandle,
-                VisibilityTimeout = seconds
-            }, cancellationToken).AnyContext();
+                if (count == 1)
+                {
+                    await _transport.Sqs.DeleteMessageAsync(new DeleteMessageRequest { QueueUrl = _queueUrl, ReceiptHandle = receiptHandles[offset] }, cancellationToken).AnyContext();
+                    continue;
+                }
+
+                var response = await _transport.Sqs.DeleteMessageBatchAsync(new DeleteMessageBatchRequest
+                {
+                    QueueUrl = _queueUrl,
+                    Entries = receiptHandles.GetRange(offset, count).Select((receiptHandle, i) => new DeleteMessageBatchRequestEntry
+                    {
+                        Id = i.ToString(CultureInfo.InvariantCulture),
+                        ReceiptHandle = receiptHandle
+                    }).ToList()
+                }, cancellationToken).AnyContext();
+
+                SetBatchErrors(errors, offset, response.Failed);
+            }
+            catch (AmazonServiceException ex)
+            {
+                Array.Fill(errors, ex, offset, count);
+            }
         }
-        catch (AmazonServiceException ex) when (SqsMessageTransport.IsLeaseLost(ex))
+
+        return errors;
+    }
+
+    /// <summary>
+    /// Changes visibility timeouts with ChangeMessageVisibility when there is one, otherwise with
+    /// ChangeMessageVisibilityBatch calls of up to 10, and returns each one's <see cref="AmazonServiceException"/>, or
+    /// null where it was changed.
+    /// </summary>
+    private async Task<Exception?[]> ChangeVisibilityAsync(List<(string ReceiptHandle, int Seconds)> changes, CancellationToken cancellationToken)
+    {
+        var errors = new Exception?[changes.Count];
+        for (int offset = 0; offset < changes.Count; offset += SqsMessageTransport.MaxBatchSize)
         {
-            throw LeaseLost(delivery, ex);
+            int count = Math.Min(SqsMessageTransport.MaxBatchSize, changes.Count - offset);
+            try
+            {
+                if (count == 1)
+                {
+                    await _transport.Sqs.ChangeMessageVisibilityAsync(new ChangeMessageVisibilityRequest
+                    {
+                        QueueUrl = _queueUrl,
+                        ReceiptHandle = changes[offset].ReceiptHandle,
+                        VisibilityTimeout = changes[offset].Seconds
+                    }, cancellationToken).AnyContext();
+                    continue;
+                }
+
+                var response = await _transport.Sqs.ChangeMessageVisibilityBatchAsync(new ChangeMessageVisibilityBatchRequest
+                {
+                    QueueUrl = _queueUrl,
+                    Entries = changes.GetRange(offset, count).Select((change, i) => new ChangeMessageVisibilityBatchRequestEntry
+                    {
+                        Id = i.ToString(CultureInfo.InvariantCulture),
+                        ReceiptHandle = change.ReceiptHandle,
+                        VisibilityTimeout = change.Seconds
+                    }).ToList()
+                }, cancellationToken).AnyContext();
+
+                SetBatchErrors(errors, offset, response.Failed);
+            }
+            catch (AmazonServiceException ex)
+            {
+                Array.Fill(errors, ex, offset, count);
+            }
         }
-        catch (AmazonServiceException ex)
+
+        return errors;
+    }
+
+    /// <summary>Records each failed entry of a batch call, whose ids are the entries' positions from <paramref name="offset"/>, as an <see cref="AmazonSQSException"/> with its code.</summary>
+    private static void SetBatchErrors(Exception?[] errors, int offset, List<BatchResultErrorEntry>? failed)
+    {
+        foreach (var entry in failed ?? [])
         {
-            throw new MessageBusException($"Could not change the visibility of message {delivery.MessageId} from {Source}: {ex.Message}", ex);
+            if (!Int32.TryParse(entry.Id, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) || offset + index >= errors.Length)
+                continue;
+
+            errors[offset + index] = new AmazonSQSException(entry.Message ?? entry.Code)
+            {
+                ErrorCode = entry.Code,
+                ErrorType = entry.SenderFault == true ? ErrorType.Sender : ErrorType.Receiver
+            };
         }
     }
 
