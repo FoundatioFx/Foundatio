@@ -42,8 +42,8 @@ public sealed record TransportCapabilities
 
     /// <summary>
     /// The longest delay <see cref="IMessageReceiver.AbandonAsync"/> honours. Longer retry delays are shortened; with
-    /// <see cref="TimeSpan.Zero"/>, Foundatio holds the message (and keeps renewing it) for the backoff and then
-    /// abandons it without a delay. Defaults to <see cref="MaxDelay"/>.
+    /// <see cref="TimeSpan.Zero"/>, Foundatio holds the message (and keeps renewing it) for the backoff, giving its
+    /// handler slot to other messages, and then abandons it without a delay. Defaults to <see cref="MaxDelay"/>.
     /// </summary>
     public TimeSpan? MaxRetryDelay
     {
@@ -58,9 +58,9 @@ public sealed record TransportCapabilities
     /// <summary>
     /// The shortest delay <see cref="IMessageReceiver.AbandonAsync"/> honours accurately, for brokers whose delays are
     /// coarse (SQS visibility timeouts are whole seconds). Foundatio lengthens a shorter retry delay to this one when
-    /// it is within a fifth of it, and holds shorter ones in-process, keeping the delivery leased, then abandons it
-    /// without a delay. A crash during the hold delivers the message again sooner; it is never lost. Defaults to
-    /// <see cref="TimeSpan.Zero"/>.
+    /// it is within a fifth of it, and holds shorter ones in-process, keeping the delivery leased while its handler
+    /// slot goes to other messages, then abandons it without a delay. A crash during the hold delivers the message
+    /// again sooner; it is never lost. Defaults to <see cref="TimeSpan.Zero"/>.
     /// </summary>
     public TimeSpan MinRetryDelay { get; init; }
 

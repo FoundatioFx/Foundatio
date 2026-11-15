@@ -157,6 +157,25 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task WaitForIdleAsync_WhileARetryIsHeldInProcess_WaitsForTheRetry()
+    {
+        int attempts = 0;
+        var retries = new RetryPolicy { MaxAttempts = 2, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(300)) };
+        var host = await StartHarnessAsync(o => o.TransportCapabilities = new TransportCapabilities { MaxRetryDelay = TimeSpan.Zero },
+            services => services.AddFoundatioMessaging(m => m.AddConsumer<ShipOrder>((_, context, _) =>
+            {
+                Interlocked.Increment(ref attempts);
+                return context.Attempt == 1 ? throw new InvalidOperationException("transient") : Task.CompletedTask;
+            }, new HandlerOptions { RetryPolicy = retries })));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new ShipOrder(7), cancellationToken: TestCancellationToken);
+        await harness.WaitForIdleAsync(cancellationToken: TestCancellationToken);
+
+        Assert.Equal(2, Volatile.Read(ref attempts));
+    }
+
+    [Fact]
     public async Task WaitForIdleAsync_WhenTheHostWasNotStarted_SaysSo()
     {
         var host = BuildApp();
@@ -311,11 +330,12 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         Assert.Throws<ArgumentException>(() => services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities { MaxReceiveBatchSize = 0 }));
     }
 
-    private async Task<IHost> StartHarnessAsync(Action<FoundatioTestHarnessOptions>? configure = null)
+    private async Task<IHost> StartHarnessAsync(Action<FoundatioTestHarnessOptions>? configure = null, Action<IServiceCollection>? configureTest = null)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.ClearProviders().AddTestLogger(_output);
         builder.Services.AddOrdersApp();
+        configureTest?.Invoke(builder.Services);
         builder.Services.AddFoundatioTestHarness(configure);
         var host = builder.Build();
         _hosts.Add(host);

@@ -27,6 +27,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private readonly ReceiverOptions _receiverOptions;
     private readonly LeaseRenewer _renewer;
     private readonly SemaphoreSlim _slots;
+    private readonly RetryHolds _holds;
     private readonly ReceiveBackoff _backoff;
     private readonly int _maxBatch;
     private readonly int _concurrentReceives;
@@ -58,6 +59,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         _receiverOptions = new ReceiverOptions { LeaseDuration = lease, PrefetchCount = settings.MaxConcurrency };
         _renewer = new LeaseRenewer(lease, capabilities.LeaseExpiration, timeProvider, _logger);
         _slots = new SemaphoreSlim(settings.MaxConcurrency, settings.MaxConcurrency);
+        _holds = new RetryHolds(settings.MaxConcurrency, timeProvider, _stopReceiving.Token, ReleaseSlots);
         _backoff = new ReceiveBackoff(timeProvider);
 
         // Enough receives to fill every slot, as far as the transport allows: full batches and one for the rest.
@@ -71,6 +73,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
     /// <summary>Read by health checks. Receive errors are recorded here; they never stop the processor.</summary>
     public ProcessingStatusTracker Status { get; }
 
+    /// <summary>Unsettled deliveries, including retries held in-process, with or without their handler slots.</summary>
     public int InFlight => Volatile.Read(ref _inFlight);
 
     public ProcessingStatus GetStatus() => Status.GetStatus(Source.ToString(), InFlight);
@@ -281,7 +284,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
                 var deliveries = new MessageDelivery[messages.Count];
                 for (int i = 0; i < messages.Count; i++)
-                    deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer);
+                    deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer, _holds);
 
                 _renewer.Track(deliveries);
                 foreach (var sequence in SplitIntoSequences(deliveries))
@@ -328,6 +331,13 @@ internal sealed class MessageProcessor : IAsyncDisposable
     }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private void ReleaseSlots(int count)
+    {
+        _slots.Release(count);
+        if (_slots.CurrentCount >= _maxBatch)
+            SignalRoom();
+    }
 
     /// <summary>
     /// Lets the failed receiver's in-flight messages finish (up to the replace timeout), disposes it and opens a new
@@ -425,11 +435,16 @@ internal sealed class MessageProcessor : IAsyncDisposable
         return sequences;
     }
 
+    /// <summary>
+    /// Handles a sequence's deliveries one after another. Each holds a handler slot until it is settled, unless a retry
+    /// hold gave the slots of the rest of the sequence to other messages (see <see cref="RetryHolds"/>).
+    /// </summary>
     private async Task ProcessSequenceAsync(List<MessageDelivery> sequence)
     {
-        bool release = false;
-        foreach (var delivery in sequence)
+        bool release = false, holdsSlots = true;
+        for (int i = 0; i < sequence.Count; i++)
         {
+            var delivery = sequence[i];
             try
             {
                 if (delivery.IsLeaseLost)
@@ -450,6 +465,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     continue;
                 }
 
+                delivery.SequenceSlots = sequence.Count - i;
                 release = !await _handler.HandleAsync(delivery, _abortHandlers.Token).AnyContext() && sequence.Count > 1;
             }
             catch (Exception ex)
@@ -459,11 +475,13 @@ internal sealed class MessageProcessor : IAsyncDisposable
             }
             finally
             {
+                holdsSlots &= !delivery.SlotsReleased;
                 await delivery.StopRenewingAsync().AnyContext();
                 Interlocked.Decrement(ref _inFlight);
-                _slots.Release();
-                if (_slots.CurrentCount >= _maxBatch)
-                    SignalRoom();
+                if (holdsSlots)
+                    ReleaseSlots(1);
+                else
+                    _holds.Leave();
             }
         }
     }

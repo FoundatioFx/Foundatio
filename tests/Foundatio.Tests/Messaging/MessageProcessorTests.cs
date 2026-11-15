@@ -22,6 +22,7 @@ namespace Foundatio.Tests.Messaging;
 public class MessageProcessorTests : TestWithLoggingBase
 {
     private static readonly TimeSpan ShortLease = TimeSpan.FromSeconds(1);
+    private static readonly RetryPolicy LongRetries = new() { Delay = RetryPolicy.Fixed(TimeSpan.FromMinutes(1)) };
     private readonly InMemoryMessageTransport _transport = new();
 
     public MessageProcessorTests(ITestOutputHelper output) : base(output)
@@ -207,6 +208,138 @@ public class MessageProcessorTests : TestWithLoggingBase
             string reason = deadLetter.Headers[KnownHeaders.DeadLetterReason];
             Assert.InRange(Encoding.UTF8.GetByteCount(reason), 100, 1024);
         }
+    }
+
+    [Fact]
+    public async Task RetryHold_WhenTheTransportCannotDelayRetries_GivesTheSlotToOtherMessagesAndKeepsTheLease()
+    {
+        var source = MessageSource.Queue(QueueName<RenewedCommand>());
+        int renewals = 0;
+        var settled = new ConcurrentQueue<(string Operation, string MessageId)>();
+        var transport = new InterceptingMessageTransport(_transport, WithoutRetryDelays())
+        {
+            OnRenew = (message, _) =>
+            {
+                if (message.MessageId == "held")
+                    Interlocked.Increment(ref renewals);
+
+                return Task.CompletedTask;
+            },
+            OnSettle = (operation, message) => settled.Enqueue((operation, message.MessageId))
+        };
+        var handled = new ConcurrentQueue<(int Id, int Attempt)>();
+        var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((message, context, _) =>
+        {
+            handled.Enqueue((message.Id, context.Attempt));
+            return message.Id == 0 ? throw new InvalidOperationException("transient") : Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 1, LeaseDuration = ShortLease, RetryPolicy = LongRetries }));
+        var status = consumer.Services.GetRequiredService<MessagingStatus>();
+
+        await consumer.Client.SendAsync(new RenewedCommand(0), new SendOptions { MessageId = "held" }, TestCancellationToken);
+        await consumer.Client.SendBatchAsync(Enumerable.Range(1, 3).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => handled.Count == 4 && Volatile.Read(ref renewals) >= 3, TimeSpan.FromSeconds(10));
+
+        Assert.Equal([(0, 1), (1, 1), (2, 1), (3, 1)], handled);
+        Assert.DoesNotContain(settled, s => s.MessageId == "held");
+        Assert.Equal(1, _transport.GetMessageCount(source));
+        Assert.Equal(1, status.GetProcessors().Single().Active);
+
+        var stopwatch = Stopwatch.StartNew();
+        await consumer.DisposeAsync();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(4), $"Stopping took {stopwatch.Elapsed}; a held retry is released at once, not waited out.");
+        Assert.Contains(("abandon", "held"), settled);
+        Assert.Equal(1, _transport.GetMessageCount(source));
+    }
+
+    [Fact]
+    public async Task RetryHold_WhenTheHoldingSetIsFull_HoldsFurtherRetriesInTheirSlots()
+    {
+        const int maxConcurrency = 2, healthy = 3;
+        const int failing = maxConcurrency * (RetryHolds.HoldsPerSlot + 1);
+        var source = MessageSource.Queue(QueueName<RenewedCommand>());
+        var transport = new InterceptingMessageTransport(_transport, WithoutRetryDelays());
+        int failures = 0, succeeded = 0;
+        var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((message, _, _) =>
+        {
+            if (message.Id < failing)
+            {
+                Interlocked.Increment(ref failures);
+                throw new InvalidOperationException("transient");
+            }
+
+            Interlocked.Increment(ref succeeded);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = maxConcurrency, RetryPolicy = LongRetries }));
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, failing + healthy).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref failures) == failing, TimeSpan.FromSeconds(10));
+
+        var stats = await _transport.GetStatsAsync(source, TestCancellationToken);
+        Assert.Equal(((long)healthy, (long)failing), (stats!.Queued, stats.InFlight));
+        Assert.Equal(0, Volatile.Read(ref succeeded));
+
+        var stopwatch = Stopwatch.StartNew();
+        await consumer.DisposeAsync();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(4), $"Stopping took {stopwatch.Elapsed}; held retries are released at once, not waited out.");
+        stats = await _transport.GetStatsAsync(source, TestCancellationToken);
+        Assert.Equal(((long)(failing + healthy), 0L), (stats!.Queued, stats.InFlight));
+    }
+
+    [Fact]
+    public async Task RetryHold_InAnOrderedGroup_KeepsTheGroupsLaterMessagesBehindItAndFreesTheirSlots()
+    {
+        var transport = new InterceptingMessageTransport(_transport, WithoutRetryDelays());
+        var calls = new ConcurrentQueue<(int Id, int Attempt)>();
+        var consumer = await StartAsync(transport, m => m.AddConsumer<GroupedCommand>((message, context, _) =>
+        {
+            calls.Enqueue((message.Id, context.Attempt));
+            return message.Id == 1 && context.Attempt == 1 ? throw new InvalidOperationException("transient") : Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 3, RetryPolicy = LongRetries }));
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(1, 3).Select(i => new GroupedCommand(i)), new SendOptions { GroupKey = "customer-1" }, TestCancellationToken);
+        await consumer.Client.SendBatchAsync(Enumerable.Range(10, 3).Select(i => new GroupedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => calls.Count == 4, TimeSpan.FromSeconds(10));
+        Assert.Equal([(1, 1), (10, 1), (11, 1), (12, 1)], calls.OrderBy(c => c.Id));
+
+        await consumer.DisposeAsync();
+        calls.Clear();
+        await using var next = await StartAsync(_transport, m => m.AddConsumer<GroupedCommand>((message, context, _) =>
+        {
+            calls.Enqueue((message.Id, context.Attempt));
+            return Task.CompletedTask;
+        }));
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.Equal([(1, 2), (2, 2), (3, 2)], calls);
+    }
+
+    [Fact]
+    public async Task RetryHold_WhenTheLeaseIsLostDuringTheHold_EndsTheHoldWithoutSettling()
+    {
+        bool revoked = false;
+        var settled = new ConcurrentQueue<string>();
+        var transport = new InterceptingMessageTransport(_transport, WithoutRetryDelays() with { LeaseExpiration = false })
+        {
+            OnRenew = (_, _) => Volatile.Read(ref revoked) ? throw new MessageLeaseLostException("The partition was revoked") : Task.CompletedTask,
+            OnSettle = (operation, _) => settled.Enqueue(operation)
+        };
+        int attempts = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new InvalidOperationException("transient");
+        }, new HandlerOptions { RetryPolicy = LongRetries }));
+        var status = consumer.Services.GetRequiredService<MessagingStatus>();
+
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref attempts) == 1 && status.GetProcessors().Single().Active == 1, TimeSpan.FromSeconds(10));
+        Volatile.Write(ref revoked, true);
+        await WaitForAsync(() => status.GetProcessors().Single().Active == 0, TimeSpan.FromSeconds(10));
+
+        Assert.Empty(settled);
+        Assert.Equal(1, Volatile.Read(ref attempts));
     }
 
     [Theory]
@@ -453,6 +586,8 @@ public class MessageProcessorTests : TestWithLoggingBase
 
     private static TransportCapabilities ConcurrentReceiveCapabilities(int maxConcurrentReceives)
         => new InMemoryMessageTransport().Capabilities with { MaxReceiveBatchSize = 10, MaxConcurrentReceives = maxConcurrentReceives };
+
+    private static TransportCapabilities WithoutRetryDelays() => new InMemoryMessageTransport().Capabilities with { MaxRetryDelay = TimeSpan.Zero };
 
     private static void InterlockedMax(ref int target, int value)
     {

@@ -239,12 +239,8 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
 
         if (delay > TimeSpan.Zero && (maxDelay == TimeSpan.Zero || delay < minDelay))
         {
-            // The broker can't delay this retry (accurately): hold the lease, still renewed, for the backoff, then release at once.
             // A lease lost meanwhile ends the hold, and the message is not released: another consumer may have it.
-            delivery.ResumeRenewing();
-            using var hold = CancellationTokenSource.CreateLinkedTokenSource(abortToken);
-            delivery.AttachHandler(hold);
-            await _runtime.TimeProvider.SafeDelay(delay, hold.Token).AnyContext();
+            await delivery.HoldAsync(delay, abortToken).AnyContext();
             if (delivery.IsLeaseLost)
                 return;
 

@@ -198,6 +198,8 @@ m.AddConsumer<ImportHandler>(new HandlerOptions
 });
 ```
 
+A retry waits on the broker when it can delay it. When it can't (Kafka or RabbitMQ without delayed delivery, or a delay under the transport's `MinRetryDelay`, such as SQS's whole seconds), Foundatio holds the message in-process for the backoff. The message stays leased, and other messages use its handler slot meanwhile. At most 10 × `MaxConcurrency` messages per handler are held that way; further retries keep their slots until the backoff ends. A delay within 20% of `MinRetryDelay` is lengthened to it instead, so the default policy's first retry (about 1s) waits on the broker. Stopping the host releases held messages at once.
+
 Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent.
 
 ## Reporting progress

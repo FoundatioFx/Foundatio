@@ -17,14 +17,16 @@ internal sealed class MessageDelivery
     public static readonly TimeSpan SettleTimeout = TimeSpan.FromSeconds(15);
 
     private readonly LeaseRenewer _renewer;
+    private readonly RetryHolds _holds;
     private CancellationTokenSource? _handlerCancellation;
     private int _leaseLost;
 
-    public MessageDelivery(IMessageReceiver receiver, IncomingMessage message, LeaseRenewer renewer)
+    public MessageDelivery(IMessageReceiver receiver, IncomingMessage message, LeaseRenewer renewer, RetryHolds holds)
     {
         Receiver = receiver;
         Message = message;
         _renewer = renewer;
+        _holds = holds;
     }
 
     public IMessageReceiver Receiver { get; }
@@ -41,6 +43,15 @@ internal sealed class MessageDelivery
     internal int RenewalFailures { get; set; }
     internal Task? Renewal { get; set; }
     internal CancellationTokenSource? RenewalCancellation { get; set; }
+
+    /// <summary>
+    /// Set by the processor before the delivery is handled: the handler slots its sequence still holds, its own and one
+    /// for each later message of its group in the batch.
+    /// </summary>
+    internal int SequenceSlots { get; set; }
+
+    /// <summary>True once a retry hold gave the slots in <see cref="SequenceSlots"/> to other messages.</summary>
+    internal bool SlotsReleased { get; set; }
 
     /// <summary>Cancels <paramref name="handlerCancellation"/> if the lease is lost while the handler runs.</summary>
     public void AttachHandler(CancellationTokenSource handlerCancellation)
@@ -62,6 +73,13 @@ internal sealed class MessageDelivery
 
     /// <summary>Renews again, starting at once, for example to hold the message in-process after a settlement failed.</summary>
     public void ResumeRenewing() => _renewer.Track(this, renewNow: true);
+
+    /// <summary>
+    /// Holds the message in-process for <paramref name="delay"/>, leased and renewed, for a retry the broker cannot
+    /// delay; meanwhile its handler slot goes to other messages if the processor has room for another hold. Ends early
+    /// when the lease is lost, when <paramref name="abortToken"/> is cancelled or when the processor stops.
+    /// </summary>
+    public Task HoldAsync(TimeSpan delay, CancellationToken abortToken) => _holds.HoldAsync(this, delay, abortToken);
 
     /// <summary>
     /// Stops renewing, then settles on a token that is never the handler's. Returns null when it settled, or the error,
