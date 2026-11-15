@@ -1052,9 +1052,11 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ListAddAsync_WithUnchangedLargeBatch_ReusesStoredList(bool finiteExpiration)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WithUnchangedLargeBatch_ReusesStoredList(bool finiteExpiration, bool removeInteriorValues)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
@@ -1063,6 +1065,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         await cache.ListAddAsync("list", values, ttl);
         await cache.ListAddAsync("list", [-1], ttl);
         await cache.ListRemoveAsync("list", [-1]);
+        if (removeInteriorValues)
+        {
+            int[] removed = [0, 31, 32, 1024];
+            await cache.ListRemoveAsync("list", removed);
+            values = values.Except(removed).ToArray();
+        }
         await cache.ListAddAsync("list", values, ttl);
         await cache.ListRemoveAsync("missing", values);
         var previous = GetEntry(cache, "list");
@@ -1071,8 +1079,10 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         await cache.ListRemoveAsync("missing", values);
         long deduplicationAllocation = GC.GetAllocatedBytesForCurrentThread() - before;
         cache.ResetStats();
-        clock.Advance(TimeSpan.FromSeconds(1));
-        TimeSpan? remainingTtl = ttl - TimeSpan.FromSeconds(1);
+        // Keep maintenance outside the allocation measurement.
+        var elapsed = TimeSpan.FromMilliseconds(1);
+        clock.Advance(elapsed);
+        TimeSpan? remainingTtl = ttl - elapsed;
 
         before = GC.GetAllocatedBytesForCurrentThread();
         long added = await cache.ListAddAsync("list", values, remainingTtl);
@@ -1095,28 +1105,201 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal(TimeSpan.FromMinutes(2), await cache.GetExpirationAsync("list"));
     }
 
-    [Fact]
-    public async Task ListAddAsync_WhenPrivateListIsRemovedDuringUpdate_PreparesANewEntryOnRetry()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WithEqualSizeChangedBatch_PreservesEveryUpdate(bool changeLastMember, bool changeExpiration)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        int[] values = Enumerable.Range(0, 128).ToArray();
+        var ttl = TimeSpan.FromMinutes(1);
+        var expiresAt = clock.GetUtcNow().UtcDateTime.Add(ttl);
+        await cache.ListAddAsync("list", values, ttl);
+        await cache.ListAddAsync("list", [-1], ttl);
+        await cache.ListRemoveAsync("list", [-1]);
+        var previous = GetEntry(cache, "list");
+        int[] batch = values.ToArray();
+        if (changeLastMember)
+            batch[^1] = values.Length;
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var updatedTtl = changeExpiration ? TimeSpan.FromMinutes(2) : ttl - TimeSpan.FromSeconds(1);
+        var updatedExpiration = clock.GetUtcNow().UtcDateTime.Add(updatedTtl);
+        var expected = values.ToDictionary(value => value, _ => (DateTime?)expiresAt);
+        foreach (int value in batch)
+            expected[value] = updatedExpiration;
+        cache.ResetStats();
+
+        Assert.Equal(batch.Length, await cache.ListAddAsync("list", batch, updatedTtl));
+
+        var current = GetEntry(cache, "list");
+        Assert.NotSame(previous.StoredValue, current.StoredValue);
+        Assert.Equal(previous.InstanceNumber, current.InstanceNumber);
+        Assert.Equal(clock.GetUtcNow().Ticks, current.LastModifiedTicks);
+        Assert.Equal(1, cache.Writes);
+        Assert.Equal(expected.Keys, (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(expected, (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value);
+        Assert.Equal(updatedTtl, await cache.GetExpirationAsync("list"));
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithEqualSizeCaseEquivalentBatch_PreservesStoredComparerAndKeys()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        string[] values = Enumerable.Range(0, 128).Select(value => $"ITEM-{value:D4}").ToArray();
+        var expected = values.ToDictionary(value => value, _ => (DateTime?)null, StringComparer.OrdinalIgnoreCase);
+        await cache.SetAsync("list", expected);
+        await cache.ListAddAsync("list", ["outside"]);
+        await cache.ListRemoveAsync("list", ["outside"]);
+        var previous = GetEntry(cache, "list");
+        string[] batch = values.Select(value => value.ToLowerInvariant()).ToArray();
+
+        Assert.Equal(batch.Length, await cache.ListAddAsync("list", batch));
+
+        Assert.Same(previous.StoredValue, GetEntry(cache, "list").StoredValue);
+        Assert.Equal(values, (await cache.GetListAsync<string>("list")).Value);
+        var current = (await cache.GetAsync<Dictionary<string, DateTime?>>("list")).Value;
+        Assert.Same(StringComparer.OrdinalIgnoreCase, current.Comparer);
+        Assert.Equal(expected, current);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WhenEqualSizeBatchLookupChangesEntry_RechecksCurrentEntry(bool expireIncumbent)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        var previousCallback = ReentrantHashListItem.OnHash.Value;
+        using var restoreCallback = new DisposableAction(() => ReentrantHashListItem.OnHash.Value = previousCallback);
+        var values = Enumerable.Range(0, 128).Select(value => new ReentrantHashListItem(value)).ToArray();
+        var ttl = TimeSpan.FromMinutes(1);
+        await cache.ListAddAsync("list", values, ttl);
+        await cache.ListAddAsync("list", [new ReentrantHashListItem(-1)], ttl);
+        await cache.ListRemoveAsync("list", [new ReentrantHashListItem(-1)]);
+        var previous = GetEntry(cache, "list");
+        InMemoryCacheClient.CacheEntry? competingEntry = null;
+        bool changedDuringLookup = false;
+        int enumerations = 0;
+        cache.ResetStats();
+
+        long added = await cache.ListAddAsync("list", GetValues(), ttl);
+
+        Assert.True(changedDuringLookup);
+        Assert.Equal(1, enumerations);
+        Assert.Equal(1, cache.Writes);
+        Assert.Equal(expireIncumbent ? 0 : values.Length, added);
+        if (expireIncumbent)
+        {
+            Assert.False(await cache.ExistsAsync("list"));
+        }
+        else
+        {
+            var current = GetEntry(cache, "list");
+            Assert.NotNull(competingEntry);
+            Assert.Equal(competingEntry.InstanceNumber, current.InstanceNumber);
+            Assert.NotEqual(previous.InstanceNumber, current.InstanceNumber);
+            Assert.Equal(Enumerable.Range(0, values.Length).Prepend(-2),
+                (await cache.GetListAsync<ReentrantHashListItem>("list")).Value.Select(value => value.Id));
+            Assert.Equal(TimeSpan.FromMinutes(2), await cache.GetExpirationAsync("list"));
+        }
+
+        IEnumerable<ReentrantHashListItem> GetValues()
+        {
+            Assert.Equal(1, ++enumerations);
+            foreach (var value in values)
+                yield return value;
+            yield return values[0];
+            yield return null!;
+            ReentrantHashListItem.OnHash.Value = () =>
+            {
+                changedDuringLookup = true;
+                if (expireIncumbent)
+                {
+                    clock.Advance(TimeSpan.FromMinutes(2));
+                }
+                else
+                {
+                    var replacement = new Dictionary<ReentrantHashListItem, DateTime?>
+                    {
+                        [new ReentrantHashListItem(-2)] = clock.GetUtcNow().UtcDateTime.AddMinutes(2)
+                    };
+                    competingEntry = CreateEntry(replacement, clock, TimeSpan.FromMinutes(2));
+                    Publish(cache, "list", competingEntry);
+                }
+            };
+        }
+    }
+
+    private sealed class ReentrantHashListItem(int id) : IEquatable<ReentrantHashListItem>
+    {
+        public static readonly AsyncLocal<Action?> OnHash = new();
+        public int Id { get; } = id;
+        public bool Equals(ReentrantHashListItem? other) => other?.Id == Id;
+        public override bool Equals(object? other) => other is ReentrantHashListItem item && Equals(item);
+
+        public override int GetHashCode()
+        {
+            var callback = OnHash.Value;
+            OnHash.Value = null;
+            callback?.Invoke();
+            return Id;
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(true, 1)]
+    [InlineData(true, 2)]
+    public async Task ListAddAsync_WhenPrivateListIsRemovedDuringUpdate_PreparesANewEntryOnRetry(bool hashSetInput, int sizing)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(false).TimeProvider(clock);
+            return sizing switch
+            {
+                1 => o.WithFixedSizing(100_000_000, 64),
+                2 => o.WithDynamicSizing(100_000_000, Log),
+                _ => o
+            };
+        });
         var comparer = new CallbackListComparer();
         await cache.SetAsync("list", Enumerable.Range(0, 64).ToDictionary(key => key, _ => (DateTime?)null, comparer));
         await cache.ListAddAsync("list", [0]);
         await cache.ListAddAsync("list", [-1]);
         await cache.ListRemoveAsync("list", [-1]);
         bool removedDuringUpdate = false;
-        comparer.OnHash = () => removedDuringUpdate = cache.UpdateEntry("list", _ => ((InMemoryCacheClient.CacheEntry?)null, true));
+        HashSet<int> callerValues = [100, 101];
+        comparer.OnHash = () =>
+        {
+            removedDuringUpdate = cache.UpdateEntry("list", _ => ((InMemoryCacheClient.CacheEntry?)null, true));
+            callerValues.Clear();
+            callerValues.Add(999);
+        };
         int enumerations = 0;
         cache.ResetStats();
 
-        Assert.Equal(2, await cache.ListAddAsync("list", GetValues(), TimeSpan.FromMinutes(1)));
+        Assert.Equal(2, await cache.ListAddAsync("list", hashSetInput ? callerValues : GetValues(), TimeSpan.FromMinutes(1)));
 
         Assert.True(removedDuringUpdate);
-        Assert.Equal(1, enumerations);
+        Assert.Equal(hashSetInput ? 0 : 1, enumerations);
+        Assert.Equal([999], callerValues);
         Assert.Equal(1, cache.Writes);
         Assert.Equal(new[] { 100, 101 }, (await cache.GetListAsync<int>("list")).Value);
         Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("list"));
+        if (sizing == 2)
+        {
+            using var calculator = new SizeCalculator(Log);
+            Assert.Equal(calculator.CalculateSize((await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value), cache.CurrentMemorySize);
+        }
+        else
+        {
+            Assert.Equal(sizing == 1 ? 64 : 0, cache.CurrentMemorySize);
+        }
 
         IEnumerable<int> GetValues()
         {
@@ -1168,6 +1351,91 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             OnHash = null;
             callback?.Invoke();
             return value;
+        }
+    }
+
+    [Fact]
+    public async Task ListRemoveAsync_WithDefaultHashSetInput_AllocatesOnlyAPrivateSnapshot()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+            .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
+        var values = new HashSet<int>(Enumerable.Range(0, 10_000).ToArray());
+        await cache.ListRemoveAsync("missing", values);
+        var warmCopy = new HashSet<int>(values);
+        GC.KeepAlive(warmCopy);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var copy = new HashSet<int>(values);
+        long copyAllocation = GC.GetAllocatedBytesForCurrentThread() - before;
+        GC.KeepAlive(copy);
+        before = GC.GetAllocatedBytesForCurrentThread();
+        long removed = await cache.ListRemoveAsync("missing", values);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, removed);
+        Assert.True(allocated <= copyAllocation + 4096,
+            $"An already distinct input should need only a private snapshot: remove={allocated}, copy={copyAllocation} bytes.");
+        Assert.Equal(Enumerable.Range(0, 10_000), values.ToArray());
+    }
+
+    [Fact]
+    public async Task ListUpdate_WithDefaultHashSetInput_FiltersNullsWithoutChangingCallerOrder()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        HashSet<string> values = [null!, "one", "two", "three"];
+        values.Remove("two");
+        values.Add("four");
+        string[] original = values.ToArray();
+        string[] expected = values.Where(value => value is not null).ToArray();
+
+        Assert.Equal(expected.Length, await cache.ListAddAsync("list", values));
+        Assert.Equal(expected, (await cache.GetListAsync<string>("list")).Value);
+        Assert.Equal(original, values);
+        Assert.Equal(expected.Length, await cache.ListRemoveAsync("list", values));
+        Assert.Equal(original, values);
+        Assert.False(await cache.ExistsAsync("list"));
+    }
+
+    [Fact]
+    public async Task ListUpdate_WithDifferentHashSetComparer_DeduplicatesUsingDefaultEquality()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        string first = new('x', 1);
+        var values = new HashSet<string>(ReferenceEqualityComparer.Instance) { first, new('x', 1), "other" };
+        Assert.Equal(3, values.Count);
+
+        Assert.Equal(2, await cache.ListAddAsync("list", values));
+
+        var stored = (await cache.GetListAsync<string>("list")).Value;
+        Assert.Equal(["x", "other"], stored);
+        Assert.Same(first, stored.First());
+        Assert.Equal(2, await cache.ListRemoveAsync("list", values));
+        Assert.Equal(3, values.Count);
+        Assert.False(await cache.ExistsAsync("list"));
+    }
+
+    [Fact]
+    public async Task ListUpdate_WithHashSetSubclass_UsesItsEnumerationOnce()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        var values = new EnumeratingListHashSet { 1, 2, 3 };
+
+        Assert.Equal(2, await cache.ListAddAsync("list", values));
+        Assert.Equal(1, values.Enumerations);
+        Assert.Equal([20, 30], (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(2, await cache.ListRemoveAsync("list", values));
+        Assert.Equal(2, values.Enumerations);
+        Assert.False(await cache.ExistsAsync("list"));
+    }
+
+    private sealed class EnumeratingListHashSet : HashSet<int>, IEnumerable<int>
+    {
+        public int Enumerations { get; private set; }
+
+        IEnumerator<int> IEnumerable<int>.GetEnumerator()
+        {
+            Enumerations++;
+            return ((IEnumerable<int>)new[] { 20, 20, 30 }).GetEnumerator();
         }
     }
 
@@ -3457,6 +3725,161 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithUnchangedNativeSizedBatch_AvoidsPreparingUnusedStorage(bool dynamicSizing)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(false).TimeProvider(clock);
+            return dynamicSizing ? o.WithDynamicSizing(100_000_000, Log) : o.WithFixedSizing(100_000_000, 64);
+        });
+        var values = new HashSet<int>(Enumerable.Range(0, 10_000).ToArray());
+        var ttl = TimeSpan.FromMinutes(1);
+        await cache.ListAddAsync("list", values, ttl);
+        await cache.ListAddAsync("list", values, ttl);
+        await cache.ListRemoveAsync("missing", values);
+        var previous = GetEntry(cache, "list");
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        await cache.ListRemoveAsync("missing", values);
+        long deduplicationAllocation = GC.GetAllocatedBytesForCurrentThread() - before;
+        var elapsed = TimeSpan.FromMilliseconds(1);
+        clock.Advance(elapsed);
+        before = GC.GetAllocatedBytesForCurrentThread();
+        long added = await cache.ListAddAsync("list", values, ttl - elapsed);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(values.Count, added);
+        Assert.True(allocated <= deduplicationAllocation + 65_536,
+            $"An unchanged sized batch should allocate only for input capture and size sampling: add={allocated}, deduplication={deduplicationAllocation} bytes.");
+        var current = GetEntry(cache, "list");
+        Assert.Same(previous.StoredValue, current.StoredValue);
+        Assert.Equal(previous.Size, current.Size);
+        Assert.Equal(previous.Size, cache.CurrentMemorySize);
+        Assert.Equal(ttl - elapsed, await cache.GetExpirationAsync("list"));
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithBuiltInSizingConverter_PreservesInputAndStoredSampleOrder()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
+        var values = Enumerable.Range(0, 1024).Select(id => new ConverterListItem { Id = id, Values = [id] }).ToArray();
+        await cache.ListAddAsync("list", values);
+        var previous = GetEntry(cache, "list");
+        var batch = values.Reverse().ToArray();
+        int[] hashes = values.Select(value => value.GetHashCode()).ToArray();
+        var sampled = new List<int>();
+        var previousCallback = ConverterListItemConverter.OnWrite.Value;
+        using var restoreCallback = new DisposableAction(() => ConverterListItemConverter.OnWrite.Value = previousCallback);
+        ConverterListItemConverter.OnWrite.Value = value =>
+        {
+            sampled.Add(value.Id);
+            value.Values.Add(42);
+        };
+
+        Assert.Equal(batch.Length, await cache.ListAddAsync("list", batch));
+
+        Assert.Equal(batch.Take(50).Concat(values.Take(50)).Select(value => value.Id), sampled);
+        Assert.Equal(hashes, values.Select(value => value.GetHashCode()));
+        Assert.All(values, value => Assert.Equal(sampled.Contains(value.Id) ? 2 : 1, value.Values.Count));
+        Assert.Same(previous.StoredValue, GetEntry(cache, "list").StoredValue);
+        Assert.Equal(previous.Size, cache.CurrentMemorySize);
+        Assert.Equal(values, (await cache.GetListAsync<ConverterListItem>("list")).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WhenBuiltInSizingRetriesAsInsertion_ReusesValidatedInput(bool expireIncumbent)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var calculator = new SizeCalculator(Log);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
+        var values = Enumerable.Range(0, 64).Select(id => new ConverterListItem { Id = id, Values = [id] }).ToArray();
+        await cache.ListAddAsync("list", values, TimeSpan.FromMinutes(1));
+        var added = new ConverterListItem { Id = 100, Values = [100] };
+        long inputSize = calculator.CalculateSize(new Dictionary<ConverterListItem, DateTime?> { [added] = null });
+        int inputSamples = 0;
+        bool changedDuringSizing = false;
+        Task<bool>? removal = null;
+        var previousCallback = ConverterListItemConverter.OnWrite.Value;
+        using var restoreCallback = new DisposableAction(() => ConverterListItemConverter.OnWrite.Value = previousCallback);
+        ConverterListItemConverter.OnWrite.Value = value =>
+        {
+            if (ReferenceEquals(value, added))
+            {
+                inputSamples++;
+                value.Values.Add(42);
+            }
+            else if (!changedDuringSizing)
+            {
+                changedDuringSizing = true;
+                if (expireIncumbent)
+                    clock.Advance(TimeSpan.FromMinutes(2));
+                else
+                    removal = cache.RemoveAsync("list");
+            }
+        };
+
+        Assert.Equal(1, await cache.ListAddAsync("list", [added]));
+
+        Assert.True(changedDuringSizing);
+        Assert.Equal(1, inputSamples);
+        if (!expireIncumbent)
+        {
+            Assert.NotNull(removal);
+            Assert.True(await removal);
+        }
+        var current = Assert.Single((await cache.GetListAsync<ConverterListItem>("list")).Value);
+        Assert.Same(added, current);
+        Assert.Equal([100, 42], current.Values);
+        Assert.Equal(inputSize, cache.CurrentMemorySize);
+        Assert.Null(await cache.GetExpirationAsync("list"));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WithRejectedNativeSizedInput_PreservesEntryAndDictionaryDiagnostic(bool dynamicSizing, bool shouldThrow)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var calculator = new SizeCalculator(Log);
+        string[] values = Enumerable.Range(0, 100).Select(id => id < 50 ? $"item-{id:D4}" : $"{new string('x', 1000)}-{id:D4}").ToArray();
+        var stored = values.ToDictionary(value => value, _ => (DateTime?)null);
+        long size = calculator.CalculateSize(stored);
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(false).TimeProvider(clock).MaxEntrySize(size).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow);
+            return dynamicSizing ? o.WithDynamicSizing(100_000_000, Log) : o.WithFixedSizing(100_000_000, size + 1);
+        });
+        var previous = new InMemoryCacheClient.CacheEntry(stored, clock.GetUtcNow().UtcDateTime.AddMinutes(1), clock, shouldClone: false, size: size);
+        Publish(cache, "list", previous);
+        string[] batch = values.Reverse().ToArray();
+        cache.ResetStats();
+
+        if (shouldThrow)
+        {
+            var error = await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.ListAddAsync("list", batch));
+            Assert.Equal(typeof(Dictionary<string, DateTime?>).Name, error.EntryType);
+        }
+        else
+        {
+            Assert.Equal(0, await cache.ListAddAsync("list", batch));
+        }
+
+        Assert.Same(previous, GetEntry(cache, "list"));
+        Assert.Equal(0, cache.Writes);
+        Assert.Equal(size, cache.CurrentMemorySize);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("list"));
+        Assert.Equal(values, (await cache.GetListAsync<string>("list")).Value);
+    }
+
+    [Theory]
     [InlineData(31)]
     [InlineData(32)]
     [InlineData(33)]
@@ -4208,38 +4631,163 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ListAddAsync_WithClonedDictionarySubclass_IsolatesCallbacksAndPreservesType(bool rejectUpdate)
+    [InlineData(false, false, 2)]
+    [InlineData(false, true, 2)]
+    [InlineData(true, false, 2)]
+    [InlineData(true, true, 2)]
+    [InlineData(false, false, 40)]
+    [InlineData(false, true, 40)]
+    [InlineData(true, false, 40)]
+    [InlineData(true, true, 40)]
+    public async Task ListAddAsync_WithDictionarySubclass_PreservesTypeAndHonorsCloning(bool cloneValues, bool rejectUpdate, int count)
     {
         bool reject = false;
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).SizeCalculator(value =>
             {
-                int count = ((IDictionary<int, DateTime?>)value).Count;
-                return reject && count == 3 ? -1 : count;
+                int size = ((IDictionary<int, DateTime?>)value).Count;
+                return reject && size == count + 1 ? -1 : size;
             }));
-        var source = new ProbeCountingListDictionary { [1] = null, [2] = null };
+        var source = new ProbeCountingListDictionary();
+        foreach (int key in Enumerable.Range(0, count))
+            source[key] = null;
         await cache.SetAsync("list", source, TimeSpan.FromMinutes(1));
         var previous = (await cache.GetAsync<ProbeCountingListDictionary>("list")).Value;
         int sourceCountReads = source.CountReads;
         reject = rejectUpdate;
 
-        long added = await cache.ListAddAsync("list", [3], TimeSpan.FromMinutes(1));
+        long added = await cache.ListAddAsync("list", [count], TimeSpan.FromMinutes(1));
 
         var current = (await cache.GetAsync<ProbeCountingListDictionary>("list")).Value;
         Assert.Equal(rejectUpdate ? 0 : 1, added);
-        Assert.Equal(rejectUpdate ? [1, 2] : new[] { 1, 2, 3 }, current.Keys);
-        if (rejectUpdate)
+        Assert.Equal(Enumerable.Range(0, count + (rejectUpdate ? 0 : 1)), current.Keys);
+        Assert.Equal(Enumerable.Range(0, count), source.Keys);
+        Assert.Equal(Enumerable.Range(0, count), previous.Keys);
+        if (cloneValues)
         {
-            Assert.Equal(previous.CountReads, current.CountReads);
-            Assert.Equal(previous.Enumerations, current.Enumerations);
+            if (rejectUpdate)
+            {
+                Assert.Equal(previous.CountReads, current.CountReads);
+                Assert.Equal(previous.Enumerations, current.Enumerations);
+            }
+            Assert.Equal(sourceCountReads, source.CountReads);
+            Assert.Equal(0, source.Enumerations);
         }
-        Assert.Equal(sourceCountReads, source.CountReads);
-        Assert.Equal(0, source.Enumerations);
-        Assert.Equal(rejectUpdate ? 2 : 3, cache.CurrentMemorySize);
+        Assert.Equal(count + (rejectUpdate ? 0 : 1), cache.CurrentMemorySize);
         Assert.Equal(rejectUpdate ? TimeSpan.FromMinutes(1) : (TimeSpan?)null, await cache.GetExpirationAsync("list"));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    [InlineData(3, true)]
+    [InlineData(4, false)]
+    [InlineData(4, true)]
+    public async Task ListUpdate_WithUnclonedDictionarySubclass_PreservesSharedValuesAndOwnedStorage(int dictionaryType, bool remove)
+    {
+        bool reject = false;
+        IDictionary<SizingListItem, DateTime?>? proposal = null;
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log)
+            .MaxMemorySize(1000).SizeCalculator(value =>
+            {
+                var dictionary = (IDictionary<SizingListItem, DateTime?>)value;
+                if (dictionary.Count == (remove ? 39 : 41))
+                {
+                    proposal = dictionary;
+                    if (reject)
+                        return -1;
+                }
+                return dictionary.Count;
+            }));
+        var comparer = new SizingListItemComparer();
+        IDictionary<SizingListItem, DateTime?> source = dictionaryType switch
+        {
+            0 => new DerivedListDictionary(comparer),
+            1 => new DerivedSortedListDictionary(comparer),
+            2 => new DerivedSortedList(comparer),
+            3 => new DerivedConcurrentListDictionary(comparer),
+            _ => new DerivedOrderedListDictionary(comparer)
+        };
+        var keys = Enumerable.Range(0, 40).Select(id => new SizingListItem(id)).ToArray();
+        foreach (var key in keys)
+            source.Add(key, null);
+        var originalKeys = source.Keys;
+        var originalValues = source.Values;
+        await cache.SetAsync("list", source, TimeSpan.FromMinutes(1));
+        var addedKey = new SizingListItem(40);
+        reject = true;
+
+        Assert.Equal(0, remove
+            ? await cache.ListRemoveAsync("list", [keys[0]])
+            : await cache.ListAddAsync("list", [addedKey]));
+
+        Assert.NotNull(proposal);
+        Assert.IsType(source.GetType(), proposal);
+        Assert.Same(keys[1], proposal.Keys.Single(key => key.Id == 1));
+        proposal.Clear();
+        Assert.Same(source, (await cache.GetAsync<IDictionary<SizingListItem, DateTime?>>("list")).Value);
+        Assert.Equal(40, source.Count);
+        Assert.Equal(40, cache.CurrentMemorySize);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("list"));
+        reject = false;
+
+        Assert.Equal(1, remove
+            ? await cache.ListRemoveAsync("list", [keys[0]])
+            : await cache.ListAddAsync("list", [addedKey]));
+
+        var current = (await cache.GetAsync<IDictionary<SizingListItem, DateTime?>>("list")).Value;
+        Assert.IsType(source.GetType(), current);
+        Assert.Same(proposal, current);
+        Assert.NotSame(source, current);
+        if (source is DerivedListDictionary original)
+            Assert.Same(original.Metadata, Assert.IsType<DerivedListDictionary>(current).Metadata);
+        Assert.Same(comparer, current switch
+        {
+            Dictionary<SizingListItem, DateTime?> dictionary => dictionary.Comparer,
+            SortedDictionary<SizingListItem, DateTime?> dictionary => dictionary.Comparer,
+            SortedList<SizingListItem, DateTime?> dictionary => dictionary.Comparer,
+            ConcurrentDictionary<SizingListItem, DateTime?> dictionary => dictionary.Comparer,
+            OrderedDictionary<SizingListItem, DateTime?> dictionary => dictionary.Comparer,
+            _ => throw new NotSupportedException()
+        });
+        Assert.Same(keys[1], current.Keys.Single(key => key.Id == 1));
+        if (!remove)
+            Assert.Same(addedKey, current.Keys.Single(key => key.Id == 40));
+        Assert.Equal(remove ? 39 : 41, current.Count);
+        Assert.Equal(current.Count, current.Keys.Count);
+        Assert.Equal(current.Count, current.Values.Count);
+        Assert.Equal(current.Count, cache.CurrentMemorySize);
+        Assert.Null(await cache.GetExpirationAsync("list"));
+        Assert.Equal(40, originalKeys.Count);
+        Assert.Equal(40, originalValues.Count);
+        Assert.Equal(40, source.Count);
+        current.Clear();
+        Assert.Equal(40, source.Count);
+        Assert.Empty((await cache.GetListAsync<SizingListItem>("list")).Value);
+    }
+
+    private sealed class DerivedListDictionary(SizingListItemComparer comparer) : Dictionary<SizingListItem, DateTime?>(comparer)
+    {
+        public object Metadata { get; } = new();
+    }
+
+    private sealed class DerivedSortedListDictionary(SizingListItemComparer comparer) : SortedDictionary<SizingListItem, DateTime?>(comparer);
+    private sealed class DerivedSortedList(SizingListItemComparer comparer) : SortedList<SizingListItem, DateTime?>(comparer);
+    private sealed class DerivedConcurrentListDictionary(SizingListItemComparer comparer) : ConcurrentDictionary<SizingListItem, DateTime?>(comparer);
+    private sealed class DerivedOrderedListDictionary(SizingListItemComparer comparer) : OrderedDictionary<SizingListItem, DateTime?>(comparer);
+
+    private sealed class SizingListItemComparer : IEqualityComparer<SizingListItem>, IComparer<SizingListItem>
+    {
+        public bool Equals(SizingListItem? x, SizingListItem? y) => x?.Id == y?.Id;
+        public int GetHashCode(SizingListItem value) => value.Id;
+        public int Compare(SizingListItem? x, SizingListItem? y) => Nullable.Compare(x?.Id, y?.Id);
     }
 
     [Theory]
@@ -4411,6 +4959,40 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(-1, false)]
+    [InlineData(0, false)]
+    [InlineData(40, false)]
+    [InlineData(-1, true)]
+    [InlineData(0, true)]
+    [InlineData(40, true)]
+    public async Task ListUpdate_WithDictionaryExpirations_PreservesBoundaryMembers(int expiredIndex, bool remove)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log)
+            .MaxMemorySize(100_000).SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count));
+        var source = Enumerable.Range(0, 41).ToDictionary(index => index, _ => (DateTime?)clock.GetUtcNow().UtcDateTime.AddMinutes(1));
+        source[20] = null;
+        if (expiredIndex >= 0)
+            source[expiredIndex] = clock.GetUtcNow().UtcDateTime.AddTicks(-1);
+        await cache.SetAsync("list", source);
+        var original = GetEntry(cache, "list");
+
+        Assert.Equal(remove ? 0 : 1, remove
+            ? await cache.ListRemoveAsync("list", [99])
+            : await cache.ListAddAsync("list", [41], TimeSpan.FromMinutes(1)));
+
+        var expected = Enumerable.Range(0, remove ? 41 : 42).Where(index => index != expiredIndex).ToArray();
+        var current = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value;
+        Assert.Equal(expected, current.Keys.OrderBy(index => index));
+        Assert.Equal(expected.Length, cache.CurrentMemorySize);
+        Assert.Null(await cache.GetExpirationAsync("list"));
+        Assert.Equal(41, source.Count);
+        Assert.Equal(41, ((Dictionary<int, DateTime?>)original.StoredValue!).Count);
+        if (remove && expiredIndex < 0)
+            Assert.Same(original, GetEntry(cache, "list"));
+    }
+
+    [Theory]
     [InlineData(false, DateTimeKind.Local)]
     [InlineData(false, DateTimeKind.Utc)]
     [InlineData(true, DateTimeKind.Local)]
@@ -4513,17 +5095,58 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ListAddAsync_WithDictionarySubclass_UsesItsExpirationValues(bool permanent)
+    public async Task ListUpdate_WithHashCallback_PrunesOnlyTheExpiredSnapshot(bool remove)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1));
+        var expiredAt = clock.GetUtcNow().UtcDateTime.AddMinutes(-1);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        var comparer = new ExpirationMutationListComparer();
+        var source = new Dictionary<int, DateTime?>(comparer) { [0] = null, [1] = expiredAt, [2] = expiredAt };
+        comparer.Dictionary = source;
+        await cache.SetAsync("list", source);
+
+        Assert.Equal(remove ? 0 : 1, remove
+            ? await cache.ListRemoveAsync("list", [99])
+            : await cache.ListAddAsync("list", [4]));
+
+        var current = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value;
+        Assert.Equal(remove ? [0] : new[] { 0, 4 }, current.Keys.OrderBy(key => key));
+        Assert.Equal([0, 1, 2], source.Keys);
+        Assert.Null(await cache.GetExpirationAsync("list"));
+    }
+
+    private sealed class ExpirationMutationListComparer : IEqualityComparer<int>
+    {
+        public Dictionary<int, DateTime?>? Dictionary { get; set; }
+        public bool Equals(int x, int y) => x == y;
+        public int GetHashCode(int value)
+        {
+            if (value == 1 && Dictionary is { Count: 3 } dictionary)
+                dictionary[2] = null;
+            return value;
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false, 1)]
+    [InlineData(false, true, 1)]
+    [InlineData(true, false, 1)]
+    [InlineData(true, true, 1)]
+    [InlineData(false, false, 40)]
+    [InlineData(false, true, 40)]
+    [InlineData(true, false, 40)]
+    [InlineData(true, true, 40)]
+    public async Task ListAddAsync_WithDictionarySubclass_UsesItsExpirationValues(bool cloneValues, bool permanent, int count)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
         DateTime? expiration = permanent ? null : clock.GetUtcNow().UtcDateTime.AddMinutes(30);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
-        await cache.SetAsync("list", new ExpirationProjectionListDictionary(expiration)
-        {
-            [1] = clock.GetUtcNow().UtcDateTime.AddMinutes(5)
-        });
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).LoggerFactory(Log));
+        var source = new ExpirationProjectionListDictionary(expiration);
+        foreach (int key in Enumerable.Range(0, count))
+            source[key] = clock.GetUtcNow().UtcDateTime.AddMinutes(5);
+        await cache.SetAsync("list", source);
 
-        Assert.Equal(1, await cache.ListAddAsync("list", [2], TimeSpan.FromMinutes(10)));
+        Assert.Equal(1, await cache.ListAddAsync("list", [count], TimeSpan.FromMinutes(10)));
 
         var current = Assert.IsType<ExpirationProjectionListDictionary>(GetEntry(cache, "list").StoredValue);
         Assert.True(current.ValuesReads > 0);

@@ -640,8 +640,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private static HashSet<T> GetDistinctListValues<T>(IEnumerable<T> values) where T : notnull
     {
-        var items = new HashSet<T>();
         bool canBeNull = default(T) is null;
+        if (values is HashSet<T> set && set.GetType() == typeof(HashSet<T>)
+            && ReferenceEquals(set.Comparer, EqualityComparer<T>.Default))
+        {
+            var copy = new HashSet<T>(set, set.Comparer);
+            if (canBeNull)
+                copy.Remove(default!);
+            return copy;
+        }
+
+        var items = new HashSet<T>();
+        if (values is T[] array)
+        {
+            foreach (var value in array)
+                if (!canBeNull || value is not null)
+                    items.Add(value);
+            return items;
+        }
+
         foreach (var value in values)
             if (!canBeNull || value is not null)
                 items.Add(value);
@@ -653,11 +670,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (items.Count is 0)
             return 0;
 
-        if (!_shouldClone && !_hasSizeCalculator)
-            return ListAddPrepared<T>(key, null, expiresAt, items);
+        if (_canShareListValues)
+        {
+            long size = _hasSizeCalculator
+                ? CalculateEntrySize(new ListSizingValues<T>(items, expiresAt), typeof(Dictionary<T, DateTime?>))
+                : 0;
+            return size < 0 ? 0 : ListAddPrepared<T>(key, null, expiresAt, items, size);
+        }
 
-        var values = CreateListValues(items, expiresAt);
-        return ListAddPrepared<T>(key, values, expiresAt, values is ListSnapshot<T> ? items : null);
+        return ListAddPrepared<T>(key, CreateListValues(items, expiresAt), expiresAt);
     }
 
     private ICollection CreateListValues<T>(HashSet<T> items, DateTime? expiresAt) where T : notnull
@@ -671,7 +692,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return values;
     }
 
-    private long ListAddPrepared<T>(string key, ICollection? values, DateTime? expiresAt, HashSet<T>? sharedItems = null) where T : notnull
+    private long ListAddPrepared<T>(string key, ICollection? values, DateTime? expiresAt, HashSet<T>? sharedItems = null, long inputSize = 0) where T : notnull
     {
         bool cloneAddedValues = _shouldClone && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
         bool valueIsOwned = _shouldClone && !cloneAddedValues
@@ -690,7 +711,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (current is null)
             {
                 values ??= CreateListValues(sharedItems!, expiresAt);
-                entry ??= new CacheEntry(values, expiresAt, _timeProvider, shouldClone: false);
+                entry ??= new CacheEntry(values, expiresAt, _timeProvider, shouldClone: false, size: inputSize);
                 var replacement = _canShareListValues && values is Dictionary<T, DateTime?> initial && initial.Count > ListSnapshot<T>.BlockSize
                     ? entry.WithValue(new ListSnapshot<T>(initial), expiresAt, entry.Size)
                     : entry;
@@ -701,7 +722,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 ICollection<T> keys = sharedItems is not null ? sharedItems : ((Dictionary<T, DateTime?>)entry!.StoredValue!).Keys;
                 var list = stored.Update(keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
-                long listSize = _usesBuiltInDynamicSizing ? CalculateEntrySize(list) : entry?.Size ?? 0;
+                long listSize = _usesBuiltInDynamicSizing ? CalculateEntrySize(list) : entry?.Size ?? inputSize;
                 if (listSize < 0)
                     return (current, 0L);
 
@@ -750,7 +771,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return current.WithValue(clone, expiresAt, size);
         }
 
-        object value = _canShareListValues && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
+        object value = _canShareListValues && dictionary is Dictionary<T, DateTime?> values
+            && values.GetType() == typeof(Dictionary<T, DateTime?>) && values.Count > ListSnapshot<T>.BlockSize
             ? new ListSnapshot<T>(values)
             : dictionary;
         return _shouldIsolateListSizing && !_usesBuiltInDynamicSizing
@@ -797,7 +819,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         object? value = cloneComparer || cloneRoot && cloneKeys ? CloneDictionaryWithComparer((IDictionary<T, DateTime?>)entry.StoredValue!)
             : cloneRoot ? FastCloner.FastCloner.DeepCloneTo(entry.StoredValue, FastCloner.FastCloner.ShallowClone(entry.StoredValue))
             : cloneKeys ? entry.PeekValue() : entry.StoredValue is IListSnapshot list ? list.GetSnapshot() : entry.StoredValue;
-        return value switch
+        IDictionary<T, DateTime?>? copy = value switch
         {
             Dictionary<T, DateTime?> dictionary => cloneAfterUpdate ? dictionary : new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
             SortedDictionary<T, DateTime?> dictionary => cloneAfterUpdate ? dictionary : new SortedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
@@ -809,6 +831,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             IDictionary<T, DateTime?> dictionary => throw new NotSupportedException($"List updates cannot preserve the comparer of {dictionary.GetType().FullName}."),
             _ => null
         };
+        return !_shouldClone && copy is not null && value is IDictionary<T, DateTime?> original && original.GetType() != copy.GetType()
+            ? FastCloner.FastCloner.ShallowCloneTo(copy, FastCloner.FastCloner.ShallowClone(original))
+            : copy;
     }
 
     private bool ShouldCloneListComparer<T>(object? value) where T : notnull
@@ -1714,6 +1739,21 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         string ValueTypeName { get; }
     }
 
+    private sealed class ListSizingValues<T>(HashSet<T> items, DateTime? expiresAt) : ICollection where T : notnull
+    {
+        public int Count => items.Count;
+        bool ICollection.IsSynchronized => false;
+        object ICollection.SyncRoot => this;
+        void ICollection.CopyTo(Array array, int index) => Enumerate().ToArray().CopyTo(array, index);
+        IEnumerator IEnumerable.GetEnumerator() => Enumerate().GetEnumerator();
+
+        private IEnumerable<KeyValuePair<T, DateTime?>> Enumerate()
+        {
+            foreach (var item in items)
+                yield return new KeyValuePair<T, DateTime?>(item, expiresAt);
+        }
+    }
+
     // Updates share untouched pages; materializing a public dictionary retires the internal storage.
     private sealed class ListSnapshot<T> : IListSnapshot, ICollection where T : notnull
     {
@@ -1940,7 +1980,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 : storage.Expirations?.Range.Minimum < utcNow;
             if (remove && !prune && !items.Any(key => storage.Dictionary?.ContainsKey(key) ?? Find(key, out _, out _, out _) >= 0))
                 return this;
-            if (!remove && !prune && (storage.Dictionary is not null || largeBatch) && items.All(IsUnchanged))
+            if (!remove && !prune && (storage.Dictionary is not null || largeBatch) && IsUnchangedBatch(items))
                 return this;
 
             if (storage.Exposed || largeBatch || count < storage.NextIndex / 4)
@@ -2047,6 +2087,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             return new ListSnapshot<T>(new Storage(values.Value, heads.Value, hashes.Value, storage.Comparer, count, bucketCount,
                 freeIndices, nextIndex, permanentCount, storage));
+
+            bool IsUnchangedBatch(ICollection<T> batch)
+            {
+                if (storage.Dictionary is not null || batch is not HashSet<T> keys
+                    || count != keys.Count || !ReferenceEquals(storage.Comparer, keys.Comparer))
+                    return batch.All(IsUnchanged);
+
+                // Equal counts and comparers let us scan stored slots instead of probing the paged index.
+                foreach (var pair in Enumerate(storage))
+                    if (pair.Value != expiration || !keys.Contains(pair.Key))
+                        return false;
+                return true;
+            }
 
             bool IsUnchanged(T key)
             {
@@ -2557,9 +2610,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// Returns 0 immediately if no size calculator is configured.
     /// </summary>
     /// <param name="value">The value to calculate size for.</param>
+    /// <param name="entryType">The logical value type used in size validation diagnostics.</param>
     /// <returns>The calculated size in bytes, or -1 if the entry should be skipped.</returns>
     /// <exception cref="MaxEntrySizeExceededCacheException">Thrown when entry exceeds MaxEntrySize and ShouldThrowOnMaxEntrySizeExceeded is true.</exception>
-    private long CalculateEntrySize(object? value)
+    private long CalculateEntrySize(object? value, Type? entryType = null)
     {
         // Fast bail-out: no size calculator configured
         if (!_hasSizeCalculator)
@@ -2580,7 +2634,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error calculating entry size for type {EntryType}, using fallback estimation",
-                GetEntryTypeName(value));
+                entryType?.Name ?? GetEntryTypeName(value));
 
             // Fallback to simple estimation
             size = value switch
@@ -2596,17 +2650,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
                 "Custom SizeCalculator functions must return non-negative values.",
-                size, GetEntryTypeName(value));
+                size, entryType?.Name ?? GetEntryTypeName(value));
             return -1;
         }
 
         if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
         {
             if (_shouldThrowOnMaxEntrySizeExceeded)
-                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, GetEntryTypeName(value));
+                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, entryType?.Name ?? GetEntryTypeName(value));
 
             _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
-                size, _maxEntrySize.Value, GetEntryTypeName(value));
+                size, _maxEntrySize.Value, entryType?.Name ?? GetEntryTypeName(value));
             return -1;
         }
 
