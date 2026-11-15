@@ -31,14 +31,17 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
 
     private readonly RabbitMQMessageTransportNames _names;
     private readonly bool _delays;
+    private readonly RabbitMQDelayInspector? _inspector;
     private readonly ILogger _logger;
     private readonly RabbitMQChannelSlot _channel;
     private readonly ConcurrentDictionary<string, Lazy<Task>> _ensured = new(StringComparer.Ordinal);
 
-    public RabbitMQMessageTransportTopology(RabbitMQMessageTransportNames names, bool delays, Func<CancellationToken, Task<IChannel>> openChannel, ILogger logger)
+    public RabbitMQMessageTransportTopology(RabbitMQMessageTransportNames names, bool delays, Func<CancellationToken, Task<IChannel>> openChannel,
+        RabbitMQDelayInspector? inspector, ILogger logger)
     {
         _names = names;
         _delays = delays;
+        _inspector = inspector;
         _logger = logger;
         _channel = new RabbitMQChannelSlot(openChannel);
     }
@@ -54,7 +57,10 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
             await RunAsync($"declare queue {queue}", async (channel, ct) => _ = await channel.QueueDeclareAsync(queue, durable: true, exclusive: false, autoDelete: false,
                 arguments: new Dictionary<string, object?>(QueueArguments), cancellationToken: ct).AnyContext(), token).AnyContext();
             if (_delays)
+            {
                 await BindForDelaysAsync(queue, isExchange: false, token).AnyContext();
+                _inspector?.InspectTargetInBackground(queue);
+            }
         }, cancellationToken);
     }
 
@@ -128,6 +134,7 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
             }
 
             _logger.LogDebug("Declared {Count} delay levels under {Prefix}", RabbitMQDelayLevels.Count, delivery);
+            _inspector?.CheckDelaysInBackground(force: true);
         }, cancellationToken);
     }
 

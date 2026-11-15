@@ -57,6 +57,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     private readonly ConcurrentDictionary<RabbitMQMessageReceiver, byte> _receivers = new();
     private readonly RabbitMQChannelSlot _publisher;
     private readonly RabbitMQSourceStatsReader _stats;
+    private readonly RabbitMQManagementClient? _management;
     private IConnection? _publisherConnection;
     private IConnection? _consumerConnection;
     private int _disposed;
@@ -110,11 +111,18 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
             Deduplication = false
         };
 
+        if (options.ManagementEndpoint is { } managementEndpoint)
+        {
+            _management = new RabbitMQManagementClient(managementEndpoint, options.ConnectionString);
+            if (options.DelayedDelivery)
+                DelayInspector = new RabbitMQDelayInspector(_management, Names, options.Prefix, Logger, TimeProvider, options.DelayCheckInterval, options.DelayStallWarningAfter);
+        }
+
         _publisher = new RabbitMQChannelSlot(async ct => await (await GetConnectionAsync(consumer: false, ct).AnyContext())
             .CreateChannelAsync(new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true), ct).AnyContext());
         Topology = new RabbitMQMessageTransportTopology(Names, options.DelayedDelivery,
-            async ct => await (await GetConnectionAsync(consumer: false, ct).AnyContext()).CreateChannelAsync(cancellationToken: ct).AnyContext(), Logger);
-        _stats = new RabbitMQSourceStatsReader(this);
+            async ct => await (await GetConnectionAsync(consumer: false, ct).AnyContext()).CreateChannelAsync(cancellationToken: ct).AnyContext(), DelayInspector, Logger);
+        _stats = new RabbitMQSourceStatsReader(this, _management, DelayInspector);
     }
 
     /// <summary>
@@ -129,6 +137,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     internal RabbitMQMessageTransportOptions Options { get; }
     internal RabbitMQMessageTransportNames Names { get; }
     internal RabbitMQMessageTransportTopology Topology { get; }
+    internal RabbitMQDelayInspector? DelayInspector { get; }
     internal TimeProvider TimeProvider { get; }
     internal ILoggerFactory LoggerFactory { get; }
     internal ILogger Logger { get; }
@@ -311,6 +320,11 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// <see cref="MessageSourceStats.Delayed"/> is null: delayed messages and delayed retries wait in delay queues every
     /// source shares, so they are not counted. Nothing is declared; a source that does not exist counts as empty.
     /// </para>
+    /// <para>
+    /// With the management API and delayed delivery, a call also has the delay levels inspected, at most every 15
+    /// seconds and without waiting for it, and a warning is logged for a level whose expired messages have waited a
+    /// minute or more for their next hop, or a queue whose policy holds up delayed delivery.
+    /// </para>
     /// </remarks>
     /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
     public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
@@ -323,6 +337,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
         if (source.Kind == MessageSourceKind.InstanceSubscription)
             return Task.FromResult<MessageSourceStats?>(null);
 
+        DelayInspector?.CheckDelaysInBackground();
         return _stats.GetAsync(source, Names.For(source), Names.DeadLetter(source), cancellationToken);
     }
 
@@ -336,6 +351,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
         await _publisher.DisposeAsync().AnyContext();
         await Topology.DisposeAsync().AnyContext();
         await _stats.DisposeAsync().AnyContext();
+        _management?.Dispose();
 
         if (!_ownsConnections)
             return;

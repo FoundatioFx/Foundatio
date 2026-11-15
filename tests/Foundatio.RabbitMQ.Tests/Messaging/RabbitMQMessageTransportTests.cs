@@ -2,11 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
+using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
 using Xunit;
@@ -277,6 +282,122 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task CreateReceiverAsync_ForAQueueWhosePolicyRefusesMessagesWhenFull_WarnsThatItCanHoldUpDelays()
+    {
+        Assert.SkipUnless(DelayedDelivery, "Delayed delivery is off.");
+        Assert.SkipWhen(Fixture.ManagementEndpoint is null, "The broker has no management API.");
+
+        Log.MaxLogEntriesToStore = 1000;
+
+        // Arrange
+        var source = MessageSource.Queue(NewName("refuses"));
+        DeleteAfterTest(source);
+        var transport = Track(new RabbitMQMessageTransport(CreateOptions() with { ManagementEndpoint = Fixture.ManagementEndpoint }));
+        string queue = transport.Names.Queue(source.Name);
+        string policy = $"refuse-{Guid.NewGuid():N}";
+        await PutPolicyAsync(policy, queue, new Dictionary<string, object> { ["max-length"] = 1, ["overflow"] = "reject-publish" });
+        try
+        {
+            // Act
+            await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+            // Assert
+            await WaitUntilAsync(() => Task.FromResult(HasWarning($"RabbitMQ queue {queue} refuses messages once it holds 1 message")), ManagementTimeout);
+        }
+        finally
+        {
+            await DeletePolicyAsync(policy);
+        }
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenAPolicyMakesTheDiscardQueueRefuseMessages_WarnsAndFailsPublishesWithoutSubscribers()
+    {
+        Assert.SkipUnless(DelayedDelivery, "Delayed delivery is off.");
+        Assert.SkipWhen(Fixture.ManagementEndpoint is null, "The broker has no management API.");
+        Log.MaxLogEntriesToStore = 1000;
+
+        // Arrange: a quorum queue takes a policy's overflow over its own argument, so this one keeps one message and refuses the rest.
+        var transport = Track(new RabbitMQMessageTransport(CreateOptions() with { Prefix = $"{Prefix}-discard-{Guid.NewGuid():N}", ManagementEndpoint = Fixture.ManagementEndpoint }));
+        var source = MessageSource.Queue(NewName("discard"));
+        string topic = NewName("nobody");
+        string policy = $"refuse-{Guid.NewGuid():N}";
+        await PutPolicyAsync(policy, transport.Names.Discard, new Dictionary<string, object> { ["overflow"] = "reject-publish" });
+        try
+        {
+            // Act
+            await (await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken)).DisposeAsync();
+            await transport.SendAsync(MessageDestination.Topic(topic), [Message("kept")], TestCancellationToken);
+            var publish = transport.SendAsync(MessageDestination.Topic(topic), [Message("refused")], TestCancellationToken);
+
+            // Assert
+            await Assert.ThrowsAsync<MessageBusException>(() => publish);
+            await WaitUntilAsync(() => Task.FromResult(HasWarning($"RabbitMQ queue {transport.Names.Discard} keeps one message and refuses every one after it")), ManagementTimeout);
+        }
+        finally
+        {
+            await DeletePolicyAsync(policy);
+            await transport.DeleteAsync(source, TestCancellationToken);
+            await DeleteDefinitionsAsync(transport, source);
+            await using var channel = await (await ConnectAsync()).CreateChannelAsync(cancellationToken: TestCancellationToken);
+            await channel.ExchangeDeleteAsync(transport.Names.Topic(topic), ifUnused: false, cancellationToken: TestCancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_WhileATargetThatRefusesItsDelayedMessagesHoldsUpTheirLevel_WarnsThatTheLevelIsHeldUp()
+    {
+        Assert.SkipUnless(DelayedDelivery, "Delayed delivery is off.");
+        Assert.SkipWhen(Fixture.ManagementEndpoint is null, "The broker has no management API.");
+
+        Log.MaxLogEntriesToStore = 1000;
+
+        // Arrange: delay levels of its own, since the broker holds this one for minutes.
+        var transport = Track(new RabbitMQMessageTransport(CreateOptions() with
+        {
+            Prefix = $"{Prefix}-held-{Guid.NewGuid():N}",
+            ManagementEndpoint = Fixture.ManagementEndpoint,
+            DelayCheckInterval = TimeSpan.Zero,
+            DelayStallWarningAfter = TimeSpan.Zero
+        }));
+        var full = MessageSource.Queue(NewName("full"));
+        var other = MessageSource.Queue(NewName("other"));
+        string policy = $"refuse-{Guid.NewGuid():N}";
+        await PutPolicyAsync(policy, transport.Names.Queue(full.Name), new Dictionary<string, object> { ["max-length"] = 1, ["overflow"] = "reject-publish" });
+        try
+        {
+            await using var receiver = await transport.CreateReceiverAsync(other, new ReceiverOptions(), TestCancellationToken);
+            await transport.SendAsync(MessageDestination.Queue(full.Name), [Message("fills it")], TestCancellationToken);
+
+            // Quorum queue limits are soft: the full queue still takes this one, and the level's dead-letter worker then
+            // knows it refuses, so it rejects every later one, however close together they expire.
+            await transport.SendAsync(MessageDestination.Queue(full.Name), [Message("overflows it") with { DeliverAt = DateTimeOffset.UtcNow.AddSeconds(1) }], TestCancellationToken);
+            await WaitUntilAsync(async () => await CountMessagesAsync(transport.Names.Queue(full.Name)) == 2, ManagementTimeout);
+            var dueSoon = DateTimeOffset.UtcNow.AddSeconds(1);
+            await transport.SendAsync(MessageDestination.Queue(full.Name), Enumerable.Range(0, 40).Select(i => Message($"refused {i}") with { DeliverAt = dueSoon }).ToList(), TestCancellationToken);
+            await Task.Delay(200, TestCancellationToken);
+            await transport.SendAsync(MessageDestination.Queue(other.Name), [Message("held up", "id-held-up") with { DeliverAt = DateTimeOffset.UtcNow.AddSeconds(1) }], TestCancellationToken);
+
+            // Act
+            await WaitUntilAsync(async () =>
+            {
+                await transport.GetStatsAsync(other, TestCancellationToken);
+                return HasWarning($"Delay level {transport.Names.DelayLevel(0)} has had");
+            }, ManagementTimeout);
+
+            // Assert: the broker holds the level, so a delayed message to a queue that takes it is held up too.
+            await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            await DeletePolicyAsync(policy);
+            await transport.DeleteAsync(full, TestCancellationToken);
+            await transport.DeleteAsync(other, TestCancellationToken);
+            await DeleteDefinitionsAsync(transport, full);
+        }
+    }
+
+    [Fact]
     public async Task Names_ThatJoinTheSameOrPassTheLengthLimit_DoNotCollide()
     {
         // Arrange
@@ -518,6 +639,40 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
         await channel.ExchangeDeleteAsync(names.Discard, ifUnused: false, cancellationToken: TestCancellationToken);
     }
 
+    /// <summary>The management API lists a new queue's policy, and refreshes its counts, from its statistics, every 5 seconds by default.</summary>
+    private static readonly TimeSpan ManagementTimeout = TimeSpan.FromSeconds(45);
+
+    private bool HasWarning(string text) => Log.LogEntries.Any(e => e.LogLevel == LogLevel.Warning && e.Message.Contains(text, StringComparison.Ordinal));
+
+    private async Task PutPolicyAsync(string name, string queue, Dictionary<string, object> definition)
+    {
+        using var http = CreateManagementClient();
+        var body = new Dictionary<string, object> { ["pattern"] = $"^{Regex.Escape(queue)}$", ["definition"] = definition, ["apply-to"] = "queues", ["priority"] = 100 };
+        using var response = await http.PutAsync($"api/policies/%2F/{name}", new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"), TestCancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task DeletePolicyAsync(string name)
+    {
+        using var http = CreateManagementClient();
+        using var response = await http.DeleteAsync($"api/policies/%2F/{name}", TestCancellationToken);
+    }
+
+    private HttpClient CreateManagementClient()
+    {
+        string userInfo = Uri.UnescapeDataString(new Uri(Fixture.ConnectionString).UserInfo);
+        var http = new HttpClient { BaseAddress = new Uri(Fixture.ManagementEndpoint!.AbsoluteUri.TrimEnd('/') + "/") };
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(userInfo)));
+        return http;
+    }
+
+    private async Task<uint> CountMessagesAsync(string queue)
+    {
+        var connection = await ConnectAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken);
+        return (await channel.QueueDeclarePassiveAsync(queue, TestCancellationToken)).MessageCount;
+    }
+
     private async Task<bool> QueueExistsAsync(string queue)
     {
         var connection = await ConnectAsync();
@@ -538,9 +693,9 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
         }
     }
 
-    private async Task WaitUntilAsync(Func<Task<bool>> condition)
+    private async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow + DeliveryTimeout;
+        var deadline = DateTime.UtcNow + (timeout ?? DeliveryTimeout);
         while (!await condition())
         {
             Assert.True(DateTime.UtcNow < deadline, "The condition was not met in time.");
