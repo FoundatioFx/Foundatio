@@ -591,6 +591,83 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Receive_WithAGroupBacklogThatDrainsQuickly_StopsReadingWithoutPausingItsPartition()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverHeldLimit = 20,
+            ReceiverHeldStopTimeout = TimeSpan.FromSeconds(30)
+        }));
+        var source = MessageSource.Queue(NewName("hot-drain"));
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 300).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // While a batch of the group is unsettled, its next records are held until they reach the partition's limit.
+        // Each batch is settled well within the stop timeout, so reaching the limit only stops the reading, which reads
+        // on from what librdkafka fetched, and never pauses the partition.
+        var order = new List<string>();
+        for (int reached = 1; reached <= 5; reached++)
+        {
+            var batch = await receiver.ReceiveAsync(15, TimeSpan.FromSeconds(5), TestCancellationToken);
+            await WaitForAsync(() => receiver.HeldStops + receiver.Pauses >= reached);
+            foreach (var message in batch)
+            {
+                order.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        order.AddRange(await DrainAsync(receiver, 300 - order.Count, TimeSpan.FromSeconds(60)));
+        Assert.Equal(Enumerable.Range(0, 300).Select(i => $"hot-{i}"), order);
+        Assert.Equal(0, receiver.Pauses);
+    }
+
+    [Fact]
+    public async Task Receive_WithAGroupBacklogThatDidNotDrainInTime_PausesItsPartitionAtOnceTheNextTime()
+    {
+        var stopTimeout = TimeSpan.FromMilliseconds(100);
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverHeldLimit = 20,
+            ReceiverHeldStopTimeout = stopTimeout
+        }));
+        var source = MessageSource.Queue(NewName("hot-slow"));
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 100).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // The group's first message is not settled, so its backlog stops the reading, then pauses the partition.
+        var first = await ReceiveOneAsync(receiver);
+        Assert.Equal("hot-0", first.MessageId);
+        await WaitForAsync(() => receiver.PausedCount == 1);
+        Assert.Equal(1, receiver.HeldStops);
+        Assert.Equal(1, receiver.Pauses);
+
+        // It stays paused for longer than the stop timeout before it drains, which handing out the next 15 does, so the
+        // next time the backlog reaches the limit, while those 15 are unsettled, the partition is paused at once.
+        await Task.Delay(stopTimeout * 3, TestCancellationToken);
+        await receiver.CompleteAsync(first, TestCancellationToken);
+        var batch = await receiver.ReceiveAsync(15, TimeSpan.FromSeconds(5), TestCancellationToken);
+        Assert.Equal(Enumerable.Range(1, 15).Select(i => $"hot-{i}"), batch.Select(m => m.MessageId));
+        await WaitForAsync(() => receiver.Pauses == 2);
+        Assert.Equal(1, receiver.HeldStops);
+        Assert.Equal(1, receiver.PausedCount);
+
+        foreach (var message in batch)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+
+        var order = new List<string> { first.MessageId };
+        order.AddRange(batch.Select(m => m.MessageId));
+        order.AddRange(await DrainAsync(receiver, 84, TimeSpan.FromSeconds(60)));
+        Assert.Equal(Enumerable.Range(0, 100).Select(i => $"hot-{i}"), order);
+    }
+
+    [Fact]
     public async Task Rebalance_OfAPartitionPausedForAGroupBacklogAndBack_ResumesReadingIt()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with

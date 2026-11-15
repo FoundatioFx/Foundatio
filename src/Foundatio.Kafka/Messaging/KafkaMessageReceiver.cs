@@ -20,18 +20,21 @@ namespace Foundatio.Messaging.Transport;
 /// While the buffer is full the thread stops reading and polls only every <see cref="KeepAliveInterval"/>, which
 /// serves rebalances and keeps the member in its group; librdkafka's own prefetch queue, bounded by
 /// <c>queued.max.messages.kbytes</c>, then stops fetching. Partitions are not paused for this: a paused partition
-/// drops what librdkafka has fetched for it, which it fetches again once resumed. They are paused
-/// only when the buffer passes twice its limit (handlers stalled for minutes, so polls kept adding a record each), when
-/// too many records wait for their delivery time, and when too many are held behind their groups; only a partition
+/// drops what librdkafka has fetched for it, which it fetches again once resumed. They are paused only when the buffer
+/// passes twice its limit (handlers stalled for minutes, so polls kept adding a record each), when too many records
+/// wait for their delivery time, and when too many are held behind their groups and do not drain soon; only a partition
 /// being read further would add to either.
 /// </para>
 /// <para>
 /// An ordered group's records wait in their <see cref="KafkaRecordGroup"/>, and only the first record of a group that
 /// may be handed out is in the buffer. The rest are held: they do not count against the buffer and are not scanned
 /// when handing out. A partition holding <see cref="KafkaMessageTransportOptions.ReceiverHeldLimit"/> records or
-/// <see cref="HeldPartitionBytesLimit"/> bytes is paused until it holds half as many, so a group with a backlog stops
-/// reading only its own partition; while all partitions together hold <see cref="HeldBytesLimit"/>, every partition
-/// holding records is paused.
+/// <see cref="HeldPartitionBytesLimit"/> bytes stops the reading until it holds half as many, as a full buffer does, so
+/// a group that drains quickly keeps what librdkafka fetched for it. If it does not drain within
+/// <see cref="KafkaMessageTransportOptions.ReceiverHeldStopTimeout"/>, the partition is paused instead and the others
+/// are read on, so a group with a slow backlog stops reading only its own partition; it is then paused at once the
+/// next time (<see cref="KafkaHeldBudget"/>). All partitions together holding <see cref="HeldBytesLimit"/> stop the
+/// reading the same way, and then pause every partition holding records.
 /// </para>
 /// <para>
 /// Records that wait for their delivery time (delayed messages with a group key, and records released with a delay)
@@ -70,6 +73,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private readonly int _bufferLimit;
     private readonly int _timedLimit;
     private readonly int _heldLimit;
+    private readonly TimeSpan _heldStopTimeout;
     private readonly bool _ordered;
     private readonly bool _stateful;
     private readonly object _lock = new();
@@ -80,6 +84,10 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private readonly Dictionary<string, KafkaRecordGroup> _groups = new(StringComparer.Ordinal);
     private readonly Dictionary<TopicPartition, KafkaPartitionState> _partitions = [];
     private readonly HashSet<TopicPartition> _paused = [];
+    private readonly KafkaHeldBudget _heldBudget = new();
+
+    /// <summary>The partitions whose held records stop the reading until they drain.</summary>
+    private readonly HashSet<KafkaPartitionState> _heldStopped = [];
     private readonly CancellationTokenSource _stopping = new();
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _joined = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -98,6 +106,8 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private bool _pauseHeld;
     private Exception? _failure;
     private int _pausedCount;
+    private int _pauses;
+    private int _heldStops;
     private int _started;
     private int _disposed;
 
@@ -109,6 +119,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         _bufferLimit = Math.Max(1, transport.Options.ReceiverBufferLimit ?? Math.Clamp(options.PrefetchCount * 8, 256, 4096));
         _timedLimit = Math.Max(1, transport.Options.ReceiverTimedLimit);
         _heldLimit = Math.Max(1, transport.Options.ReceiverHeldLimit);
+        _heldStopTimeout = transport.Options.ReceiverHeldStopTimeout;
         _ordered = topology.Source.Kind != MessageSourceKind.DeadLetter;
         _stateful = topology.Source.Kind is MessageSourceKind.Queue or MessageSourceKind.Subscription;
 
@@ -130,6 +141,19 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
     /// <summary>How many partitions the receiver has paused. For tests.</summary>
     internal int PausedCount => Volatile.Read(ref _pausedCount);
+
+    /// <summary>How many times the receiver has paused a partition. For tests.</summary>
+    internal int Pauses => Volatile.Read(ref _pauses);
+
+    /// <summary>How many times a partition's held records stopped the reading. For tests.</summary>
+    internal int HeldStops
+    {
+        get
+        {
+            lock (_lock)
+                return _heldStops;
+        }
+    }
 
     /// <summary>How many records wait in memory for their delivery time. For tests.</summary>
     internal int TimedCount
@@ -330,13 +354,13 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             long lastPoll = Stopwatch.GetTimestamp();
             while (!_stopping.IsCancellationRequested)
             {
-                var (full, changed) = Maintain();
+                var (full, changed, recheck) = Maintain();
                 if (full)
                 {
-                    var sincePoll = Stopwatch.GetElapsedTime(lastPoll);
-                    if (sincePoll < KeepAliveInterval)
+                    var wait = KeepAliveInterval - Stopwatch.GetElapsedTime(lastPoll);
+                    if (wait > TimeSpan.Zero)
                     {
-                        changed.Wait(KeepAliveInterval - sincePoll);
+                        changed.Wait(recheck < wait ? recheck : wait);
                         continue;
                     }
                 }
@@ -406,15 +430,16 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
     /// <summary>
     /// Stores advanced commit offsets, moves records whose delivery time has come into the buffer, and pauses or
-    /// resumes partitions. Returns whether the buffer is full, so nothing more should be read for now, and a task that
-    /// completes when something changes.
+    /// resumes partitions. Returns whether nothing more should be read for now (the buffer is full, or held records
+    /// wait to drain), a task that completes when something changes, and how long until this must run again anyway.
     /// </summary>
-    private (bool Full, Task Changed) Maintain()
+    private (bool Full, Task Changed, TimeSpan Recheck) Maintain()
     {
         List<TopicPartitionOffset>? store = null;
         HashSet<TopicPartition>? paused = null;
         Task changed;
         bool full;
+        TimeSpan recheck;
         lock (_lock)
         {
             changed = _changed.Task;
@@ -432,13 +457,15 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             }
 
             PromoteDue(_transport.TimeProvider.GetUtcNow());
-            full = _buffer.Count >= _bufferLimit || _bufferedBytes >= BufferBytesLimit;
+            bool bufferFull = _buffer.Count >= _bufferLimit || _bufferedBytes >= BufferBytesLimit;
             bool overfull = _buffer.Count >= _bufferLimit * 2 || _bufferedBytes >= BufferBytesLimit * 2;
             bool timedOver = _timed.Count >= _timedLimit || _timedBytes >= TimedBytesLimit;
             bool timedDrained = _timed.Count <= _timedLimit / 2 && _timedBytes <= TimedBytesLimit / 2;
-            bool pauseAll = overfull || _pauseAll && full;
+            bool pauseAll = overfull || _pauseAll && bufferFull;
             bool pauseTimed = timedOver || _pauseTimed && !timedDrained;
-            bool pauseHeld = _heldBytes >= HeldBytesLimit || _pauseHeld && _heldBytes > HeldBytesLimit / 2;
+            recheck = UpdateHeldBudgets();
+            full = bufferFull || _heldStopped.Count > 0 || _heldBudget.Stopped;
+            bool pauseHeld = _heldBudget.Paused;
             if (pauseAll != _pauseAll || pauseTimed != _pauseTimed || pauseHeld != _pauseHeld || _pausesChanged)
             {
                 _pauseAll = pauseAll;
@@ -448,7 +475,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 paused = [];
                 foreach (var state in _partitions.Values)
                 {
-                    if (state.HeldPaused || pauseHeld && state.HeldCount > 0 || pauseTimed && state.TimedCount > 0)
+                    if (state.HeldBudget.Paused || pauseHeld && state.HeldCount > 0 || pauseTimed && state.TimedCount > 0)
                         paused.Add(state.TopicPartition);
                 }
             }
@@ -478,8 +505,44 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         if (paused is not null)
             UpdatePaused(paused);
 
-        return (full, changed);
+        return (full, changed, recheck);
     }
+
+    /// <summary>
+    /// Updates the budget of all held records, and pauses what stopped the reading for longer than the stop timeout: a
+    /// partition, or every partition holding records. Returns how long until the next of them would be paused.
+    /// </summary>
+    private TimeSpan UpdateHeldBudgets()
+    {
+        _heldBudget.Update(_heldBytes >= HeldBytesLimit, _heldBytes <= HeldBytesLimit / 2, _heldStopTimeout);
+        var recheck = KeepAliveInterval;
+        if (_heldStopped.Count == 0 && !_heldBudget.Stopped)
+            return recheck;
+
+        long now = Stopwatch.GetTimestamp();
+        if (_heldBudget.Stopped)
+            recheck = Min(recheck, _heldBudget.PauseIfStoppedFor(_heldStopTimeout, now));
+
+        List<KafkaPartitionState>? paused = null;
+        foreach (var state in _heldStopped)
+        {
+            var remaining = state.HeldBudget.PauseIfStoppedFor(_heldStopTimeout, now);
+            if (remaining > TimeSpan.Zero)
+                recheck = Min(recheck, remaining);
+            else
+                (paused ??= []).Add(state);
+        }
+
+        if (paused is not null)
+        {
+            _heldStopped.ExceptWith(paused);
+            _pausesChanged = true;
+        }
+
+        return recheck;
+    }
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
 
     /// <summary>
     /// Pauses <paramref name="wanted"/>, the partitions that should not be read (those holding too many records behind
@@ -497,6 +560,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         {
             _consumer.Pause(pause);
             _paused.UnionWith(pause);
+            Interlocked.Add(ref _pauses, pause.Count);
             _logger.LogDebug("{Source} paused {Partitions}: {Buffered} records buffered, {Held} held behind their groups, {Timed} waiting for their delivery time",
                 Source, String.Join(", ", pause), _buffer.Count, Volatile.Read(ref _heldCount), _timed.Count);
         }
@@ -769,18 +833,31 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         UpdateHeldPause(state);
     }
 
-    /// <summary>Pauses a partition once it holds too many records behind their groups, and resumes it once it holds half as many.</summary>
+    /// <summary>
+    /// Stops the reading, or pauses the partition, once it holds too many records behind their groups, and reads it
+    /// again once it holds half as many.
+    /// </summary>
     private void UpdateHeldPause(KafkaPartitionState state)
     {
-        bool paused = state.HeldPaused
-            ? state.HeldCount > _heldLimit / 2 || state.HeldBytes > HeldPartitionBytesLimit / 2
-            : state.HeldCount >= _heldLimit || state.HeldBytes >= HeldPartitionBytesLimit;
-
-        if (paused == state.HeldPaused)
+        var budget = state.HeldBudget;
+        bool wasPaused = budget.Paused;
+        bool over = state.HeldCount >= _heldLimit || state.HeldBytes >= HeldPartitionBytesLimit;
+        bool drained = state.HeldCount <= _heldLimit / 2 && state.HeldBytes <= HeldPartitionBytesLimit / 2;
+        if (!budget.Update(over, drained, _heldStopTimeout))
             return;
 
-        state.HeldPaused = paused;
-        _pausesChanged = true;
+        if (budget.Stopped)
+        {
+            _heldStopped.Add(state);
+            _heldStops++;
+        }
+        else
+        {
+            _heldStopped.Remove(state);
+        }
+
+        if (budget.Paused != wasPaused)
+            _pausesChanged = true;
     }
 
     /// <summary>Adds a record that may be handed out: to the buffer, or to its group, in the order the records were read.</summary>
@@ -1054,6 +1131,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         lock (_lock)
         {
             state.Loading = false;
+            state.HeldBudget.Restart();
             state.StateStored = recovered is not null;
             if (!state.Revoked && recovered is { IsEmpty: false })
             {

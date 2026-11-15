@@ -97,6 +97,12 @@ public sealed record KafkaMessageTransportOptions
     /// <summary>How many records a receiver holds behind an earlier record of their group, per partition, before it stops reading that partition.</summary>
     internal int ReceiverHeldLimit { get; init; } = 1000;
 
+    /// <summary>
+    /// How long a receiver stops reading for a partition over its held limit before it pauses that partition instead,
+    /// which drops what librdkafka fetched for it but lets its other partitions be read.
+    /// </summary>
+    internal TimeSpan ReceiverHeldStopTimeout { get; init; } = TimeSpan.FromMilliseconds(100);
+
     /// <summary>How long the delay forwarder waits before it tries again to forward a record it could not.</summary>
     internal TimeSpan DelayForwardRetryDelay { get; init; } = TimeSpan.FromSeconds(5);
 

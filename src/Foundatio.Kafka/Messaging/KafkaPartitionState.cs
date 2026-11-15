@@ -33,8 +33,8 @@ internal sealed class KafkaPartitionState
     /// <summary>The <see cref="KafkaRecord.Size"/> of the partition's held records.</summary>
     public long HeldBytes { get; set; }
 
-    /// <summary>The partition holds too many records behind their groups, so it is paused until they drain.</summary>
-    public bool HeldPaused { get; set; }
+    /// <summary>Whether the partition holds too many records behind their groups, and what the receiver does about it.</summary>
+    public KafkaHeldBudget HeldBudget { get; } = new();
 
     /// <summary>The offset after the last one read, or -1 before the first read.</summary>
     public long NextOffset { get; set; } = -1;
