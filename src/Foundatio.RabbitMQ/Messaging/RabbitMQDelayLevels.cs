@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using System.Text;
 
 namespace Foundatio.Messaging.Transport;
@@ -30,6 +31,17 @@ internal static class RabbitMQDelayLevels
 
         long seconds = (long)Math.Ceiling(delay.TotalSeconds);
         return Math.Min(seconds, (long)MaxDelay.TotalSeconds);
+    }
+
+    /// <summary>
+    /// The level a delay of <paramref name="seconds"/> (1 to 2^28 - 1) is published to: that of its highest set bit, the
+    /// first one whose queue holds it.
+    /// </summary>
+    public static int EntryLevel(long seconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(seconds, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(seconds, (long)MaxDelay.TotalSeconds);
+        return BitOperations.Log2((ulong)seconds);
     }
 
     /// <summary>How long level <paramref name="level"/>'s queue holds a message, in milliseconds.</summary>

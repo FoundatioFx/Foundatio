@@ -555,11 +555,15 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// <summary>One message to publish: where to, and its encoded properties and body.</summary>
     internal readonly record struct Publish(string Exchange, string RoutingKey, bool Mandatory, BasicProperties Properties, ReadOnlyMemory<byte> Body)
     {
-        /// <summary>A message that reaches <paramref name="target"/>, a queue or a topic's exchange, after <paramref name="seconds"/>.</summary>
+        /// <summary>
+        /// A message that reaches <paramref name="target"/>, a queue or a topic's exchange, after <paramref name="seconds"/>.
+        /// It enters at the level of the delay's highest set bit, whose exchange routes it to its own queue, so it skips
+        /// the levels above, which would only pass it on.
+        /// </summary>
         public static Publish Delayed(RabbitMQMessageTransportNames names, string target, long seconds, BasicProperties properties, ReadOnlyMemory<byte> body)
         {
-            // Every level routes every message, so an unroutable delayed message means the levels were deleted.
-            return new Publish(names.DelayLevel(RabbitMQDelayLevels.Count - 1), RabbitMQDelayLevels.RoutingKey(seconds, target), true, properties, body);
+            // The entry level's queue takes every message, so an unroutable delayed message means the levels were deleted.
+            return new Publish(names.DelayLevel(RabbitMQDelayLevels.EntryLevel(seconds)), RabbitMQDelayLevels.RoutingKey(seconds, target), true, properties, body);
         }
     }
 }

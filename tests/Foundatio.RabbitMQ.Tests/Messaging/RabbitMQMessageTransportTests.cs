@@ -225,6 +225,58 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task SendAsync_WithDelaysAtTheEdgesOfTheLevels_HoldsEachInItsHighestLevelAndDeliversItToItsTarget()
+    {
+        Assert.SkipUnless(DelayedDelivery, "Delayed delivery is off.");
+
+        // Arrange: a prefix of its own, so its delay levels hold only this test's messages.
+        var transport = Track(new RabbitMQMessageTransport(CreateOptions() with { Prefix = $"{Prefix}-levels-{Guid.NewGuid():N}" }));
+        var queue = MessageSource.Queue(NewName("levels"));
+        var subscription = MessageSource.Subscription(NewName("levels"), "sub");
+        long max = (long)RabbitMQDelayLevels.MaxDelay.TotalSeconds;
+        long[] delays = [1, 2, 3, (1L << 20) - 1, 1L << 20, (1L << 27) - 1, 1L << 27, max];
+        try
+        {
+            await using var queueReceiver = await transport.CreateReceiverAsync(queue, new ReceiverOptions(), TestCancellationToken);
+            await using var subscriptionReceiver = await transport.CreateReceiverAsync(subscription, new ReceiverOptions(), TestCancellationToken);
+
+            // Act
+            foreach (long seconds in delays)
+            {
+                var deliverAt = DateTimeOffset.UtcNow.AddSeconds(seconds);
+                await transport.SendAsync(MessageDestination.Queue(queue.Name), [Message("queue", $"queue-{seconds}") with { DeliverAt = deliverAt }], TestCancellationToken);
+                await transport.SendAsync(MessageDestination.Topic(subscription.Topic!), [Message("topic", $"topic-{seconds}") with { DeliverAt = deliverAt }], TestCancellationToken);
+            }
+
+            // Assert
+            var connection = await ConnectAsync();
+            await using (var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken))
+            {
+                foreach (var (level, count) in new[] { (19, 2u), (20, 2u), (26, 2u), (27, 4u) })
+                    Assert.Equal(count, (await channel.QueueDeclarePassiveAsync(transport.Names.DelayLevel(level), TestCancellationToken)).MessageCount);
+            }
+
+            foreach (var (receiver, kind) in new[] { (queueReceiver, "queue"), (subscriptionReceiver, "topic") })
+            {
+                var received = await ReceiveAsync(receiver, 3, TimeSpan.FromSeconds(3) + DeliveryTimeout);
+                Assert.Equal(new[] { $"{kind}-1", $"{kind}-2", $"{kind}-3" }, received.Select(m => m.MessageId).Order());
+                foreach (var message in received)
+                    await receiver.CompleteAsync(message, TestCancellationToken);
+                await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+            }
+        }
+        finally
+        {
+            await transport.DeleteAsync(queue, TestCancellationToken);
+            await transport.DeleteAsync(subscription, TestCancellationToken);
+            await DeleteDefinitionsAsync(transport, queue);
+            var connection = await ConnectAsync();
+            await using var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken);
+            await channel.ExchangeDeleteAsync(transport.Names.Topic(subscription.Topic!), ifUnused: false, cancellationToken: TestCancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task Names_ThatJoinTheSameOrPassTheLengthLimit_DoNotCollide()
     {
         // Arrange
