@@ -79,9 +79,71 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
 
         Assert.Null(await new RedisJobStore(muxer, new RedisJobStoreOptions { Prefix = prefix }).ClaimAsync(Claim(NewName()), TestCancellationToken));
 
+        // The claim does not wait for the sweep it started, and nothing else sweeps, so that one sweep removes them all.
         var database = muxer.GetDatabase();
-        Assert.Equal(0, await database.SortedSetLengthAsync($"{{{prefix}}}:expiring"));
+        await WaitUntilAsync(async () => await database.SortedSetLengthAsync($"{{{prefix}}}:expiring") == 0);
         Assert.Equal(0, await database.SortedSetLengthAsync($"{{{prefix}}}:index"));
+    }
+
+    [Fact]
+    public async Task ClaimAsync_WhenItStartsASweep_ReturnsWithoutWaitingForIt()
+    {
+        var gate = new SweepGate();
+        var store = new RedisJobStore(gate.Wrap(SharedConnection.GetMuxer(Log)!), new RedisJobStoreOptions { Prefix = NewPrefix() });
+        var job = NewJob();
+        Assert.True(await store.CreateAsync(job, TestCancellationToken));
+
+        try
+        {
+            var claimed = await store.ClaimAsync(Claim(job.Name), TestCancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+            Assert.Equal(job.Id, claimed?.Id);
+            Assert.Equal(1, gate.Held);
+
+            for (int i = 0; i < 5; i++)
+                Assert.Null(await store.ClaimAsync(Claim(job.Name), TestCancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+            Assert.Equal(1, gate.Held);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    [Fact]
+    public async Task QueryAsync_WhenItStartsASweep_ReturnsWithoutWaitingForIt()
+    {
+        var gate = new SweepGate();
+        var store = new RedisJobStore(gate.Wrap(SharedConnection.GetMuxer(Log)!), new RedisJobStoreOptions { Prefix = NewPrefix() });
+        var job = NewJob();
+        Assert.True(await store.CreateAsync(job, TestCancellationToken));
+
+        try
+        {
+            var page = await store.QueryAsync(new JobQuery { Name = job.Name }, TestCancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+            Assert.Equal(job.Id, Assert.Single(page.Jobs).Id);
+            Assert.Equal(1, gate.Held);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    [Fact]
+    public async Task ClaimAsync_WhenTheSweepFails_ClaimsAndLeavesTheFailureToCounts()
+    {
+        var gate = new SweepGate { Failure = new InvalidOperationException("The sweep failed.") };
+        gate.Release();
+        var store = new RedisJobStore(gate.Wrap(SharedConnection.GetMuxer(Log)!), new RedisJobStoreOptions { Prefix = NewPrefix() });
+        var job = NewJob();
+        Assert.True(await store.CreateAsync(job, TestCancellationToken));
+
+        var claimed = await store.ClaimAsync(Claim(job.Name), TestCancellationToken);
+
+        Assert.Equal(job.Id, claimed?.Id);
+        Assert.Equal(1, gate.Held);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.CountAsync(JobState.Succeeded, job.Name, TestCancellationToken));
+        Assert.Equal(1, await store.CountAsync(JobState.Running, job.Name, TestCancellationToken));
     }
 
     [Fact]

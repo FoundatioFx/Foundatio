@@ -17,8 +17,8 @@ namespace Foundatio.Jobs.Store;
 /// (by lease expiry) make claims a few log-time lookups, and lexicographic indexes ordered by creation time serve
 /// queries and counts. Every operation is a Lua script that reads "now" from the Redis clock and touches only the
 /// keys passed to it, so the store also runs on Redis-compatible servers that enforce declared keys. Claims and
-/// queries delete jobs whose retention has run out, in batches about once a second; counts of finished jobs do so
-/// first whenever one has expired.
+/// queries start deleting jobs whose retention has run out, in batches about once a second, without waiting for it;
+/// counts of finished jobs wait for that, or delete them first, whenever one has expired.
 /// </summary>
 public sealed class RedisJobStore : IJobStore
 {
@@ -133,7 +133,7 @@ public sealed class RedisJobStore : IJobStore
         if (continuation.Length > 0 && (continuation.Length < 18 || continuation[16] != '|' || !Int64.TryParse(continuation.AsSpan(0, 16), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out _)))
             throw new ArgumentException("The continuation token is not valid.", nameof(query));
 
-        await SweepIfDueAsync().AnyContext();
+        SweepIfDue();
         var members = (string[])(await Database.ScriptEvaluateAsync(QueryScript, [IndexKey(query.State, query.Name)], [continuation, query.Limit]).AnyContext())!;
         var page = members.Take(query.Limit).ToArray();
         var jobs = await Task.WhenAll(page.Select(member => ReadJobAsync(member[(member.IndexOf('|') + 1)..]))).AnyContext();
@@ -163,7 +163,7 @@ public sealed class RedisJobStore : IJobStore
         if (request.Names.Count == 0)
             return null;
 
-        await SweepIfDueAsync().AnyContext();
+        SweepIfDue();
         string[] names = request.Names.Distinct(StringComparer.Ordinal).ToArray();
         var setKeys = names.SelectMany(n => new RedisKey[] { QueuedKey(n), RunningKey(n) }).ToArray();
 
@@ -309,13 +309,17 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <summary>
-    /// Removes finished jobs whose retention has run out, at most once a second, for calls that only need it done
-    /// eventually. Returns at once while another call sweeps.
+    /// Starts removing finished jobs whose retention has run out, at most once a second, for calls that only need it
+    /// done eventually, and returns without waiting for it. If it fails, the next sweep tries again; counts, which wait
+    /// for theirs, report the failure.
     /// </summary>
-    private Task SweepIfDueAsync()
+    private void SweepIfDue()
     {
         lock (_sweepLock)
-            return _sweep.IsCompleted && Environment.TickCount64 >= _nextSweep ? StartSweep() : Task.CompletedTask;
+        {
+            if (_sweep.IsCompleted && Environment.TickCount64 >= _nextSweep)
+                _ = StartSweep().ContinueWith(static sweep => _ = sweep.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
     }
 
     /// <summary>Waits for the sweep that is running, or starts one when some job's retention has run out.</summary>
