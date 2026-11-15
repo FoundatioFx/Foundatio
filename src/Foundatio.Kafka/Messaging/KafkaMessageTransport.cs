@@ -386,7 +386,10 @@ public sealed class KafkaMessageTransport : IMessageTransport
             AllowAutoCreateTopics = false,
             EnablePartitionEof = false,
             // Receivers buffer what they hand out themselves; librdkafka's prefetch only needs to keep them fed.
-            QueuedMaxMessagesKbytes = 16 * 1024
+            QueuedMaxMessagesKbytes = 16 * 1024,
+            // Once its queue is full, librdkafka fetches again only after this, however soon the queue is read; its
+            // default of a second stalls a receiver whose handlers drain the queue faster than that.
+            FetchQueueBackoffMs = 100
         };
 
         Options.ConfigureConsumer?.Invoke(config);

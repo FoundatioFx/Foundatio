@@ -581,6 +581,16 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public void CreateConsumerConfig_ByDefault_FetchesSoonAfterAFullQueueIsRead()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions()));
+        Assert.Equal(100, transport.CreateConsumerConfig("group").FetchQueueBackoffMs);
+
+        var tuned = Track(new KafkaMessageTransport(CreateOptions() with { ConfigureConsumer = c => c.FetchQueueBackoffMs = 500 }));
+        Assert.Equal(500, tuned.CreateConsumerConfig("group").FetchQueueBackoffMs);
+    }
+
+    [Fact]
     public async Task Rebalance_OfAPartitionPausedForAGroupBacklogAndBack_ResumesReadingIt()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with
