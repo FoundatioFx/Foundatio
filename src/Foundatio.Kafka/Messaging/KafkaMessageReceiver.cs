@@ -20,7 +20,7 @@ namespace Foundatio.Messaging.Transport;
 /// While the buffer is full the thread stops reading and polls only every <see cref="KeepAliveInterval"/>, which
 /// serves rebalances and keeps the member in its group; librdkafka's own prefetch queue, bounded by
 /// <c>queued.max.messages.kbytes</c>, then stops fetching. Partitions are not paused for this: a paused partition
-/// drops what librdkafka has fetched for it and takes about a second to deliver again once resumed. They are paused
+/// drops what librdkafka has fetched for it, which it fetches again once resumed. They are paused
 /// only when the buffer passes twice its limit (handlers stalled for minutes, so polls kept adding a record each), when
 /// too many records wait for their delivery time, and when too many are held behind their groups; only a partition
 /// being read further would add to either.
@@ -505,9 +505,31 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         {
             _consumer.Resume(resume);
             _paused.ExceptWith(resume);
+            FetchNow(resume);
         }
 
         Volatile.Write(ref _pausedCount, _paused.Count);
+    }
+
+    /// <summary>
+    /// librdkafka does not wake its fetcher when a partition is resumed, so an idle fetcher fetches it again only at its
+    /// next periodic wake-up, up to a second later. Seeking the partition to its position wakes it at once.
+    /// </summary>
+    private void FetchNow(List<TopicPartition> partitions)
+    {
+        foreach (var partition in partitions)
+        {
+            try
+            {
+                var position = _consumer.Position(partition);
+                if (!position.IsSpecial)
+                    _consumer.Seek(new TopicPartitionOffset(partition, position));
+            }
+            catch (KafkaException ex)
+            {
+                _logger.LogDebug(ex, "Could not seek {Partition} of {Source} to its position", partition, Source);
+            }
+        }
     }
 
     private void Accept(ConsumeResult<byte[]?, byte[]?> result)
