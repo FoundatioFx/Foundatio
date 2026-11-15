@@ -446,18 +446,25 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
 
         // Arrange: reading the in-flight count takes a second, so the other receives get their early messages while
-        // it runs. Each delay moves the clock ahead by the delay and SQS shows the copy a second later.
+        // it runs. Each delay moves the clock ahead by the delay and SQS shows the copy a second later. A move makes
+        // the count older than a minute, so only reads before the first move show whether concurrent receives share one.
         var clock = new OffsetTimeProvider();
         var transport = CreateInterceptedTransport(out var sqsInterceptor, clock);
+        int clockMoves = 0;
+        int readsBeforeClockMoved = 0;
         sqsInterceptor.Intercept = async (request, send) =>
         {
             if (request is SendMessageRequest { DelaySeconds: > 1 } copy)
             {
+                Interlocked.Increment(ref clockMoves);
                 clock.Advance(TimeSpan.FromSeconds(copy.DelaySeconds.Value));
                 copy.DelaySeconds = 1;
             }
 
             bool isInFlightCount = request is GetQueueAttributesRequest attributes && attributes.AttributeNames.Contains(QueueAttributeName.ApproximateNumberOfMessagesNotVisible);
+            if (isInFlightCount && Volatile.Read(ref clockMoves) == 0)
+                Interlocked.Increment(ref readsBeforeClockMoved);
+
             if (isInFlightCount)
                 await Task.Delay(TimeSpan.FromSeconds(1));
 
@@ -484,7 +491,7 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         Assert.All(received, m => Assert.Equal(1, m.DeliveryCount));
         Assert.DoesNotContain(sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>(), r => r.VisibilityTimeout > 0);
         Assert.Equal(messages.Count, sqsInterceptor.RequestsOf<SendMessageRequest>().Count());
-        Assert.Single(sqsInterceptor.RequestsOf<GetQueueAttributesRequest>(), r => r.AttributeNames.Contains(QueueAttributeName.ApproximateNumberOfMessagesNotVisible));
+        Assert.Equal(1, readsBeforeClockMoved);
     }
 
     [Theory]
