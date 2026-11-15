@@ -641,6 +641,131 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     }
 
     [Fact]
+    public async Task ReceiveAsync_SeveralEarlyMessages_HidesThemInBatchCalls()
+    {
+        // Arrange
+        var backlog = new FakeSqsBacklog();
+        backlog.AddEarly(25, DateTimeOffset.UtcNow.AddDays(2));
+        var (receivers, sqsInterceptor) = await CreateBacklogReceiversAsync(backlog, "hide-batch");
+
+        // Act
+        var delivered = await DrainAsync(backlog, receivers);
+
+        // Assert
+        Assert.Empty(delivered);
+        Assert.Equal(25, backlog.Hides);
+        Assert.Empty(sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>());
+        Assert.Equal([10, 10, 5], sqsInterceptor.RequestsOf<ChangeMessageVisibilityBatchRequest>().Select(r => r.Entries.Count));
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_SeveralEarlyMessagesWhileManyAreInFlight_SendsThemAgainInBatchCalls()
+    {
+        Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
+
+        // Arrange: four 60 KB messages fill a send batch, since SQS accepts 256 KiB per batch.
+        var backlog = new FakeSqsBacklog { OtherInFlight = 100_000 };
+        backlog.AddEarly(10, DateTimeOffset.UtcNow.AddMinutes(20), bodySize: 60_000);
+        var (receivers, sqsInterceptor) = await CreateBacklogReceiversAsync(backlog, "send-again-batch");
+
+        // Act
+        var delivered = await DrainAsync(backlog, receivers);
+
+        // Assert
+        Assert.Empty(delivered);
+        Assert.Equal(0, backlog.Hides);
+        Assert.Equal(0, backlog.InFlight);
+        Assert.Equal(10, backlog.Sent.Count);
+        Assert.All(backlog.Sent, s => Assert.Equal(900, s.DelaySeconds));
+        Assert.Empty(sqsInterceptor.RequestsOf<SendMessageRequest>());
+        Assert.Equal([4, 4, 2], sqsInterceptor.RequestsOf<SendMessageBatchRequest>().Select(r => r.Entries.Count));
+        Assert.Equal(10, Assert.Single(sqsInterceptor.RequestsOf<DeleteMessageBatchRequest>()).Entries.Count);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_ReceiversHidingABurstTogether_StayWithinTheInFlightBudget()
+    {
+        Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
+
+        // Arrange: 45,000 messages are already in flight, so 5,000 more may be hidden before the 50,000 budget is
+        // reached. Two receivers, as in two processes, hide a burst of 10,000 together. Each reads the queue's count
+        // again after 1,000 hides of its own, so it misses at most the other's last 1,000.
+        var backlog = new FakeSqsBacklog { OtherInFlight = 45_000 };
+        backlog.AddEarly(10_000, DateTimeOffset.UtcNow.AddDays(2));
+        var (receivers, _) = await CreateBacklogReceiversAsync(backlog, "burst", receiverCount: 2);
+
+        // Act
+        await DrainAsync(backlog, receivers);
+
+        // Assert: the rest were sent again with a delay, which does not count toward the in-flight quota.
+        Assert.InRange(backlog.Hides, 4_990, 7_000);
+        Assert.Equal(10_000, backlog.Hides + backlog.Sent.Count);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WhenSqsRefusesItWithOverLimit_ReleasesWhatItHidAndSendsEarlyMessagesAgainUntilTheCountIsReadAgain()
+    {
+        Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
+
+        // Arrange: the receiver hides 20 early messages; then SQS refuses a receive because the queue is over its
+        // in-flight quota, which a burst hidden by many receivers can cause.
+        var clock = new OffsetTimeProvider();
+        var backlog = new FakeSqsBacklog();
+        backlog.AddEarly(20, clock.GetUtcNow().AddDays(2));
+        var (receivers, _) = await CreateBacklogReceiversAsync(backlog, "over-limit", clock: clock);
+        var receiver = receivers[0];
+        await DrainAsync(backlog, receiver);
+        Assert.Equal(20, backlog.Hides);
+        backlog.RefuseReceives = 1;
+
+        // Act
+        var received = await receiver.ReceiveAsync(10, TimeSpan.Zero, TestCancellationToken);
+
+        // Assert: the receive returns nothing rather than failing, the hidden messages are released to free their
+        // place in the quota, and they come back to be sent again with a delay instead of hidden again.
+        Assert.Empty(received);
+        Assert.Equal(1, backlog.RefusedReceives);
+        Assert.Equal(20, backlog.Released.Count);
+        await DrainAsync(backlog, receiver);
+        Assert.Equal(20, backlog.Hides);
+        Assert.Equal(20, backlog.Sent.Count);
+        Assert.Equal(0, backlog.InFlight);
+
+        // A minute later the receiver reads the count again and, the queue no longer crowded, hides early messages again.
+        clock.Advance(TimeSpan.FromMinutes(2));
+        backlog.AddEarly(10, clock.GetUtcNow().AddDays(2), idPrefix: "later");
+        await DrainAsync(backlog, receiver);
+        Assert.Equal(30, backlog.Hides);
+        Assert.Equal(20, backlog.Sent.Count);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WhenSqsRefusesToHideWithOverLimit_SendsTheEarlyMessagesAgainInstead()
+    {
+        Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
+
+        // Arrange
+        var backlog = new FakeSqsBacklog { RefuseHides = true };
+        backlog.AddEarly(10, DateTimeOffset.UtcNow.AddDays(2));
+        var (receivers, sqsInterceptor) = await CreateBacklogReceiversAsync(backlog, "hide-refused");
+
+        // Act
+        await DrainAsync(backlog, receivers);
+
+        // Assert
+        Assert.Equal(0, backlog.Hides);
+        Assert.Equal(0, backlog.InFlight);
+        Assert.Equal(10, backlog.Sent.Count);
+
+        // The receiver stops trying to hide: later early messages are sent again at once.
+        int hideAttempts = sqsInterceptor.RequestsOf<ChangeMessageVisibilityBatchRequest>().Count() + sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>().Count();
+        backlog.AddEarly(10, DateTimeOffset.UtcNow.AddDays(2), idPrefix: "next");
+        await DrainAsync(backlog, receivers);
+        Assert.Equal(hideAttempts, sqsInterceptor.RequestsOf<ChangeMessageVisibilityBatchRequest>().Count() + sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>().Count());
+        Assert.Equal(20, backlog.Sent.Count);
+    }
+
+    [Fact]
     public async Task Delete_Subscription_UnsubscribesAndRevokesTheTopicButKeepsTheQueue()
     {
         // Arrange
@@ -1185,6 +1310,38 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     };
 
     private static Amazon.SQS.Model.BatchResultErrorEntry Failure(string id, string code, bool senderFault) => new() { Id = id, Code = code, Message = code, SenderFault = senderFault };
+
+    /// <summary>Opens receivers of a new queue whose messages and in-flight count <paramref name="backlog"/> plays.</summary>
+    private async Task<(IMessageReceiver[] Receivers, InterceptingSqsClient Interceptor)> CreateBacklogReceiversAsync(FakeSqsBacklog backlog, string name, int receiverCount = 1, TimeProvider? clock = null)
+    {
+        var transport = CreateInterceptedTransport(out var sqsInterceptor, clock);
+        var source = MessageSource.Queue(NewName(name));
+        DeleteAfterTest(source);
+        var receivers = new IMessageReceiver[receiverCount];
+        for (int i = 0; i < receiverCount; i++)
+            receivers[i] = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        sqsInterceptor.Requests.Clear();
+        sqsInterceptor.Intercept = backlog.InterceptAsync;
+        return (receivers, sqsInterceptor);
+    }
+
+    /// <summary>Polls with every receiver, one receive each at a time, until the backlog has nothing visible, and returns what they delivered.</summary>
+    private async Task<List<IncomingMessage>> DrainAsync(FakeSqsBacklog backlog, params IMessageReceiver[] receivers)
+    {
+        var delivered = new List<IncomingMessage>();
+        var deadline = DateTime.UtcNow + DeliveryTimeout * 3;
+        while (backlog.Visible > 0)
+        {
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException($"{backlog.Visible} messages were still visible.");
+
+            foreach (var messages in await Task.WhenAll(receivers.Select(r => r.ReceiveAsync(10, TimeSpan.Zero, TestCancellationToken))))
+                delivered.AddRange(messages);
+        }
+
+        return delivered;
+    }
 
     /// <summary>Sends a message straight to SQS, as another producer would.</summary>
     protected Task<SendMessageResponse> RawSendAsync(IAmazonSQS sqs, SendMessageRequest request)

@@ -39,8 +39,10 @@ namespace Foundatio.Messaging.Transport;
 /// SQS's quota of messages in flight per queue (about 120,000), past which SQS returns no message of the queue at all.
 /// So on a standard queue that already has 50,000 in flight, an early message is instead sent again with a delay of up
 /// to 15 minutes, which does not count toward the quota but costs a send, a receive and a delete every 15 minutes.
-/// FIFO queues can only hide, so a burst of long-delayed messages can stall one; use jobs for long or high-volume
-/// delays.
+/// Receivers read the queue's count again after every 1,000 hides, so many hiding a burst together stay near the
+/// 50,000; one that SQS refuses with <c>OverLimit</c> sends early messages again for a minute and releases the last
+/// 1,000 it hid. FIFO queues can only hide, so a burst of long-delayed messages can stall one; use jobs for long or
+/// high-volume delays.
 /// </para>
 /// <para>
 /// On FIFO queues a hidden message holds back the later messages of its group. SQS returns those in the same receive
