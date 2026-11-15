@@ -57,9 +57,10 @@ public sealed record TransportCapabilities
 
     /// <summary>
     /// The shortest delay <see cref="IMessageReceiver.AbandonAsync"/> honours accurately, for brokers whose delays are
-    /// coarse (SQS visibility timeouts are whole seconds). Foundatio holds shorter retry delays in-process, keeping the
-    /// delivery leased, and then abandons it without a delay. A crash during the hold delivers the message again
-    /// sooner; it is never lost. Defaults to <see cref="TimeSpan.Zero"/>.
+    /// coarse (SQS visibility timeouts are whole seconds). Foundatio lengthens a shorter retry delay to this one when
+    /// it is within a fifth of it, and holds shorter ones in-process, keeping the delivery leased, then abandons it
+    /// without a delay. A crash during the hold delivers the message again sooner; it is never lost. Defaults to
+    /// <see cref="TimeSpan.Zero"/>.
     /// </summary>
     public TimeSpan MinRetryDelay { get; init; }
 

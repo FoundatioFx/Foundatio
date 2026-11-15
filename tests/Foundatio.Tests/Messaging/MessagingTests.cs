@@ -519,6 +519,51 @@ public class MessagingTests : TestWithLoggingBase
         Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(1)], coarse.AbandonDelays.ToArray());
     }
 
+    [Theory]
+    [InlineData(800, 1000)]
+    [InlineData(999, 1000)]
+    [InlineData(790, 0)]
+    public async Task RetryDelays_JustUnderTheTransportsMinimum_AreLengthenedToItInsteadOfHeld(int retryDelayMs, int abandonDelayMs)
+    {
+        var coarse = new LimitedTransport(_transport, _transport.Capabilities with { MinRetryDelay = TimeSpan.FromSeconds(1) });
+        int attempts = 0;
+        await using var host = await MessagingTestHost.StartAsync(coarse, Log, "tests", m => m.AddConsumer<PlaceOrder>((_, context, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            if (context.Attempt == 1)
+                context.Retry(TimeSpan.FromMilliseconds(retryDelayMs));
+
+            return Task.CompletedTask;
+        }));
+
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref attempts) == 2);
+
+        Assert.Equal([TimeSpan.FromMilliseconds(abandonDelayMs)], coarse.AbandonDelays.ToArray());
+    }
+
+    [Fact]
+    public async Task RetryDelays_FromTheDefaultPolicy_AreNotHeldOnATransportWithAOneSecondMinimum()
+    {
+        const int count = 16;
+        var coarse = new LimitedTransport(_transport, _transport.Capabilities with { MinRetryDelay = TimeSpan.FromSeconds(1) });
+        int succeeded = 0;
+        await using var host = await MessagingTestHost.StartAsync(coarse, Log, "tests", m => m.AddConsumer<PlaceOrder>((_, context, _) =>
+        {
+            if (context.Attempt == 1)
+                throw new InvalidOperationException("transient");
+
+            Interlocked.Increment(ref succeeded);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = count }));
+
+        await host.Client.SendBatchAsync(Enumerable.Range(1, count).Select(i => new PlaceOrder(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref succeeded) == count);
+
+        Assert.Equal(count, coarse.AbandonDelays.Count);
+        Assert.All(coarse.AbandonDelays, delay => Assert.InRange(delay, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1.2)));
+    }
+
     [Fact]
     public async Task LostDelivery_OnATransportWithoutLeaseExpiration_CancelsTheHandlerAndSkipsSettlement()
     {

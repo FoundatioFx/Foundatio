@@ -222,12 +222,22 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         return await DeadLetterOrDropAsync(delivery, description, abortToken).AnyContext();
     }
 
-    /// <summary>Releases the message to be delivered again after <paramref name="delay"/>, holding it in-process when the broker cannot delay it.</summary>
+    /// <summary>
+    /// Releases the message to be delivered again after <paramref name="delay"/>. A delay within a fifth of the
+    /// transport's <see cref="TransportCapabilities.MinRetryDelay"/> is lengthened to it; one the broker cannot delay
+    /// is held in-process, and the message then released at once.
+    /// </summary>
     private async Task RetryAsync(MessageDelivery delivery, TimeSpan delay, CancellationToken abortToken)
     {
         var capabilities = _runtime.Transport.Capabilities;
         var maxDelay = capabilities.MaxRetryDelay;
-        if (delay > TimeSpan.Zero && (maxDelay == TimeSpan.Zero || delay < capabilities.MinRetryDelay))
+        var minDelay = capabilities.MinRetryDelay;
+
+        // The default policy's jitter puts about half of its first retries just under a 1 s minimum.
+        if (delay > TimeSpan.Zero && maxDelay != TimeSpan.Zero && delay < minDelay && delay.Ticks >= minDelay.Ticks - minDelay.Ticks / 5)
+            delay = minDelay;
+
+        if (delay > TimeSpan.Zero && (maxDelay == TimeSpan.Zero || delay < minDelay))
         {
             // The broker can't delay this retry (accurately): hold the lease, still renewed, for the backoff, then release at once.
             // A lease lost meanwhile ends the hold, and the message is not released: another consumer may have it.
