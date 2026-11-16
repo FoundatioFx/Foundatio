@@ -630,7 +630,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         long added = values is string stringValue
             ? ListAddPrepared<string>(key, new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { { stringValue, expiresAt } }, expiresAt)
-            : ListAdd(key, GetDistinctListValues(values), expiresAt);
+            : ListAdd(key, values, expiresAt);
 
         if (added > 0)
             await StartMaintenanceAsync().AnyContext();
@@ -665,8 +665,22 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return items;
     }
 
-    private long ListAdd<T>(string key, HashSet<T> items, DateTime? expiresAt) where T : notnull
+    private long ListAdd<T>(string key, IEnumerable<T> values, DateTime? expiresAt) where T : notnull
     {
+        if (!_canShareListValues && values is HashSet<T> set && set.GetType() == typeof(HashSet<T>)
+            && ReferenceEquals(set.Comparer, EqualityComparer<T>.Default)
+            && (typeof(T) == typeof(string) || typeof(T).IsPrimitive || typeof(T).IsEnum))
+        {
+            var dictionary = new Dictionary<T, DateTime?>(set.Count, set.Comparer);
+            bool canBeNull = default(T) is null;
+            foreach (var value in set)
+                if (!canBeNull || value is not null)
+                    dictionary.Add(value, expiresAt);
+
+            return dictionary.Count == 0 ? 0 : ListAddPrepared<T>(key, dictionary, expiresAt);
+        }
+
+        var items = GetDistinctListValues(values);
         if (items.Count is 0)
             return 0;
 
@@ -762,12 +776,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private CacheEntry WithListValues<T>(CacheEntry current, IDictionary<T, DateTime?> dictionary, long size, bool cloneAfterUpdate) where T : notnull
     {
-        var expiresAt = GetListExpiration(dictionary);
+        bool readExpirationAfterClone = cloneAfterUpdate && (dictionary switch
+        {
+            Dictionary<T, DateTime?> exact => exact.GetType() == typeof(Dictionary<T, DateTime?>),
+            SortedDictionary<T, DateTime?> exact => exact.GetType() == typeof(SortedDictionary<T, DateTime?>),
+            SortedList<T, DateTime?> exact => exact.GetType() == typeof(SortedList<T, DateTime?>),
+            ConcurrentDictionary<T, DateTime?> exact => exact.GetType() == typeof(ConcurrentDictionary<T, DateTime?>),
+#if NET9_0_OR_GREATER
+            OrderedDictionary<T, DateTime?> exact => exact.GetType() == typeof(OrderedDictionary<T, DateTime?>),
+#endif
+            _ => false
+        });
+        var expiresAt = readExpirationAfterClone ? null : GetListExpiration(dictionary);
         if (cloneAfterUpdate)
         {
             object clone = ShouldCloneListComparer<T>(dictionary) || !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T))
                 ? CloneDictionaryWithComparer(dictionary)
                 : FastCloner.FastCloner.DeepCloneTo(dictionary, FastCloner.FastCloner.ShallowClone(dictionary))!;
+            if (readExpirationAfterClone)
+                expiresAt = GetListExpiration((IDictionary<T, DateTime?>)clone);
             return current.WithValue(clone, expiresAt, size);
         }
 
@@ -795,6 +822,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         values.EnsureCapacity(capacity);
     }
+
+    private static bool UsesBuiltInListKeyEquality<T>(IEqualityComparer<T> comparer) =>
+        (typeof(T).IsPrimitive || typeof(T).IsEnum || typeof(T) == typeof(string))
+        && (ReferenceEquals(comparer, EqualityComparer<T>.Default)
+            || typeof(T) == typeof(string)
+            && (ReferenceEquals(comparer, StringComparer.Ordinal) || ReferenceEquals(comparer, StringComparer.OrdinalIgnoreCase)));
 
     /// <summary>
     /// Returns a private copy for the update attempt, or <c>null</c> if the entry does not hold a list.
@@ -870,15 +903,33 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return clone;
     }
 
-    private int ExpireListValues<T>(IDictionary<T, DateTime?> dictionary, string existingKey)
+    private int ExpireListValues<T>(IDictionary<T, DateTime?> dictionary, string existingKey) where T : notnull
     {
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
-        int expiredValues = expiredValueKeys.Count(dictionary.Remove);
+        int expiredValues;
+        if (dictionary is Dictionary<T, DateTime?> values && values.GetType() == typeof(Dictionary<T, DateTime?>)
+            && UsesBuiltInListKeyEquality(values.Comparer))
+        {
+            // Removing is safe during dictionary enumeration when comparisons cannot invoke user code.
+            expiredValues = 0;
+            foreach (var pair in values)
+                if (pair.Value < utcNow && values.Remove(pair.Key))
+                    expiredValues++;
+        }
+        else
+        {
+            expiredValues = RemoveExpiredValues(dictionary, utcNow);
+        }
         if (expiredValues > 0)
             _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, existingKey);
 
         return expiredValues;
+
+        static int RemoveExpiredValues(IDictionary<T, DateTime?> dictionary, DateTime utcNow)
+        {
+            var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
+            return expiredValueKeys.Count(dictionary.Remove);
+        }
     }
 
     private static DateTime? GetListExpiration<T>(IDictionary<T, DateTime?> dictionary) where T : notnull
@@ -1974,19 +2025,35 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             Pages<Item>.Builder? values = null;
             Pages<int>.Builder? heads = null;
             Pages<int>.Builder? hashes = null;
-            bool largeBatch = items.Count >= Math.Max(1, count / BlockSize);
+            int largeBatchThreshold = Math.Max(1, count / BlockSize);
+            bool largeBatch = items.Count >= largeBatchThreshold;
             bool prune = storage.Exposed
                 ? storage.Dictionary!.Any(pair => pair.Value < utcNow)
                 : storage.Expirations?.Range.Minimum < utcNow;
             if (remove && !prune && !items.Any(key => storage.Dictionary?.ContainsKey(key) ?? Find(key, out _, out _, out _) >= 0))
                 return this;
-            if (!remove && !prune && (storage.Dictionary is not null || largeBatch) && IsUnchangedBatch(items))
-                return this;
-
-            if (storage.Exposed || largeBatch || count < storage.NextIndex / 4)
+            if (!remove && !prune && (storage.Dictionary is not null || largeBatch))
             {
-                var dictionary = CopyValues(storage);
-                if (prune)
+                if (IsUnchangedBatch(items, out bool smallUpdate))
+                    return this;
+                if (smallUpdate)
+                    largeBatch = false;
+            }
+
+            bool compactExpired = remove && storage.Items is not null && storage.LatestExpiration < utcNow
+                && storage.PermanentCount < count / 4 && UsesBuiltInListKeyEquality(storage.Comparer);
+            if (storage.Exposed || largeBatch || count < storage.NextIndex / 4 || compactExpired)
+            {
+                var dictionary = compactExpired
+                    ? new Dictionary<T, DateTime?>(storage.PermanentCount, storage.Comparer)
+                    : CopyValues(storage);
+                if (compactExpired)
+                {
+                    foreach (var pair in Enumerate(storage))
+                        if (pair.Value is null)
+                            dictionary.Add(pair.Key, null);
+                }
+                else if (prune)
                     foreach (var key in dictionary.Where(pair => pair.Value < utcNow).Select(pair => pair.Key).ToArray())
                         dictionary.Remove(key);
                 if (remove)
@@ -1994,6 +2061,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 else
                     foreach (var key in items)
                         dictionary[key] = expiration;
+                if (compactExpired && removed > 0)
+                    dictionary = new Dictionary<T, DateTime?>(dictionary, storage.Comparer);
+                if (dictionary.Count > 0 && dictionary.Count < dictionary.EnsureCapacity(0) / 4)
+                    dictionary.TrimExcess();
                 return new ListSnapshot<T>(dictionary);
             }
 
@@ -2085,20 +2156,27 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (!changed)
                 return this;
 
-            return new ListSnapshot<T>(new Storage(values.Value, heads.Value, hashes.Value, storage.Comparer, count, bucketCount,
-                freeIndices, nextIndex, permanentCount, storage));
+            var updated = new Storage(values.Value, heads.Value, hashes.Value, storage.Comparer, count, bucketCount,
+                freeIndices, nextIndex, permanentCount, storage);
+            return count > 0 && count < nextIndex / 4
+                ? new ListSnapshot<T>(CopyValues(updated))
+                : new ListSnapshot<T>(updated);
 
-            bool IsUnchangedBatch(ICollection<T> batch)
+            bool IsUnchangedBatch(ICollection<T> batch, out bool smallUpdate)
             {
+                smallUpdate = false;
                 if (storage.Dictionary is not null || batch is not HashSet<T> keys
                     || count != keys.Count || !ReferenceEquals(storage.Comparer, keys.Comparer))
                     return batch.All(IsUnchanged);
 
-                // Equal counts and comparers let us scan stored slots instead of probing the paged index.
+                // Equal counts and comparers let us count new keys by scanning for missing stored keys.
+                int changes = 0;
                 foreach (var pair in Enumerate(storage))
                     if (pair.Value != expiration || !keys.Contains(pair.Key))
-                        return false;
-                return true;
+                        if (!storage.FreeIndices.IsEmpty || ++changes >= largeBatchThreshold)
+                            return false;
+                smallUpdate = changes > 0;
+                return changes == 0;
             }
 
             bool IsUnchanged(T key)
