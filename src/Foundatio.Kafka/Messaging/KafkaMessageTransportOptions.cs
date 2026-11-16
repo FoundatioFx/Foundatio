@@ -98,8 +98,26 @@ public sealed record KafkaMessageTransportOptions
     internal int ReceiverHeldLimit { get; init; } = 1000;
 
     /// <summary>
+    /// How many records of one group a receiver holds behind an earlier record of the group before it stops reading. If
+    /// they do not drain to half within <see cref="ReceiverHeldStopTimeout"/>, it skips the group's later records
+    /// instead, leaving them unfinished, and reads them again once the group drains.
+    /// </summary>
+    internal int ReceiverGroupHeldLimit { get; init; } = 100;
+
+    /// <summary>How many records a receiver skips per partition before it stops reading that partition until half are read again.</summary>
+    internal int ReceiverSkippedLimit { get; init; } = 10_000;
+
+    /// <summary>
+    /// How far behind a partition's last read offset its oldest skipped record may be, which is how much the
+    /// partition's next owner reads again after a crash, before the receiver stops reading that partition until it is
+    /// half as far.
+    /// </summary>
+    internal long ReceiverSkippedSpanLimit { get; init; } = 100_000;
+
+    /// <summary>
     /// How long a receiver stops reading for a partition over its held limit before it pauses that partition instead,
-    /// which drops what librdkafka fetched for it but lets its other partitions be read.
+    /// which drops what librdkafka fetched for it but lets its other partitions be read, and for a group over its held
+    /// limit before it skips the group's later records instead.
     /// </summary>
     internal TimeSpan ReceiverHeldStopTimeout { get; init; } = TimeSpan.FromMilliseconds(100);
 

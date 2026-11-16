@@ -33,8 +33,23 @@ internal sealed class KafkaPartitionState
     /// <summary>The <see cref="KafkaRecord.Size"/> of the partition's held records.</summary>
     public long HeldBytes { get; set; }
 
-    /// <summary>Whether the partition holds too many records behind their groups, and what the receiver does about it.</summary>
+    /// <summary>
+    /// Whether the partition holds too many records behind their groups, or has skipped too many, and what the
+    /// receiver does about it.
+    /// </summary>
     public KafkaHeldBudget HeldBudget { get; } = new();
+
+    /// <summary>Records read but not kept because their group held its budget; their offsets stay in <see cref="Pending"/>.</summary>
+    public KafkaSkippedRecords Skipped { get; } = new();
+
+    /// <summary>
+    /// How far behind <see cref="NextOffset"/> the oldest skipped record is: what the partition's next owner reads
+    /// again after a crash because of skipped records.
+    /// </summary>
+    public long SkippedSpan => Skipped.Count > 0 ? NextOffset - Skipped.LowestOffset : 0;
+
+    /// <summary>The partition reached its skip limits and has not drained to half of them since, so it was warned about once.</summary>
+    public bool SkippedLimitReached { get; set; }
 
     /// <summary>The offset after the last one read, or -1 before the first read.</summary>
     public long NextOffset { get; set; } = -1;

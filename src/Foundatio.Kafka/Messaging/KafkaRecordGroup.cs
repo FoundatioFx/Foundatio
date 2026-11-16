@@ -31,5 +31,20 @@ internal sealed class KafkaRecordGroup
     /// <summary>The group's records that wait for their delivery time.</summary>
     public List<KafkaRecord> Timed { get; } = [];
 
-    public bool IsEmpty => Records.Count == 0 && InFlight == 0 && Timed.Count == 0;
+    /// <summary>
+    /// The group's own held budget. Once the group holds its limit and does not drain within the stop timeout, the
+    /// budget is paused: the group's later records are skipped (<see cref="KafkaSkippedRecords"/>) instead of held.
+    /// </summary>
+    public KafkaHeldBudget Budget { get; } = new();
+
+    /// <summary>How many of the group's records are skipped, on all partitions.</summary>
+    public int SkippedCount { get; set; }
+
+    /// <summary>
+    /// The group has drained to half its budget, so its skipped records are read again, until it nearly holds its
+    /// budget again.
+    /// </summary>
+    public bool CatchingUp { get; set; }
+
+    public bool IsEmpty => Records.Count == 0 && InFlight == 0 && Timed.Count == 0 && SkippedCount == 0;
 }

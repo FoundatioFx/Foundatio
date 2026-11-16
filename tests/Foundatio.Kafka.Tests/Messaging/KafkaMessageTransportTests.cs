@@ -533,7 +533,393 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
-    public async Task Receive_WithAGroupBacklogOverItsPartitionsHeldLimit_PausesOnlyThatPartition()
+    public async Task Receive_WithAGroupBacklogOnOnePartition_DeliversOtherGroupsWhileItsHeadIsUnsettled()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverBufferLimit = 8, ReceiverGroupHeldLimit = 10 }));
+        var source = MessageSource.Queue(NewName("skip-hot"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 100).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 20).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+
+        // The hot group's first message is still being handled. Once it holds its budget of 10 behind it and does not
+        // drain, its later records are skipped, so the groups behind them on the same partition are read and delivered.
+        var hot = (KafkaIncomingMessage)await ReceiveOneAsync(receiver);
+        Assert.Equal("hot-0", hot.MessageId);
+        var cold = await ReceiveAsync(receiver, 20);
+        Assert.Equal(Enumerable.Range(0, 20).Select(i => $"cold-{i}").Order(), cold.Select(m => m.MessageId).Order());
+        foreach (var message in cold)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+
+        Assert.Equal(0, receiver.Pauses);
+        Assert.Equal(0, receiver.HeldStops);
+        Assert.Equal(1, receiver.GroupStops);
+        int skipped = receiver.SkippedCount;
+        Assert.InRange(skipped, 89, 90);
+        Assert.Equal(skipped, receiver.SkippedTotal);
+        Assert.Equal(hot.Offset + 100 - skipped, receiver.LowestSkippedOffset(hot.Partition.TopicPartition));
+
+        // Once its first message is settled, the group drains, and its skipped records are read again, once, in order.
+        await receiver.CompleteAsync(hot, TestCancellationToken);
+        var order = new List<string> { hot.MessageId };
+        order.AddRange(await DrainAsync(receiver, 99));
+        Assert.Equal(Enumerable.Range(0, 100).Select(i => $"hot-{i}"), order);
+        Assert.Equal(skipped, receiver.ReadAgainCount);
+        Assert.Equal(0, receiver.SkippedCount);
+        Assert.Equal(0, receiver.Pauses);
+
+        // With nothing skipped, the catch-up reader gives up its partitions and reads nothing.
+        await WaitForAsync(() => receiver.CatchUpReader is { AssignedCount: 0 });
+        long reads = receiver.CatchUpReader!.Reads;
+        Assert.Equal(skipped, reads);
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+        Assert.Equal(reads, receiver.CatchUpReader.Reads);
+    }
+
+    [Fact]
+    public async Task Receive_WithASkippingGroup_DeliversItsRecordsOnceInSendOrder()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverBufferLimit = 8, ReceiverGroupHeldLimit = 10 }));
+        var source = MessageSource.Queue(NewName("skip-order"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Two runs of the hot group, each followed by more of other groups than the reader reads through to its next record.
+        await transport.SendAsync(destination, Enumerable.Range(0, 50).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 200).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(50, 50).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(200, 200).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+
+        var first = (KafkaIncomingMessage)await ReceiveOneAsync(receiver);
+        Assert.Equal("hot-0", first.MessageId);
+        var cold = await DrainAsync(receiver, 400, TimeSpan.FromSeconds(60));
+        Assert.Equal(Enumerable.Range(0, 400).Select(i => $"cold-{i}").Order(), cold.Order());
+        Assert.True(receiver.SkippedCount > 50, $"Skipped {receiver.SkippedCount}.");
+
+        // The group is handled slowly, so its skipped records are read again over several rounds, each up to its budget.
+        await receiver.CompleteAsync(first, TestCancellationToken);
+        var hot = new List<KafkaIncomingMessage> { first };
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (hot.Count < 100 && DateTime.UtcNow < deadline)
+        {
+            var batch = await receiver.ReceiveAsync(4, TimeSpan.FromSeconds(1), TestCancellationToken);
+            await Task.Delay(20, TestCancellationToken);
+            foreach (var message in batch)
+            {
+                hot.Add((KafkaIncomingMessage)message);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        Assert.Equal(Enumerable.Range(0, 100).Select(i => $"hot-{i}"), hot.Select(m => m.MessageId));
+        Assert.Equal(Enumerable.Range(0, 50).Select(i => first.Offset + i).Concat(Enumerable.Range(50, 50).Select(i => first.Offset + 200 + i)), hot.Select(m => m.Offset));
+        Assert.All(hot, m => Assert.Equal(1, m.DeliveryCount));
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+
+        Assert.Equal(receiver.SkippedTotal, receiver.ReadAgainCount);
+        Assert.Equal(0, receiver.SkippedCount);
+        Assert.Equal(0, receiver.Pauses);
+        var reader = receiver.CatchUpReader!;
+        Assert.Equal(receiver.SkippedTotal, reader.Reads);
+        Assert.Equal(2, reader.Seeks);
+        await WaitForAsync(() => reader.AssignedCount == 0);
+    }
+
+    [Fact]
+    public async Task Receive_WithAGroupHeadWaitingOutARetryDelay_SkipsWithoutStoppingTheReading()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverBufferLimit = 8, ReceiverGroupHeldLimit = 10 }));
+        var source = MessageSource.Queue(NewName("skip-retry"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(destination, [Message("hot-0", "hot-0") with { GroupKey = "hot" }], TestCancellationToken);
+        var retryAt = DateTimeOffset.UtcNow.AddSeconds(8);
+        await receiver.AbandonAsync(await ReceiveOneAsync(receiver), TimeSpan.FromSeconds(8), TestCancellationToken);
+
+        // The group's records are held behind its first, which waits out its retry delay, so it cannot drain soon: once it
+        // holds its budget its later records are skipped at once, without stopping the reading first.
+        await transport.SendAsync(destination, Enumerable.Range(1, 40).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 20).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+        var cold = await DrainAsync(receiver, 20);
+        Assert.True(DateTimeOffset.UtcNow < retryAt, "The other groups were not delivered before the retry was due.");
+        Assert.Equal(Enumerable.Range(0, 20).Select(i => $"cold-{i}").Order(), cold.Order());
+        Assert.Equal(0, receiver.GroupStops);
+        Assert.Equal(0, receiver.HeldStops);
+        Assert.Equal(0, receiver.Pauses);
+        Assert.Equal(30, receiver.SkippedCount);
+
+        var retried = await ReceiveOneAsync(receiver, TimeSpan.FromSeconds(30));
+        Assert.Equal("hot-0", retried.MessageId);
+        Assert.Equal(2, retried.DeliveryCount);
+        await receiver.CompleteAsync(retried, TestCancellationToken);
+        Assert.Equal(Enumerable.Range(1, 40).Select(i => $"hot-{i}"), await DrainAsync(receiver, 40));
+        Assert.Equal(30, receiver.ReadAgainCount);
+    }
+
+    [Fact]
+    public async Task Receive_WithAGroupBacklogReadWhileItsPartitionLoads_SkipsWhatItHoldsPastItsBudgetOnceItHasNotDrained()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverHeldLimit = 50,
+            ReceiverGroupHeldLimit = 10
+        }));
+        var source = MessageSource.Queue(NewName("skip-loaded"));
+        var destination = MessageDestination.Queue(source.Name);
+        await transport.SendAsync(destination, Enumerable.Range(0, 300).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 20).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+
+        // While the partition's state loads, nothing can be handed out, so the group is not judged then: its records are
+        // held, up to the partition's limit. Once loaded, the group still does not drain, so it starts skipping, and
+        // skips what it held past its budget too, which lets the partition be read on to the other groups.
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var hot = await ReceiveOneAsync(receiver);
+        Assert.Equal("hot-0", hot.MessageId);
+        var cold = await DrainAsync(receiver, 20);
+        Assert.Equal(Enumerable.Range(0, 20).Select(i => $"cold-{i}").Order(), cold.Order());
+        Assert.InRange(receiver.HeldCount, 9, 10);
+        Assert.InRange(receiver.SkippedTotal, 289, 290);
+
+        await receiver.CompleteAsync(hot, TestCancellationToken);
+        var order = new List<string> { hot.MessageId };
+        order.AddRange(await DrainAsync(receiver, 299, TimeSpan.FromSeconds(60)));
+        Assert.Equal(Enumerable.Range(0, 300).Select(i => $"hot-{i}"), order);
+        Assert.Equal(receiver.SkippedTotal, receiver.ReadAgainCount);
+        await WaitForAsync(() => receiver.PausedCount == 0);
+    }
+
+    [Fact]
+    public async Task Receive_WithAGroupThatDrainsWithinTheStopTimeout_DoesNotSkip()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverGroupHeldLimit = 20,
+            ReceiverHeldStopTimeout = TimeSpan.FromSeconds(30)
+        }));
+        var source = MessageSource.Queue(NewName("skip-drain"));
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 300).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // While a batch of the group is unsettled, its next records are held until they reach its budget, which stops the
+        // reading. Each batch is settled well within the stop timeout, so the group drains and nothing is skipped.
+        var order = new List<string>();
+        for (int reached = 1; reached <= 5; reached++)
+        {
+            var batch = await receiver.ReceiveAsync(15, TimeSpan.FromSeconds(5), TestCancellationToken);
+            await WaitForAsync(() => receiver.GroupStops >= reached);
+            foreach (var message in batch)
+            {
+                order.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        order.AddRange(await DrainAsync(receiver, 300 - order.Count, TimeSpan.FromSeconds(60)));
+        Assert.Equal(Enumerable.Range(0, 300).Select(i => $"hot-{i}"), order);
+        Assert.Equal(0, receiver.SkippedTotal);
+        Assert.Equal(0, receiver.HeldStops);
+        Assert.Equal(0, receiver.Pauses);
+        Assert.Null(receiver.CatchUpReader);
+    }
+
+    [Fact]
+    public async Task Rebalance_OfAPartitionWithSkippedRecords_NextOwnerDeliversThemInOrderWithoutRedeliveringFinishedOnes()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            RebalanceGracePeriod = TimeSpan.FromMilliseconds(500),
+            ReceiverBufferLimit = 8,
+            ReceiverGroupHeldLimit = 10
+        }));
+        var source = MessageSource.Queue(NewName("skip-moved"));
+        var destination = MessageDestination.Queue(source.Name);
+        var first = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 60).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 40).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+
+        Assert.Equal("hot-0", (await ReceiveOneAsync(first)).MessageId);
+        Assert.Equal(40, (await DrainAsync(first, 40)).Count);
+        Assert.InRange(first.SkippedCount, 49, 50);
+
+        // The partition moves to a receiver that joined meanwhile, with the hot group's first message unsettled, ten of
+        // its records held and the rest skipped.
+        await using var second = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await first.DisposeAsync();
+        await WaitForAsync(() => second.Assignment.Count == 1, TimeSpan.FromSeconds(30));
+
+        // It delivers the group from its first message, which counts another delivery, in order and once, and none of
+        // the finished messages of the other groups again.
+        var again = await ReceiveOneAsync(second, TimeSpan.FromSeconds(30));
+        Assert.Equal("hot-0", again.MessageId);
+        Assert.Equal(2, again.DeliveryCount);
+        await second.CompleteAsync(again, TestCancellationToken);
+        Assert.Equal(Enumerable.Range(1, 59).Select(i => $"hot-{i}"), await DrainAsync(second, 59, TimeSpan.FromSeconds(60)));
+        await AssertNothingReceivedAsync(second, TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task Commit_WithSkippedRecordsOutstanding_StopsAtTheOldestUnfinishedAndKeepsTheFinishedOnesInTheState()
+    {
+        var options = CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverGroupHeldLimit = 10 };
+        var transport = Track(new KafkaMessageTransport(options));
+        var source = MessageSource.Queue(NewName("skip-crash"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 30).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        for (int i = 0; i < 1100; i += 550)
+            await transport.SendAsync(destination, Enumerable.Range(i, 550).Select(n => Message($"cold-{n}", $"cold-{n}")).ToList(), TestCancellationToken);
+
+        var hot = (KafkaIncomingMessage)await ReceiveOneAsync(receiver);
+        Assert.Equal(1100, (await DrainAsync(receiver, 1100, TimeSpan.FromSeconds(60))).Count);
+        long lowestSkipped = receiver.LowestSkippedOffset(hot.Partition.TopicPartition);
+        Assert.InRange(lowestSkipped, hot.Offset + 10, hot.Offset + 11);
+
+        // What a crashed process leaves its partition's next owner: a committed offset at the oldest unfinished record,
+        // and a state that finishes the other groups' messages behind it but none of the hot group's.
+        string queue = $"{options.Prefix}.queue.{source.Name}";
+        await using var other = new KafkaMessageTransport(options);
+        using var offsets = other.CreateOffsetReader(queue);
+        KafkaReceiverState? state = null;
+        long committed = -1;
+        await WaitForAsync(() =>
+        {
+            committed = other.GetCommittedOffsetsAsync(offsets, [hot.Partition.TopicPartition], TimeSpan.FromSeconds(5), TestCancellationToken).GetAwaiter().GetResult().Single().Offset.Value;
+            state = other.LoadReceiverStateAsync($"{queue}\n{queue}\n0", TestCancellationToken).GetAwaiter().GetResult();
+            return committed == hot.Offset && state is { Finished.Count: > 0 };
+        }, TimeSpan.FromSeconds(30));
+
+        Assert.Equal(hot.Offset, state!.AnchorOffset);
+        Assert.Equal(hot.MessageId, state.AnchorMessageId);
+        Assert.Equal([(hot.Offset + 30, hot.Offset + 1130)], state.Finished);
+        Assert.All(Enumerable.Range(1, 29), i => Assert.False(state.IsFinished(hot.Offset + i)));
+    }
+
+    [Theory]
+    [InlineData(10_000, 40)]
+    [InlineData(20, 100_000)]
+    public async Task Receive_PastTheSkippedLimits_PausesThePartitionAndWarnsWithTheGroupKey(int skippedLimit, long spanLimit)
+    {
+        Log.MaxLogEntriesToStore = 10_000;
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverGroupHeldLimit = 5,
+            ReceiverSkippedLimit = skippedLimit,
+            ReceiverSkippedSpanLimit = spanLimit
+        }));
+        var source = MessageSource.Queue(NewName("skip-limit"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 200).Select(i => Message($"busy-{i}", $"busy-{i}") with { GroupKey = "busy-group" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 50).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+
+        // Skipping the busy group reaches a limit (its records are contiguous, so as many are skipped as offsets spanned),
+        // and the receiver falls back to stopping the reading, then pausing the partition, and says which group did it.
+        var first = await ReceiveOneAsync(receiver);
+        await WaitForAsync(() => receiver.PausedCount == 1);
+        Assert.Equal((int)Math.Min(skippedLimit, spanLimit), receiver.SkippedCount);
+        Assert.Equal(1, receiver.HeldStops);
+        Assert.Equal(1, receiver.Pauses);
+        Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("busy-group", StringComparison.Ordinal));
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+
+        // Once the group is handled, the partition is read again, and nothing is lost or reordered.
+        await receiver.CompleteAsync(first, TestCancellationToken);
+        var received = new List<string> { first.MessageId };
+        received.AddRange(await DrainAsync(receiver, 249, TimeSpan.FromSeconds(60)));
+        Assert.Equal(Enumerable.Range(0, 200).Select(i => $"busy-{i}"), received.Where(id => id.StartsWith("busy-", StringComparison.Ordinal)));
+        Assert.Equal(Enumerable.Range(0, 50).Select(i => $"cold-{i}").Order(), received.Where(id => id.StartsWith("cold-", StringComparison.Ordinal)).Order());
+        await WaitForAsync(() => receiver.PausedCount == 0);
+        Assert.Equal(receiver.SkippedTotal, receiver.ReadAgainCount);
+    }
+
+    [Fact]
+    public async Task Receive_WithSkippedRecordsDeletedFromKafka_DropsThemAndDeliversTheRest()
+    {
+        Log.MaxLogEntriesToStore = 10_000;
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverBufferLimit = 8, ReceiverGroupHeldLimit = 10 }));
+        var source = MessageSource.Queue(NewName("skip-deleted"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 60).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(destination, Enumerable.Range(0, 10).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+
+        var first = (KafkaIncomingMessage)await ReceiveOneAsync(receiver);
+        Assert.Equal(10, (await DrainAsync(receiver, 10)).Count);
+        int lowest = (int)(receiver.LowestSkippedOffset(first.Partition.TopicPartition) - first.Offset);
+        Assert.InRange(lowest, 10, 11);
+
+        // Retention deletes the oldest records, and with them skipped records of the hot group, before they are read again.
+        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build())
+            await admin.DeleteRecordsAsync([new TopicPartitionOffset(first.Partition.TopicPartition, first.Offset + 40)]);
+
+        // The reader finds them gone, so the receiver drops them instead of waiting for them, and delivers the rest in order.
+        await receiver.CompleteAsync(first, TestCancellationToken);
+        var expected = Enumerable.Range(1, lowest - 1).Concat(Enumerable.Range(40, 20)).Select(i => $"hot-{i}").ToList();
+        Assert.Equal(expected, await DrainAsync(receiver, expected.Count));
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+        Assert.Equal(0, receiver.SkippedCount);
+        Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("no longer in Kafka", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildState_WithTheOldestUnfinishedRecordSkipped_AnchorsOnItAndKeepsItsAttempt()
+    {
+        var state = new KafkaPartitionState(new TopicPartition("topic", 0));
+        for (long offset = 0; offset < 10; offset++)
+            state.Read(offset);
+
+        // Offsets 5 and 9 are skipped records of one group; the rest are finished.
+        state.Pending.ExceptWith([0, 1, 2, 3, 4, 6, 7, 8]);
+        state.Skipped.Add("group", 5, "m5", null);
+        state.Skipped.Add("group", 9, "m9", new KafkaReceiverAttempt("m9", 3, null));
+
+        var snapshot = KafkaMessageReceiver.BuildState(state, [], []);
+        Assert.Equal(5, snapshot.AnchorOffset);
+        Assert.Equal("m5", snapshot.AnchorMessageId);
+        Assert.Equal([(6L, 9L)], snapshot.Finished);
+        Assert.Equal(3, snapshot.Attempts[9].DeliveryCount);
+    }
+
+    [Fact]
+    public void SkippedRecords_RemovingTheFirstOfEachGroup_KeepsGroupsInOffsetOrderAndTracksTheLowest()
+    {
+        var skipped = new KafkaSkippedRecords();
+        skipped.Add("a", 10, "a10", null);
+        skipped.Add("b", 12, "b12", null);
+        skipped.Add("a", 15, "a15", null);
+        Assert.Equal(3, skipped.Count);
+        Assert.Equal(10, skipped.LowestOffset);
+        Assert.Equal([10L, 12L], skipped.FirstOffsets.Select(f => f.Key));
+        Assert.True(skipped.TryGetGroupAt(12, out string key));
+        Assert.Equal("b", key);
+        Assert.False(skipped.TryGetGroupAt(15, out _));
+
+        skipped.RemoveFirst("a");
+        Assert.Equal(12, skipped.LowestOffset);
+        Assert.Equal([12L, 15L], skipped.FirstOffsets.Select(f => f.Key));
+        Assert.True(skipped.TryGetMessageIdAt(15, out string messageId));
+        Assert.Equal("a15", messageId);
+
+        skipped.RemoveFirst("b");
+        skipped.RemoveFirst("a");
+        Assert.Equal(0, skipped.Count);
+        Assert.Equal(-1, skipped.LowestOffset);
+        Assert.False(skipped.Contains("a"));
+    }
+
+    [Fact]
+    public async Task Receive_WithGroupBacklogsOverTheirPartitionsHeldLimit_PausesOnlyThatPartition()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with
         {
@@ -547,22 +933,29 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
 
         // Learn which partition each group key lands on.
-        await transport.SendAsync(destination, Enumerable.Range(0, 20).Select(i => Message("probe", $"probe-{i}") with { GroupKey = $"key-{i}" }).ToList(), TestCancellationToken);
-        var probes = await ReceiveAsync(receiver, 20);
+        await transport.SendAsync(destination, Enumerable.Range(0, 40).Select(i => Message("probe", $"probe-{i}") with { GroupKey = $"key-{i}" }).ToList(), TestCancellationToken);
+        var probes = await ReceiveAsync(receiver, 40);
         foreach (var probe in probes)
             await receiver.CompleteAsync(probe, TestCancellationToken);
 
         var partitions = probes.ToDictionary(m => m.GroupKey!, m => ((KafkaIncomingMessage)m).Partition.TopicPartition.Partition.Value);
-        string hotKey = "key-0";
-        var coldKeys = partitions.Where(p => p.Value != partitions[hotKey]).Select(p => p.Key).ToList();
+        int hotPartition = partitions["key-0"];
+        var hotKeys = partitions.Where(p => p.Value == hotPartition).Select(p => p.Key).Take(4).ToList();
+        var coldKeys = partitions.Where(p => p.Value != hotPartition).Select(p => p.Key).ToList();
+        Assert.Equal(4, hotKeys.Count);
         Assert.NotEmpty(coldKeys);
 
-        await transport.SendAsync(destination, Enumerable.Range(0, 60).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = hotKey }).ToList(), TestCancellationToken);
-        var hot = await ReceiveOneAsync(receiver);
-        Assert.Equal("hot-0", hot.MessageId);
+        // Several groups each hold fewer records than their own budget, so none is skipped, but together they reach
+        // their partition's limit, which pauses it.
+        await transport.SendAsync(destination, Enumerable.Range(0, 15).SelectMany(i => hotKeys.Select(k => Message($"{k}-hot-{i}", $"{k}-hot-{i}") with { GroupKey = k })).ToList(), TestCancellationToken);
+        var heads = new List<IncomingMessage>();
+        foreach (string _ in hotKeys)
+            heads.Add(await ReceiveOneAsync(receiver));
+
+        Assert.Equal(hotKeys.Select(k => $"{k}-hot-0"), heads.Select(m => m.MessageId));
         await WaitForAsync(() => receiver.PausedCount > 0);
 
-        // While the hot group's first message is still being handled, the other partition keeps being read.
+        // While the hot groups' first messages are still being handled, the other partition keeps being read.
         var cold = coldKeys.SelectMany(k => Enumerable.Range(0, 3).Select(i => $"{k}-{i}")).ToList();
         await transport.SendAsync(destination, cold.Select(id => Message(id, id) with { GroupKey = id[..id.LastIndexOf('-')] }).ToList(), TestCancellationToken);
         var coldReceived = await DrainAsync(receiver, cold.Count);
@@ -571,12 +964,17 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
             Assert.Equal(Enumerable.Range(0, 3).Select(i => $"{key}-{i}"), coldReceived.Where(id => id.StartsWith($"{key}-", StringComparison.Ordinal)));
 
         Assert.Equal(1, receiver.PausedCount);
+        Assert.Equal(0, receiver.SkippedTotal);
 
-        // Once the hot group is handled, its partition is read again, and nothing of its backlog is lost or reordered.
-        await receiver.CompleteAsync(hot, TestCancellationToken);
-        var order = new List<string> { hot.MessageId };
-        order.AddRange(await DrainAsync(receiver, 59, TimeSpan.FromSeconds(60)));
-        Assert.Equal(Enumerable.Range(0, 60).Select(i => $"hot-{i}"), order);
+        // Once the hot groups are handled, their partition is read again, and nothing of their backlogs is lost or reordered.
+        foreach (var head in heads)
+            await receiver.CompleteAsync(head, TestCancellationToken);
+
+        var received = heads.Select(m => m.MessageId).ToList();
+        received.AddRange(await DrainAsync(receiver, 15 * hotKeys.Count - heads.Count, TimeSpan.FromSeconds(60)));
+        foreach (string key in hotKeys)
+            Assert.Equal(Enumerable.Range(0, 15).Select(i => $"{key}-hot-{i}"), received.Where(id => id.StartsWith($"{key}-hot-", StringComparison.Ordinal)));
+
         await WaitForAsync(() => receiver.PausedCount == 0);
     }
 
@@ -626,7 +1024,7 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
-    public async Task Receive_WithAGroupBacklogThatDidNotDrainInTime_PausesItsPartitionAtOnceTheNextTime()
+    public async Task Receive_WithGroupBacklogsThatDidNotDrainInTime_PausesTheirPartitionAtOnceTheNextTime()
     {
         var stopTimeout = TimeSpan.FromMilliseconds(100);
         var transport = Track(new KafkaMessageTransport(CreateOptions() with
@@ -638,33 +1036,42 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
             ReceiverHeldStopTimeout = stopTimeout
         }));
         var source = MessageSource.Queue(NewName("hot-slow"));
-        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 100).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        string[] keys = ["a", "b", "c", "d"];
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 25).SelectMany(i => keys.Select(k => Message($"{k}-{i}", $"{k}-{i}") with { GroupKey = k })).ToList(), TestCancellationToken);
         await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
 
-        // The group's first message is not settled, so its backlog stops the reading, then pauses the partition.
-        var first = await ReceiveOneAsync(receiver);
-        Assert.Equal("hot-0", first.MessageId);
+        // The groups' first messages are not settled, so their backlogs, each well under a group's own budget, together
+        // reach the partition's limit: that stops the reading, then pauses the partition.
+        var heads = new List<IncomingMessage>();
+        foreach (string _ in keys)
+            heads.Add(await ReceiveOneAsync(receiver));
+
+        Assert.Equal(keys.Select(k => $"{k}-0"), heads.Select(m => m.MessageId));
         await WaitForAsync(() => receiver.PausedCount == 1);
         Assert.Equal(1, receiver.HeldStops);
         Assert.Equal(1, receiver.Pauses);
+        Assert.Equal(20, receiver.HeldCount);
 
         // It stays paused for longer than the stop timeout before it drains, which handing out the next 15 does, so the
-        // next time the backlog reaches the limit, while those 15 are unsettled, the partition is paused at once.
+        // next time the backlogs reach the limit, while those 15 are unsettled, the partition is paused at once.
         await Task.Delay(stopTimeout * 3, TestCancellationToken);
-        await receiver.CompleteAsync(first, TestCancellationToken);
+        foreach (var head in heads)
+            await receiver.CompleteAsync(head, TestCancellationToken);
+
         var batch = await receiver.ReceiveAsync(15, TimeSpan.FromSeconds(5), TestCancellationToken);
-        Assert.Equal(Enumerable.Range(1, 15).Select(i => $"hot-{i}"), batch.Select(m => m.MessageId));
+        Assert.Equal(keys.Take(3).SelectMany(k => Enumerable.Range(1, 5).Select(i => $"{k}-{i}")), batch.Select(m => m.MessageId));
         await WaitForAsync(() => receiver.Pauses == 2);
         Assert.Equal(1, receiver.HeldStops);
         Assert.Equal(1, receiver.PausedCount);
+        Assert.Equal(0, receiver.SkippedTotal);
 
         foreach (var message in batch)
             await receiver.CompleteAsync(message, TestCancellationToken);
 
-        var order = new List<string> { first.MessageId };
-        order.AddRange(batch.Select(m => m.MessageId));
-        order.AddRange(await DrainAsync(receiver, 84, TimeSpan.FromSeconds(60)));
-        Assert.Equal(Enumerable.Range(0, 100).Select(i => $"hot-{i}"), order);
+        var received = heads.Concat(batch).Select(m => m.MessageId).ToList();
+        received.AddRange(await DrainAsync(receiver, 100 - received.Count, TimeSpan.FromSeconds(60)));
+        foreach (string key in keys)
+            Assert.Equal(Enumerable.Range(0, 25).Select(i => $"{key}-{i}"), received.Where(id => id.StartsWith($"{key}-", StringComparison.Ordinal)));
     }
 
     [Fact]

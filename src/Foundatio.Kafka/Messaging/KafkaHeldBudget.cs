@@ -84,6 +84,14 @@ internal sealed class KafkaHeldBudget
             _pausedAt = now;
     }
 
+    /// <summary>Forgets that the held records stopped the reading or were paused, and how fast they drained before.</summary>
+    public void Reset()
+    {
+        _stoppedAt = 0;
+        _slow = false;
+        Paused = false;
+    }
+
     private void Pause(long now)
     {
         Paused = true;
