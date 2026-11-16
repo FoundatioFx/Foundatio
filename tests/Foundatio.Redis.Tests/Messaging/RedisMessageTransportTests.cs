@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
@@ -29,7 +30,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         var crashedConnection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
         var crashed = new RedisMessageTransport(crashedConnection, options);
         await crashed.CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "crashed"), new ReceiverOptions(), TestCancellationToken);
-        Assert.NotEmpty(await FindKeysAsync($"*{{i:{topic}/crashed-*"));
+        Assert.NotEmpty(await FindKeysAsync($"*{{t:{topic}}}:i:crashed-*"));
 
         await crashedConnection.CloseAsync(allowCommandsToComplete: false);
         await Task.Delay(TimeSpan.FromSeconds(1.5), TestCancellationToken);
@@ -39,7 +40,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         await survivor.SendAsync(MessageDestination.Topic(topic), [Message("after crash")], TestCancellationToken);
 
         Assert.Equal("after crash", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
-        Assert.Empty(await FindKeysAsync($"*{{i:{topic}/crashed-*"));
+        Assert.Empty(await FindKeysAsync($"*{{t:{topic}}}:i:crashed-*"));
         Assert.Equal(1, await GetMuxer().GetDatabase().SortedSetLengthAsync($"{KeyPrefix}:{{t:{topic}}}:instances"));
         crashedConnection.Dispose();
     }
@@ -75,12 +76,12 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         string topic = NewName("instance-keys");
         var receiver = await Transport.CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "short-lived"), new ReceiverOptions(), TestCancellationToken);
         await Transport.SendAsync(MessageDestination.Topic(topic), [Message("left behind")], TestCancellationToken);
-        Assert.NotEmpty(await FindKeysAsync($"*{{i:{topic}/short-lived-*"));
+        Assert.NotEmpty(await FindKeysAsync($"*{{t:{topic}}}:i:short-lived-*"));
 
         await receiver.DisposeAsync();
         await Transport.SendAsync(MessageDestination.Topic(topic), [Message("after dispose")], TestCancellationToken);
 
-        Assert.Empty(await FindKeysAsync($"*{{i:{topic}/short-lived-*"));
+        Assert.Empty(await FindKeysAsync($"*{{t:{topic}}}:i:short-lived-*"));
         Assert.Equal(0, await GetMuxer().GetDatabase().SortedSetLengthAsync($"{KeyPrefix}:{{t:{topic}}}:instances"));
     }
 
@@ -226,6 +227,164 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal("g-1", next.MessageId);
         Assert.True(completed.Elapsed < DeliveryTimeout / 2, $"Delivered {completed.Elapsed} after the previous one was completed.");
         await second.CompleteAsync(next, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task SendAsync_ToAQueueWithSeveralIdleReceivers_WakesOnlyOneOfThem()
+    {
+        var source = MessageSource.Queue(NewName("wake-one"));
+        DeleteAfterTest(source);
+        await using var idle = await StartIdleReceiversAsync(source, 4);
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("only one")], TestCancellationToken);
+
+        var woken = await Task.WhenAny(idle.Receives).WaitAsync(DeliveryTimeout / 2, TestCancellationToken);
+        Assert.Equal("only one", Encoding.UTF8.GetString(Assert.Single(await woken).Body.Span));
+        // Every other receiver would poll within milliseconds of a wake-up.
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        Assert.Equal(1, idle.CountReceiversThatPolledAgain());
+    }
+
+    [Fact]
+    public async Task AbandonAsync_WithADelay_DoesNotWakeIdleReceiversOnOtherConnections()
+    {
+        var source = MessageSource.Queue(NewName("abandon-delay"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("retry later")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+        await using var idle = await StartIdleReceiversAsync(source, 2);
+
+        await receiver.AbandonAsync(message, TimeSpan.FromMinutes(1), TestCancellationToken);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        Assert.Equal(0, idle.CountReceiversThatPolledAgain());
+    }
+
+    [Fact]
+    public async Task AbandonAsync_WithoutADelay_WakesAnIdleReceiverOnAnotherConnection()
+    {
+        var source = MessageSource.Queue(NewName("abandon-now"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("take it")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+        await using var idle = await StartIdleReceiversAsync(source, 1);
+
+        await receiver.AbandonAsync(message, TimeSpan.Zero, TestCancellationToken);
+
+        var redelivered = Assert.Single(await idle.Receives[0].WaitAsync(DeliveryTimeout / 2, TestCancellationToken));
+        Assert.Equal(message.MessageId, redelivered.MessageId);
+    }
+
+    [Fact]
+    public async Task CreateReceiverAsync_OnARedisCluster_SubscribesToAShardChannel()
+    {
+        var muxer = GetMuxer();
+        var source = MessageSource.Queue(NewName("shard-channel"));
+        await using var receiver = await CreateReceiverAsync(source);
+
+        string pattern = $"{KeyPrefix}:{{q:{source.Name}}}:*";
+        var primaries = muxer.GetEndPoints().Select(e => muxer.GetServer(e)).Where(s => s.IsConnected && !s.IsReplica).ToList();
+        long classic = 0, sharded = 0;
+        foreach (var server in primaries)
+        {
+            classic += ((RedisResult[])(await server.ExecuteAsync("PUBSUB", "CHANNELS", pattern))!).Length;
+            if (muxer.IsCluster())
+                sharded += ((RedisResult[])(await server.ExecuteAsync("PUBSUB", "SHARDCHANNELS", pattern))!).Length;
+        }
+
+        Assert.Equal(muxer.IsCluster() ? (0, 1) : (1, 0), (classic, sharded));
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_AfterAReceiveThatDrainedTheSource_WaitsWithoutPollingFirst()
+    {
+        using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        using var senderConnection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        var transport = Track(new RedisMessageTransport(connection, SlowPollingOptions));
+        var sender = Track(new RedisMessageTransport(senderConnection, SlowPollingOptions));
+        var source = MessageSource.Queue(NewName("drained"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await sender.SendAsync(MessageDestination.Queue(source.Name), [Message("first")], TestCancellationToken);
+        var first = Assert.Single(await receiver.ReceiveAsync(10, DeliveryTimeout, TestCancellationToken));
+        await WaitUntilQuietAsync(connection);
+
+        long before = Operations(connection);
+        Assert.Empty(await receiver.ReceiveAsync(10, TimeSpan.FromMilliseconds(300), TestCancellationToken));
+        // Only the poll when its wait is up: the receive before found the source drained, and nothing woke it since.
+        Assert.Equal(1, Operations(connection) - before);
+
+        var receive = receiver.ReceiveAsync(10, DeliveryTimeout, TestCancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(100), TestCancellationToken);
+        var sent = Stopwatch.StartNew();
+        await sender.SendAsync(MessageDestination.Queue(source.Name), [Message("second")], TestCancellationToken);
+        var second = Assert.Single(await receive);
+        Assert.Equal("second", Encoding.UTF8.GetString(second.Body.Span));
+        Assert.True(sent.Elapsed < DeliveryTimeout / 2, $"Delivered {sent.Elapsed} after it was sent.");
+        await receiver.CompleteAsync(first, TestCancellationToken);
+        await receiver.CompleteAsync(second, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task SendAsync_ToATopicWithInstanceSubscriptions_TakesOneRoundTripForAllOfThem()
+    {
+        string topic = NewName("fan-out");
+        var receivers = new List<IMessageReceiver>();
+        for (int i = 0; i < 5; i++)
+            receivers.Add(await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, $"process-{i}")));
+        using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        var publisher = Track(new RedisMessageTransport(connection, new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log }));
+        await publisher.SendAsync(MessageDestination.Topic(topic), [Message("warm-up")], TestCancellationToken);
+        foreach (var receiver in receivers)
+            await receiver.CompleteAsync(await ReceiveOneAsync(receiver), TestCancellationToken);
+        await WaitUntilQuietAsync(connection);
+
+        long before = Operations(connection);
+        await publisher.SendAsync(MessageDestination.Topic(topic), [Message("event")], TestCancellationToken);
+
+        Assert.Equal(1, Operations(connection) - before);
+        foreach (var receiver in receivers)
+        {
+            Assert.Equal("event", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
+            await receiver.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task SendAsync_ToATopicAfterANewInstanceSubscription_DeliversToItAlthoughThePublisherRoutedWithoutIt()
+    {
+        string topic = NewName("new-instance");
+        await using var first = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "first"));
+        using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        var publisher = Track(new RedisMessageTransport(connection, new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log }));
+        await publisher.SendAsync(MessageDestination.Topic(topic), [Message("before")], TestCancellationToken);
+        Assert.Equal("before", Encoding.UTF8.GetString((await ReceiveOneAsync(first)).Body.Span));
+
+        await using var second = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "second"));
+        await publisher.SendAsync(MessageDestination.Topic(topic), [Message("after")], TestCancellationToken);
+
+        Assert.Equal("after", Encoding.UTF8.GetString((await ReceiveOneAsync(first)).Body.Span));
+        Assert.Equal(["after"], (await ReceiveAsync(second, 1)).Select(m => Encoding.UTF8.GetString(m.Body.Span)));
+        await AssertNothingReceivedAsync(second, TimeSpan.FromMilliseconds(500));
+    }
+
+    [Fact]
+    public async Task SendAsync_DelayedAndGroupedMessagesToAnInstanceSubscription_GiveEveryKeyTheyCreateAnExpiry()
+    {
+        string topic = NewName("instance-ttl");
+        await using var receiver = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "ttl"));
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [
+            Message("later") with { DeliverAt = DateTimeOffset.UtcNow.AddMinutes(5) },
+            Message("g0") with { GroupKey = "g" },
+            Message("g1") with { GroupKey = "g" }
+        ], TestCancellationToken);
+
+        var keys = await FindKeysAsync($"*{{t:{topic}}}:i:ttl-*");
+        Assert.Contains(keys, k => k.EndsWith(":delayed", StringComparison.Ordinal));
+        Assert.Contains(keys, k => k.EndsWith(":held", StringComparison.Ordinal));
+        foreach (string key in keys)
+            Assert.True(await GetMuxer().GetDatabase().KeyTimeToLiveAsync(key) > TimeSpan.Zero, $"{key} has no expiry.");
     }
 
     [Fact]
@@ -685,6 +844,61 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         MaxPollInterval = TimeSpan.FromMinutes(1)
     };
 
+    // Receivers of the source on their own connections, as in other processes, each waiting in a receive that found
+    // the source empty. They poll too rarely to poll again unless something wakes them.
+    private async Task<IdleReceivers> StartIdleReceiversAsync(MessageSource source, int count)
+    {
+        var idle = new IdleReceivers(TestCancellationToken);
+        try
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+                var transport = new RedisMessageTransport(connection, SlowPollingOptions);
+                idle.Add(connection, transport, await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken));
+            }
+
+            foreach (var connection in idle.Connections)
+                await WaitUntilQuietAsync(connection);
+
+            var before = idle.Connections.Select(Operations).ToArray();
+            idle.StartReceiving(DeliveryTimeout);
+            for (int i = 0; i < count; i++)
+                await WaitUntilQuietAsync(idle.Connections[i], before[i]);
+
+            idle.RecordPolls();
+            return idle;
+        }
+        catch
+        {
+            await idle.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static long Operations(ConnectionMultiplexer connection) => connection.GetCounters().Interactive.OperationCount;
+
+    // Waits until the connection sent a command after `after` (when given) and has none in flight or still completing,
+    // and its count held for a moment, so background work such as the eviction-policy check is done.
+    private async Task WaitUntilQuietAsync(ConnectionMultiplexer connection, long? after = null)
+    {
+        var deadline = DateTime.UtcNow + DeliveryTimeout;
+        long last = -1;
+        while (true)
+        {
+            var counters = connection.GetCounters().Interactive;
+            bool quiet = counters.PendingUnsentItems == 0 && counters.SentItemsAwaitingResponse == 0 && counters.ResponsesAwaitingAsyncCompletion == 0;
+            if (quiet && counters.OperationCount == last && (after is null || counters.OperationCount > after))
+                return;
+
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException($"The connection did not go quiet: {counters}.");
+
+            last = quiet ? counters.OperationCount : -1;
+            await Task.Delay(50, TestCancellationToken);
+        }
+    }
+
     // As if Redis evicted the key under memory pressure, or someone deleted it.
     private Task LoseKeyAsync(MessageSource queue, string key) =>
         GetMuxer().GetDatabase().KeyDeleteAsync($"{KeyPrefix}:{{q:{queue.Name}}}:{key}");
@@ -736,5 +950,54 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
             }));
 
         return keys.SelectMany(k => k).ToArray();
+    }
+
+    private sealed class IdleReceivers(CancellationToken testToken) : IAsyncDisposable
+    {
+        private readonly CancellationTokenSource _receiving = CancellationTokenSource.CreateLinkedTokenSource(testToken);
+        private readonly List<RedisMessageTransport> _transports = [];
+        private readonly List<IMessageReceiver> _receivers = [];
+        private long[] _polls = [];
+
+        public List<ConnectionMultiplexer> Connections { get; } = [];
+        public List<Task<IReadOnlyList<IncomingMessage>>> Receives { get; } = [];
+
+        public void Add(ConnectionMultiplexer connection, RedisMessageTransport transport, IMessageReceiver receiver)
+        {
+            Connections.Add(connection);
+            _transports.Add(transport);
+            _receivers.Add(receiver);
+        }
+
+        public void StartReceiving(TimeSpan maxWait)
+        {
+            foreach (var receiver in _receivers)
+                Receives.Add(receiver.ReceiveAsync(1, maxWait, _receiving.Token));
+        }
+
+        public void RecordPolls() => _polls = Connections.Select(Operations).ToArray();
+
+        public int CountReceiversThatPolledAgain() => Connections.Where((c, i) => Operations(c) > _polls[i]).Count();
+
+        public async ValueTask DisposeAsync()
+        {
+            await _receiving.CancelAsync();
+            foreach (var receive in Receives)
+            {
+                try
+                {
+                    await receive;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            foreach (var transport in _transports)
+                await transport.DisposeAsync();
+            foreach (var connection in Connections)
+                await connection.DisposeAsync();
+            _receiving.Dispose();
+        }
     }
 }

@@ -1,6 +1,8 @@
--- KEYS: stream, leases, dead-letter stream, groups, held, delayed, delayed-data, retries
+-- KEYS: stream, leases, dead-letter stream, groups, held, delayed, delayed-data, retries, idle, dead-letter idle
 -- ARGV: operation, group, consumer, entry id, expected delivery count, value (delay ms, lease ms or reason), released consumer,
---       reason field, has message group, message group, dead letters to keep (0 = all), dead-letter retention ms (0 = forever)
+--       reason field, has message group, message group, dead letters to keep (0 = all), dead-letter retention ms (0 = forever),
+--       wake channel prefix, dead-letter wake channel prefix, publish command
+-- Wakes an idle receiver for a message abandoned without a delay, a dead letter and the next message of a group.
 -- Returns 0 when the lease was lost, 1 when settled, 2 when settled and the next held message of its group was released
 local stream, leases = KEYS[1], KEYS[2]
 local operation, group, consumer, id = ARGV[1], ARGV[2], ARGV[3], ARGV[4]
@@ -22,6 +24,8 @@ if operation == 'abandon' then
     redis.call('ZADD', leases, availableAt, id)
     if delay > 0 then
         redis.call('ZADD', KEYS[8], availableAt, id)
+    else
+        wake(KEYS[9], 1, ARGV[13], ARGV[15])
     end
     return 1
 end
@@ -41,6 +45,7 @@ if operation == 'deadletter' then
         copy[#copy + 1] = ARGV[6]
         redis.call('XADD', KEYS[3], '*', unpack(copy))
         trimDeadLetters(KEYS[3], tonumber(ARGV[11]), tonumber(ARGV[12]))
+        wake(KEYS[10], 1, ARGV[14], ARGV[15])
     end
 end
 
@@ -51,6 +56,7 @@ redis.call('ZREM', leases, id)
 if ARGV[9] == '1' then
     local k = { stream = stream, groups = KEYS[4], held = KEYS[5], delayed = KEYS[6], delayedData = KEYS[7] }
     if advance(k, nowMs(), ARGV[10], id) then
+        wake(KEYS[9], 1, ARGV[13], ARGV[15])
         return 2
     end
 end

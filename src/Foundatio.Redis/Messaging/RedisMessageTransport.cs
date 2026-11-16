@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Redis;
 using Foundatio.Redis.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,9 +26,11 @@ namespace Foundatio.Messaging.Transport;
 /// the others wait in Redis, in order, until it is completed or dead-lettered. A receive returns at most one message
 /// of a group, so a single group is handled one message at a time; different groups are handled in parallel.
 /// Dead-letter queues do not hold groups back, so they can be peeked and replayed in batches.
-/// Receivers poll their source with a backoff, and every send to a source also publishes a pub/sub signal on a channel
-/// named after it, which wakes its idle receivers in every process. Redis must not evict the transport's keys: see
-/// <see href="https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport"/>.
+/// A receive that drains its source, with room for more messages, registers its receiver as idle; each message then
+/// made available wakes one idle receiver, in any process, over a pub/sub channel of its own (sharded on Redis
+/// Cluster). Receivers also poll their source with a backoff, which covers a lost wake-up. A topic's instance
+/// subscriptions share its cluster slot, so a publish reaches all of them with one script. Redis must not evict the
+/// transport's keys: see <see href="https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport"/>.
 /// </remarks>
 public sealed class RedisMessageTransport : IMessageTransport
 {
@@ -42,13 +45,14 @@ public sealed class RedisMessageTransport : IMessageTransport
     private const int ScriptBatchBytes = 8 * 1024 * 1024;
     internal const int ReceiveBatchBytes = 8 * 1024 * 1024;
     internal const int OrphanedSubscriptionBacklog = 1000;
+    private const int MaxPublishAttempts = 10;
     private static readonly TimeSpan OrphanedSubscriptionAge = TimeSpan.FromHours(1);
     private static readonly TimeSpan OrphanedSubscriptionCheckInterval = TimeSpan.FromMinutes(10);
     internal static readonly string DeadLetterReasonField = HeaderFieldPrefix + KnownHeaders.DeadLetterReason;
 
     private static readonly string Common = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.MessageTransport.Common.lua");
     private static readonly string EnqueueScript = LoadScript("Enqueue");
-    private static readonly string RouteScript = LoadScript("Route");
+    private static readonly string PublishScript = LoadScript("Publish");
     private static readonly string HeartbeatScript = LoadScript("Heartbeat");
     private static readonly string PruneScript = LoadScript("Prune");
     private static readonly string DeleteScript = LoadScript("Delete");
@@ -62,7 +66,9 @@ public sealed class RedisMessageTransport : IMessageTransport
     private readonly IConnectionMultiplexer _connection;
     private readonly ConcurrentDictionary<RedisMessageReceiver, byte> _receivers = new();
     private readonly ConcurrentDictionary<RedisKey, long> _orphanChecks = new();
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _instanceSubscriptions = new(StringComparer.Ordinal);
     private int _evictionPolicyChecked;
+    private int _shardedChannels = -1;
     private int _disposed;
 
     /// <summary>Creates a transport on <paramref name="connection"/>, which the caller owns and disposes.</summary>
@@ -120,6 +126,33 @@ public sealed class RedisMessageTransport : IMessageTransport
     internal IDatabase Database => _connection.GetDatabase(Options.Database);
     internal ISubscriber Subscriber => _connection.GetSubscriber();
 
+    /// <summary>The command scripts publish wake-ups with: sharded on Redis Cluster, so only the source's shard sends them.</summary>
+    internal string PublishCommand => ShardedChannels ? "SPUBLISH" : "PUBLISH";
+
+    /// <summary>The channel that wakes one receiver, named by its source's wake channel prefix and its consumer name.</summary>
+    internal RedisChannel WakeChannel(string name) => ShardedChannels ? RedisChannel.Sharded(name) : RedisChannel.Literal(name);
+
+    // Like the legacy queue and message bus, sharded channels on a cluster and classic ones otherwise, or on a cluster
+    // older than Redis 7, which has no sharded pub/sub. Decided once a server is connected, since a disconnected
+    // multiplexer cannot tell.
+    private bool ShardedChannels
+    {
+        get
+        {
+            int sharded = Volatile.Read(ref _shardedChannels);
+            if (sharded >= 0)
+                return sharded == 1;
+
+            var servers = _connection.GetServers().Where(s => s.IsConnected).ToList();
+            if (servers.Count == 0)
+                return false;
+
+            bool shardedPubSub = _connection.IsCluster() && servers.All(s => s.Version.Major >= 7);
+            Volatile.Write(ref _shardedChannels, shardedPubSub ? 1 : 0);
+            return shardedPubSub;
+        }
+    }
+
     /// <inheritdoc />
     public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
     {
@@ -136,7 +169,7 @@ public sealed class RedisMessageTransport : IMessageTransport
 
         if (destination.Kind == MessageDestinationKind.Queue)
         {
-            await EnqueueAsync(RedisSourceKeys.Queue(Options.Prefix, destination.Name), encoded, deduplicate: true, create: true, keyTtl: TimeSpan.Zero).AnyContext();
+            await EnqueueAsync(RedisSourceKeys.Queue(Options.Prefix, destination.Name), encoded, deduplicate: true, create: true, count: false).AnyContext();
             return;
         }
 
@@ -145,29 +178,22 @@ public sealed class RedisMessageTransport : IMessageTransport
         {
             string subscription = destination.SubscriptionName!;
             var keys = RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, subscription);
-            long backlog = await EnqueueAsync(keys, encoded, deduplicate: true, create: true, keyTtl: TimeSpan.Zero).AnyContext();
+            long backlog = await EnqueueAsync(keys, encoded, deduplicate: true, create: true, count: true).AnyContext();
             await Database.SetAddAsync(topic.Subscriptions, subscription).AnyContext();
             await WarnIfOrphanedAsync(keys, backlog).AnyContext();
             return;
         }
 
-        var route = await RouteAsync(topic, encoded).AnyContext();
-        if (route.Stale.Count > 0)
-            await DeleteInstancesAsync(topic, route.Stale).AnyContext();
-
-        if (route.Accepted.Count == 0 || route.Subscriptions.Count + route.Instances.Count == 0)
-            return;
-
+        var accepted = new List<EncodedMessage>(encoded.Count);
         try
         {
-            var instanceKeyTtl = Options.InstanceSubscriptionTimeout * 2;
-            await Task.WhenAll(
-                route.Subscriptions.Select(s => CopyToSubscriptionAsync(RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, s), route.Accepted))
-                    .Concat(route.Instances.Select(i => EnqueueAsync(RedisSourceKeys.Instance(Options.Prefix, topic.Topic, i), route.Accepted, deduplicate: false, create: false, keyTtl: instanceKeyTtl)))).AnyContext();
+            var subscriptions = await PublishAsync(topic, encoded, accepted).AnyContext();
+            if (accepted.Count > 0 && subscriptions.Count > 0)
+                await Task.WhenAll(subscriptions.Select(s => CopyToSubscriptionAsync(RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, s), accepted))).AnyContext();
         }
         catch
         {
-            var deduplicationKeys = route.Accepted.Where(m => m.DeduplicationId is not null).Select(m => topic.DeduplicationKey(m.DeduplicationId!)).ToArray();
+            var deduplicationKeys = accepted.Where(m => m.DeduplicationId is not null).Select(m => topic.DeduplicationKey(m.DeduplicationId!)).ToArray();
             if (deduplicationKeys.Length > 0)
                 await Database.KeyDeleteAsync(deduplicationKeys, CommandFlags.FireAndForget).AnyContext();
 
@@ -202,7 +228,7 @@ public sealed class RedisMessageTransport : IMessageTransport
             if (source.Kind == MessageSourceKind.Subscription)
                 await Database.SetAddAsync(new RedisTopicKeys(Options.Prefix, source.Topic!).Subscriptions, source.Name).AnyContext();
 
-            await Database.ScriptEvaluateAsync(PruneScript, [keys.Stream], [GroupName, ReleasedConsumer, (long)ConsumerPruneIdleTime.TotalMilliseconds]).AnyContext();
+            await Database.ScriptEvaluateAsync(PruneScript, [keys.Stream, keys.Idle], [GroupName, ReleasedConsumer, (long)ConsumerPruneIdleTime.TotalMilliseconds]).AnyContext();
             receiver = new RedisMessageReceiver(this, source, keys, options, null);
         }
 
@@ -277,22 +303,6 @@ public sealed class RedisMessageTransport : IMessageTransport
 
     internal bool IsDisposed => Volatile.Read(ref _disposed) == 1;
 
-    /// <summary>
-    /// Tells idle receivers of a source, in every process, that it may have a message for them. Best effort: a lost
-    /// signal only delays delivery until the receivers' next poll.
-    /// </summary>
-    internal void Signal(RedisChannel channel)
-    {
-        try
-        {
-            Subscriber.Publish(channel, RedisValue.EmptyString, CommandFlags.FireAndForget);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogDebug(ex, "Could not signal the receivers of {Channel}", channel);
-        }
-    }
-
     internal void LogReleasedGroups(RedisSourceKeys keys, long released)
     {
         if (released > 0)
@@ -307,17 +317,10 @@ public sealed class RedisMessageTransport : IMessageTransport
     internal async Task<bool> HeartbeatAsync(RedisTopicKeys topic, string instance, RedisSourceKeys keys)
     {
         var timeout = Options.InstanceSubscriptionTimeout;
-        bool added = (long)await Database.ScriptEvaluateAsync(HeartbeatScript, [topic.Instances], [instance, (long)timeout.TotalMilliseconds]).AnyContext() == 1;
-        var stream = Database.KeyExpireAsync(keys.Stream, timeout * 2);
-        await Task.WhenAll(keys.All.Where(k => k != keys.Stream).Select(k => Database.KeyExpireAsync(k, timeout * 2)).Append(stream)).AnyContext();
-        bool streamExists = await stream.AnyContext();
-        if (!streamExists)
-        {
-            await CreateGroupAsync(keys).AnyContext();
-            await Database.KeyExpireAsync(keys.Stream, timeout * 2).AnyContext();
-        }
-
-        return added || !streamExists;
+        var result = (long[])(await Database.ScriptEvaluateAsync(HeartbeatScript, [topic.Instances, .. keys.All],
+            [instance, (long)timeout.TotalMilliseconds, (long)InstanceKeyTtl.TotalMilliseconds, GroupName]).AnyContext())!;
+        LogReleasedGroups(keys, result[2]);
+        return result[0] == 1 || result[1] == 1;
     }
 
     internal async Task RemoveInstanceAsync(RedisTopicKeys topic, string instance, RedisSourceKeys keys)
@@ -325,6 +328,9 @@ public sealed class RedisMessageTransport : IMessageTransport
         await Database.SortedSetRemoveAsync(topic.Instances, instance).AnyContext();
         await Database.KeyDeleteAsync(keys.All).AnyContext();
     }
+
+    // An instance subscription's keys outlive a missed heartbeat or two, and expire once its process is gone.
+    private TimeSpan InstanceKeyTtl => Options.InstanceSubscriptionTimeout * 2;
 
     private RedisSourceKeys GetKeys(MessageSource source) => source.Kind switch
     {
@@ -375,18 +381,13 @@ public sealed class RedisMessageTransport : IMessageTransport
         }
     }
 
-    private async Task SweepInstancesAsync(RedisTopicKeys topic)
-    {
-        var route = await RouteAsync(topic, []).AnyContext();
-        if (route.Stale.Count > 0)
-            await DeleteInstancesAsync(topic, route.Stale).AnyContext();
-    }
+    private Task SweepInstancesAsync(RedisTopicKeys topic) => PublishAsync(topic, [], []);
 
     private async Task DeleteInstancesAsync(RedisTopicKeys topic, IReadOnlyList<string> instances)
     {
         try
         {
-            await Task.WhenAll(instances.Select(i => Database.KeyDeleteAsync(RedisSourceKeys.Instance(Options.Prefix, topic.Topic, i).All))).AnyContext();
+            await Database.KeyDeleteAsync(instances.SelectMany(i => RedisSourceKeys.Instance(Options.Prefix, topic.Topic, i).All).ToArray()).AnyContext();
             Logger.LogInformation("Removed {Count} instance subscriptions of topic {Topic} that missed their heartbeats for {Timeout}: {Instances}",
                 instances.Count, topic.Topic, Options.InstanceSubscriptionTimeout, String.Join(", ", instances));
         }
@@ -396,30 +397,117 @@ public sealed class RedisMessageTransport : IMessageTransport
         }
     }
 
-    private async Task<Route> RouteAsync(RedisTopicKeys topic, IReadOnlyList<EncodedMessage> messages)
+    /// <summary>
+    /// Deduplicates the messages and copies the accepted ones, which it adds to <paramref name="accepted"/>, into every
+    /// live instance subscription of the topic: one script per chunk, on the topic's slot. Returns the topic's durable
+    /// subscriptions, read by the first script.
+    /// </summary>
+    /// <remarks>
+    /// The script declares the keys of the instance subscriptions this transport last saw, and publishes only when they
+    /// are the live ones; otherwise it returns those and is called again, so a subscription added since is never missed.
+    /// </remarks>
+    private async Task<IReadOnlyList<string>> PublishAsync(RedisTopicKeys topic, IReadOnlyList<EncodedMessage> messages, List<EncodedMessage> accepted)
     {
-        var deduplicated = messages.Where(m => m.DeduplicationId is not null).ToList();
-        var keys = new RedisKey[2 + deduplicated.Count];
-        keys[0] = topic.Subscriptions;
-        keys[1] = topic.Instances;
-        for (int i = 0; i < deduplicated.Count; i++)
-            keys[i + 2] = topic.DeduplicationKey(deduplicated[i].DeduplicationId!);
-
-        var result = (RedisResult[])(await Database.ScriptEvaluateAsync(RouteScript, keys, [(long)Options.DeduplicationWindow.TotalMilliseconds]).AnyContext())!;
-        var accepted = messages;
-        if (deduplicated.Count > 0)
+        var instances = _instanceSubscriptions.TryGetValue(topic.Topic, out var known) ? known : [];
+        IReadOnlyList<string>? subscriptions = null;
+        int published = 0, attempts = 0;
+        do
         {
-            var flags = (long[])result[3]!;
-            var rejected = deduplicated.Where((_, i) => flags[i] == 0).ToHashSet();
-            accepted = messages.Where(m => !rejected.Contains(m)).ToList();
+            var chunk = ChunkForPublish(messages, published, instances.Count);
+            var result = (RedisResult[])(await Database.ScriptEvaluateAsync(PublishScript, PublishKeys(topic, chunk, instances), PublishValues(topic, chunk, instances)).AnyContext())!;
+            var stale = (string[])result[3]!;
+            if (stale.Length > 0)
+                await DeleteInstancesAsync(topic, stale).AnyContext();
+
+            if ((long)result[0] == 0)
+            {
+                instances = (string[])result[2]!;
+                _instanceSubscriptions[topic.Topic] = instances;
+                if (++attempts == MaxPublishAttempts)
+                    throw new InvalidOperationException($"The instance subscriptions of topic {topic.Topic} changed during each of {MaxPublishAttempts} attempts to publish to them.");
+
+                continue;
+            }
+
+            subscriptions ??= (string[])result[1]!;
+            var flags = (long[])result[4]!;
+            int flag = 0;
+            foreach (var message in chunk)
+            {
+                if (message.DeduplicationId is null || flags[flag++] == 1)
+                    accepted.Add(message);
+            }
+
+            published += chunk.Count;
+            attempts = 0;
+        } while (published < messages.Count);
+
+        return subscriptions ?? [];
+    }
+
+    private RedisKey[] PublishKeys(RedisTopicKeys topic, IReadOnlyList<EncodedMessage> chunk, IReadOnlyList<string> instances)
+    {
+        var keys = new List<RedisKey>(2 + chunk.Count + instances.Count * 6) { topic.Subscriptions, topic.Instances };
+        keys.AddRange(chunk.Where(m => m.DeduplicationId is not null).Select(m => topic.DeduplicationKey(m.DeduplicationId!)));
+        foreach (string instance in instances)
+        {
+            var target = RedisSourceKeys.Instance(Options.Prefix, topic.Topic, instance);
+            keys.AddRange([target.Stream, target.Delayed, target.DelayedData, target.Groups, target.Held, target.Idle]);
         }
 
-        return new Route((string[])result[0]!, (string[])result[1]!, (string[])result[2]!, accepted);
+        return keys.ToArray();
+    }
+
+    private RedisValue[] PublishValues(RedisTopicKeys topic, IReadOnlyList<EncodedMessage> chunk, IReadOnlyList<string> instances)
+    {
+        var values = new List<RedisValue>(5 + instances.Count * 2 + (instances.Count > 0 ? chunk.Count * 6 : 0))
+        {
+            (long)Options.DeduplicationWindow.TotalMilliseconds,
+            (long)InstanceKeyTtl.TotalMilliseconds,
+            PublishCommand,
+            chunk.Count(m => m.DeduplicationId is not null),
+            instances.Count
+        };
+        foreach (string instance in instances)
+        {
+            values.Add(instance);
+            values.Add(RedisSourceKeys.Instance(Options.Prefix, topic.Topic, instance).WakeChannelPrefix);
+        }
+
+        // Without instance subscriptions only the deduplication ids are needed.
+        if (instances.Count > 0)
+        {
+            foreach (var message in chunk)
+                AddMessageValues(values, message, deduplicate: message.DeduplicationId is not null, ordered: message.GroupKey is not null);
+        }
+
+        return values.ToArray();
+    }
+
+    // Copies are written once per instance subscription, so a chunk's bytes are shared out among them.
+    private static IReadOnlyList<EncodedMessage> ChunkForPublish(IReadOnlyList<EncodedMessage> messages, int start, int instances)
+    {
+        if (instances == 0)
+            return start == 0 ? messages : messages.Skip(start).ToList();
+
+        long budget = ScriptBatchBytes / instances;
+        var chunk = new List<EncodedMessage>();
+        long bytes = 0;
+        for (int i = start; i < messages.Count && chunk.Count < ScriptBatchSize; i++)
+        {
+            if (chunk.Count > 0 && bytes + messages[i].Fields.Length > budget)
+                break;
+
+            chunk.Add(messages[i]);
+            bytes += messages[i].Fields.Length;
+        }
+
+        return chunk;
     }
 
     private async Task CopyToSubscriptionAsync(RedisSourceKeys subscription, IReadOnlyList<EncodedMessage> messages)
     {
-        long backlog = await EnqueueAsync(subscription, messages, deduplicate: false, create: false, keyTtl: TimeSpan.Zero).AnyContext();
+        long backlog = await EnqueueAsync(subscription, messages, deduplicate: false, create: false, count: true).AnyContext();
         await WarnIfOrphanedAsync(subscription, backlog).AnyContext();
     }
 
@@ -469,28 +557,25 @@ public sealed class RedisMessageTransport : IMessageTransport
             : null;
     }
 
-    // Without create, a source that does not exist (a deleted subscription, a removed instance subscription) is skipped.
-    // Returns the number of messages in the source afterwards, or -1 when it was skipped.
-    private async Task<long> EnqueueAsync(RedisSourceKeys target, IReadOnlyList<EncodedMessage> messages, bool deduplicate, bool create, TimeSpan keyTtl)
+    // Without create, a source that does not exist (a deleted subscription) is skipped. Returns the number of messages
+    // in the source afterwards when counted (0 otherwise), or -1 when it was skipped.
+    private async Task<long> EnqueueAsync(RedisSourceKeys target, IReadOnlyList<EncodedMessage> messages, bool deduplicate, bool create, bool count)
     {
         long backlog = 0;
         foreach (var chunk in ChunkForScript(messages))
         {
-            var keys = new List<RedisKey>(5 + chunk.Count) { target.Stream, target.Delayed, target.DelayedData, target.Groups, target.Held };
-            var values = new List<RedisValue>(4 + chunk.Count * 6) { (long)Options.DeduplicationWindow.TotalMilliseconds, (long)keyTtl.TotalMilliseconds, create ? 1 : 0, GroupName };
+            var keys = new List<RedisKey>(6 + chunk.Count) { target.Stream, target.Delayed, target.DelayedData, target.Groups, target.Held, target.Idle };
+            var values = new List<RedisValue>(6 + chunk.Count * 6)
+            {
+                (long)Options.DeduplicationWindow.TotalMilliseconds, create ? 1 : 0, GroupName, target.WakeChannelPrefix, PublishCommand, count ? 1 : 0
+            };
             foreach (var message in chunk)
             {
                 bool hasDeduplicationKey = deduplicate && message.DeduplicationId is not null;
                 if (hasDeduplicationKey)
                     keys.Add(target.DeduplicationKey(message.DeduplicationId!));
 
-                bool ordered = target.OrderedGroups && message.GroupKey is not null;
-                values.Add(message.DelayMilliseconds);
-                values.Add(hasDeduplicationKey ? 1 : 0);
-                values.Add(message.DelayMilliseconds > 0 ? Guid.NewGuid().ToString("N") : String.Empty);
-                values.Add(ordered ? 1 : 0);
-                values.Add(ordered ? message.GroupKey : String.Empty);
-                values.Add(message.Fields);
+                AddMessageValues(values, message, hasDeduplicationKey, target.OrderedGroups && message.GroupKey is not null);
             }
 
             var result = (RedisResult[])(await Database.ScriptEvaluateAsync(EnqueueScript, keys.ToArray(), values.ToArray()).AnyContext())!;
@@ -498,13 +583,22 @@ public sealed class RedisMessageTransport : IMessageTransport
             if (added < 0)
                 return -1;
 
-            if (added > 0)
-                Signal(target.Signal);
             LogReleasedGroups(target, (long)result[1]);
             backlog = (long)result[2];
         }
 
         return backlog;
+    }
+
+    // The six values a send script reads per message.
+    private static void AddMessageValues(List<RedisValue> values, EncodedMessage message, bool deduplicate, bool ordered)
+    {
+        values.Add(message.DelayMilliseconds);
+        values.Add(deduplicate ? 1 : 0);
+        values.Add(message.DelayMilliseconds > 0 ? Guid.NewGuid().ToString("N") : String.Empty);
+        values.Add(ordered ? 1 : 0);
+        values.Add(ordered ? message.GroupKey : String.Empty);
+        values.Add(message.Fields);
     }
 
     private static IEnumerable<List<EncodedMessage>> ChunkForScript(IReadOnlyList<EncodedMessage> messages)
@@ -539,8 +633,6 @@ public sealed class RedisMessageTransport : IMessageTransport
 
     private static string LoadScript(string name) =>
         Common + EmbeddedResourceLoader.GetEmbeddedResource($"Foundatio.Redis.Scripts.MessageTransport.{name}.lua");
-
-    private sealed record Route(IReadOnlyList<string> Subscriptions, IReadOnlyList<string> Instances, IReadOnlyList<string> Stale, IReadOnlyList<EncodedMessage> Accepted);
 
     /// <summary>A message encoded once as length-prefixed stream fields, so a script can add it to any number of streams.</summary>
     private sealed class EncodedMessage

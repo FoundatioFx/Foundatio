@@ -6,7 +6,8 @@ namespace Foundatio.Messaging.Transport;
 
 /// <summary>
 /// The keys of one receivable source. Every key shares the source's hash tag, and a dead-letter queue shares the
-/// tag of the source it belongs to, so each script touches a single cluster slot.
+/// tag of the source it belongs to, so each script touches a single cluster slot. Instance subscriptions share their
+/// topic's tag, so one script can copy a publish into all of them.
 /// </summary>
 internal sealed class RedisSourceKeys
 {
@@ -24,9 +25,12 @@ internal sealed class RedisSourceKeys
         Groups = baseKey + ":groups";
         Held = baseKey + ":held";
         Retries = baseKey + ":retries";
-        DeadLetterStream = (deadLetterBase ?? baseKey + ":dlq") + ":stream";
-        Signal = RedisChannel.Literal(baseKey + ":signal");
-        DeadLetterSignal = RedisChannel.Literal((deadLetterBase ?? baseKey + ":dlq") + ":signal");
+        Idle = baseKey + ":idle";
+        WakeChannelPrefix = baseKey + ":wake:";
+        string deadLetter = deadLetterBase ?? baseKey + ":dlq";
+        DeadLetterStream = deadLetter + ":stream";
+        DeadLetterIdle = deadLetter + ":idle";
+        DeadLetterWakeChannelPrefix = deadLetter + ":wake:";
     }
 
     /// <summary>
@@ -47,14 +51,20 @@ internal sealed class RedisSourceKeys
     /// <summary>The abandoned messages waiting out a retry delay, scored by when they are due, like their leases.</summary>
     public RedisKey Retries { get; }
 
+    /// <summary>
+    /// The receivers waiting for a message, each registered by a receive that found the source drained while it had
+    /// room for more, scored by when. Making a message available wakes one of them.
+    /// </summary>
+    public RedisKey Idle { get; }
+
+    /// <summary>Followed by a consumer name, the channel that wakes that receiver; it shares the source's hash tag.</summary>
+    public string WakeChannelPrefix { get; }
+
     public RedisKey DeadLetterStream { get; }
+    public RedisKey DeadLetterIdle { get; }
+    public string DeadLetterWakeChannelPrefix { get; }
 
-    /// <summary>Published to when the source may have a message to receive, so idle receivers poll at once.</summary>
-    public RedisChannel Signal { get; }
-
-    public RedisChannel DeadLetterSignal { get; }
-
-    public RedisKey[] All => [Stream, Leases, Delayed, DelayedData, Groups, Held, Retries];
+    public RedisKey[] All => [Stream, Leases, Delayed, DelayedData, Groups, Held, Retries, Idle];
 
     public RedisKey DeduplicationKey(string deduplicationId) => $"{_base}:dedup:{deduplicationId}";
 
@@ -67,7 +77,7 @@ internal sealed class RedisSourceKeys
         new($"subscription:{topic}/{name}", $"{prefix}:{{s:{RedisTransportNames.ValidateTopic(topic)}/{RedisTransportNames.Validate(name)}}}");
 
     public static RedisSourceKeys Instance(string prefix, string topic, string instance) =>
-        new($"instance:{topic}/{instance}", $"{prefix}:{{i:{RedisTransportNames.ValidateTopic(topic)}/{instance}}}");
+        new($"instance:{topic}/{instance}", $"{RedisTopicKeys.Base(prefix, RedisTransportNames.ValidateTopic(topic))}:i:{instance}");
 }
 
 /// <summary>The keys that route a topic: its durable subscriptions and its live instance subscriptions.</summary>
@@ -78,7 +88,7 @@ internal sealed class RedisTopicKeys
     public RedisTopicKeys(string prefix, string topic)
     {
         Topic = RedisTransportNames.ValidateTopic(topic);
-        _base = $"{prefix}:{{t:{Topic}}}";
+        _base = Base(prefix, Topic);
         Subscriptions = _base + ":subscriptions";
         Instances = _base + ":instances";
     }
@@ -88,6 +98,8 @@ internal sealed class RedisTopicKeys
     public RedisKey Instances { get; }
 
     public RedisKey DeduplicationKey(string deduplicationId) => $"{_base}:dedup:{deduplicationId}";
+
+    public static string Base(string prefix, string topic) => $"{prefix}:{{t:{topic}}}";
 }
 
 internal static class RedisTransportNames

@@ -13,6 +13,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
 {
     private const int MaxPromotedPerReceive = 100;
     private const int HeartbeatsPerTimeout = 6;
+    private static readonly TimeSpan IdleRegistrationRefreshInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaxHeartbeatRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly RedisMessageTransport _transport;
@@ -21,10 +22,15 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private readonly RedisInstanceSubscription? _instance;
     private readonly string _consumer = $"{Environment.MachineName}:{Guid.NewGuid():N}";
     private readonly CancellationTokenSource _disposing = new();
+    private readonly RedisChannel _wakeChannel;
     private readonly Action<RedisChannel, RedisValue> _onSignal;
     private TaskCompletionSource _wake = NewWakeSignal();
+    private IdleRegistration? _idle;
     private TimeSpan _pollInterval;
     private bool _subscribed;
+    private bool _mayBeRegistered;
+    private bool _registrationCurrent;
+    private long _registeredAt;
     private Task _heartbeat = Task.CompletedTask;
     private int _disposed;
 
@@ -35,23 +41,32 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         _keys = keys;
         _options = options;
         _instance = instance;
-        _onSignal = (_, _) => Wake();
+        _wakeChannel = transport.WakeChannel(keys.WakeChannelPrefix + _consumer);
+        _onSignal = (_, _) =>
+        {
+            // A wake-up removed this receiver from the idle set.
+            Volatile.Write(ref _registrationCurrent, false);
+            Wake();
+        };
         _pollInterval = transport.Options.MinPollInterval;
     }
 
     public MessageSource Source { get; }
 
-    /// <summary>Subscribes to the source's signal before the first receive, so no message sent after it is missed.</summary>
+    /// <summary>
+    /// Subscribes to this receiver's wake-up channel before the first receive, which is the first that can register it
+    /// as idle, so no message made available after that is missed.
+    /// </summary>
     public async Task StartAsync()
     {
         try
         {
-            await _transport.Subscriber.SubscribeAsync(_keys.Signal, _onSignal).AnyContext();
+            await _transport.Subscriber.SubscribeAsync(_wakeChannel, _onSignal).AnyContext();
             _subscribed = true;
         }
         catch (Exception ex)
         {
-            _transport.Logger.LogWarning(ex, "Could not subscribe to the new-message signal of {Source}; it waits up to {MaxPollInterval} for new messages instead",
+            _transport.Logger.LogWarning(ex, "Could not subscribe to the wake-up channel of a receiver of {Source}; it waits up to {MaxPollInterval} for new messages instead",
                 Source, _transport.Options.MaxPollInterval);
         }
 
@@ -65,30 +80,54 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         int count = Math.Min(maxMessages, _transport.Capabilities.MaxReceiveBatchSize);
         long started = Stopwatch.GetTimestamp();
         bool lastPoll = false;
+        // The receive before found the source drained and left this receiver registered as idle. Until it is woken, or a
+        // delayed or leased message falls due, a poll would find nothing, so it starts by waiting.
+        var idle = TakeIdleRegistration();
 
         while (true)
         {
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
-            var wake = Volatile.Read(ref _wake).Task;
-            var (messages, nextChange) = await ReceiveOnceAsync(count).AnyContext();
-            if (messages.Count > 0)
+            Task wake;
+            TimeSpan? nextChange;
+            IdleRegistration? registration = null;
+            bool polled = idle is null;
+            if (idle is not null)
             {
-                _pollInterval = _transport.Options.MinPollInterval;
-                return messages;
+                wake = idle.Wake;
+                nextChange = idle.TimeUntilDue();
+                idle = null;
+            }
+            else
+            {
+                wake = Volatile.Read(ref _wake).Task;
+                (var messages, nextChange, registration) = await ReceiveOnceAsync(count, wake).AnyContext();
+                if (messages.Count > 0)
+                {
+                    _pollInterval = _transport.Options.MinPollInterval;
+                    Volatile.Write(ref _idle, registration);
+                    return messages;
+                }
             }
 
             var remaining = maxWait - Stopwatch.GetElapsedTime(started);
             if (lastPoll || remaining <= TimeSpan.Zero)
+            {
+                // Every receive polls at least once.
+                if (!polled)
+                    continue;
+
+                Volatile.Write(ref _idle, registration);
                 return [];
+            }
 
             var poll = _pollInterval;
             var wait = poll < remaining ? poll : remaining;
             if (nextChange is { } change && change < wait)
                 wait = change < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : change;
 
-            // Polling is the fallback: a message sent to the source, or released by a settle, rings its signal.
+            // Polling is the fallback: a message made available while this receiver is registered as idle wakes it.
             using var delay = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var woken = await Task.WhenAny(Task.Delay(wait, delay.Token), wake).AnyContext() == wake;
             await delay.CancelAsync().AnyContext();
@@ -106,8 +145,16 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     public Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default) =>
         SettleAsync(message, "complete", RedisValue.EmptyString);
 
-    public Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default) =>
-        SettleAsync(message, "abandon", delay > TimeSpan.Zero ? (long)Math.Ceiling(delay.TotalMilliseconds) : 0);
+    public async Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
+    {
+        long milliseconds = delay > TimeSpan.Zero ? (long)Math.Ceiling(delay.TotalMilliseconds) : 0;
+        await SettleAsync(message, "abandon", milliseconds).AnyContext();
+
+        // A retry is not available yet, so it wakes no idle receiver. This one is woken to learn when it is due, as is
+        // one that cannot be woken over its channel.
+        if (milliseconds > 0 || !_subscribed)
+            Wake();
+    }
 
     public Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default)
     {
@@ -134,11 +181,11 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         {
             try
             {
-                await _transport.Subscriber.UnsubscribeAsync(_keys.Signal, _onSignal).AnyContext();
+                await _transport.Subscriber.UnsubscribeAsync(_wakeChannel, _onSignal).AnyContext();
             }
             catch (Exception ex)
             {
-                _transport.Logger.LogDebug(ex, "Could not unsubscribe receiver {Consumer} of {Source} from its new-message signal", _consumer, Source);
+                _transport.Logger.LogDebug(ex, "Could not unsubscribe receiver {Consumer} of {Source} from its wake-up channel", _consumer, Source);
             }
         }
 
@@ -148,10 +195,10 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             {
                 await _transport.RemoveInstanceAsync(_instance.Topic, _instance.Name, _keys).AnyContext();
             }
-            else if ((long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReleaseScript, [_keys.Stream, _keys.Leases],
-                [RedisMessageTransport.GroupName, _consumer, RedisMessageTransport.ReleasedConsumer]).AnyContext() > 0)
+            else
             {
-                _transport.Signal(_keys.Signal);
+                await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReleaseScript, [_keys.Stream, _keys.Leases, _keys.Idle],
+                    [RedisMessageTransport.GroupName, _consumer, RedisMessageTransport.ReleasedConsumer, _keys.WakeChannelPrefix, _transport.PublishCommand]).AnyContext();
             }
         }
         catch (Exception ex)
@@ -160,20 +207,49 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         }
     }
 
-    private async Task<(IReadOnlyList<IncomingMessage> Messages, TimeSpan? NextChange)> ReceiveOnceAsync(int count)
+    /// <summary>
+    /// Polls the source once. When the poll drains it, with room for more messages, the script registers this receiver
+    /// as idle, so the next message made available wakes it; the registration returned records that, with
+    /// <paramref name="wake"/>, which completes when it is woken.
+    /// </summary>
+    private async Task<(IReadOnlyList<IncomingMessage> Messages, TimeSpan? NextChange, IdleRegistration? Idle)> ReceiveOnceAsync(int count, Task wake)
     {
         bool deadLetters = Source.Kind == MessageSourceKind.DeadLetter;
+        bool register = _subscribed;
+        // A receiver still registered need not register again when it takes nothing, but it does now and then, in case
+        // it was woken by a wake-up that was lost.
+        long now = Stopwatch.GetTimestamp();
+        bool current = Volatile.Read(ref _registrationCurrent) && Stopwatch.GetElapsedTime(_registeredAt, now) < IdleRegistrationRefreshInterval;
         var result = (RedisResult[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReceiveScript,
-            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups, _keys.Held, _keys.Retries],
+            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups, _keys.Held, _keys.Retries, _keys.Idle],
             [RedisMessageTransport.GroupName, _consumer, count, (long)Math.Ceiling(_options.LeaseDuration.TotalMilliseconds), MaxPromotedPerReceive,
                 RedisMessageTransport.ReceiveBatchBytes, _transport.Options.MaxMessageSize,
-                deadLetters ? _transport.DeadLetterMaxLength : 0, deadLetters ? _transport.DeadLetterRetentionMilliseconds : 0]).AnyContext())!;
+                deadLetters ? _transport.DeadLetterMaxLength : 0, deadLetters ? _transport.DeadLetterRetentionMilliseconds : 0,
+                !register ? 0 : current ? 2 : 1, _mayBeRegistered ? 1 : 0]).AnyContext())!;
 
         var entries = (RedisResult[])result[0]!;
         long wait = (long)result[1];
         _transport.LogReleasedGroups(_keys, (long)result[2]);
+        bool registered = register && (long)result[3] == 1;
+        if (registered)
+        {
+            if (!current || entries.Length > 0)
+                _registeredAt = now;
+
+            _mayBeRegistered = true;
+            // A wake-up that came before the reply already removed it again.
+            Volatile.Write(ref _registrationCurrent, !wake.IsCompleted);
+        }
+        else
+        {
+            _mayBeRegistered = false;
+            Volatile.Write(ref _registrationCurrent, false);
+        }
+
+        TimeSpan? nextChange = wait >= 0 ? TimeSpan.FromMilliseconds(wait) : null;
+        var idle = registered ? new IdleRegistration(wake, nextChange is { } due ? now + (long)(due.TotalSeconds * Stopwatch.Frequency) : null) : null;
         if (entries.Length == 0)
-            return ([], wait >= 0 ? TimeSpan.FromMilliseconds(wait) : null);
+            return ([], nextChange, idle);
 
         var messages = new List<IncomingMessage>(entries.Length);
         foreach (var entry in entries)
@@ -182,7 +258,13 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             messages.Add(ToMessage((string)parts[0]!, (RedisValue[])parts[1]!, (long)parts[2]));
         }
 
-        return (messages, null);
+        return (messages, nextChange, idle);
+    }
+
+    private IdleRegistration? TakeIdleRegistration()
+    {
+        var idle = Interlocked.Exchange(ref _idle, null);
+        return idle is not null && idle.IsCurrent() ? idle : null;
     }
 
     private RedisIncomingMessage ToMessage(string entryId, RedisValue[] fields, long deliveries)
@@ -228,6 +310,8 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         };
     }
 
+    // The script wakes an idle receiver for a message it makes available: one abandoned without a delay, the next
+    // message of a group, or a dead letter.
     private async Task SettleAsync(IncomingMessage message, string operation, RedisValue value)
     {
         ArgumentNullException.ThrowIfNull(message);
@@ -236,25 +320,17 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
 
         bool ordered = _keys.OrderedGroups && delivery.GroupKey is not null;
         long result = (long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.SettleScript,
-            [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData, _keys.Retries],
+            [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData, _keys.Retries, _keys.Idle, _keys.DeadLetterIdle],
             [operation, RedisMessageTransport.GroupName, _consumer, delivery.EntryId, delivery.Deliveries, value, RedisMessageTransport.ReleasedConsumer,
                 RedisMessageTransport.DeadLetterReasonField, ordered ? 1 : 0, ordered ? delivery.GroupKey : String.Empty,
-                _transport.DeadLetterMaxLength, _transport.DeadLetterRetentionMilliseconds]).AnyContext();
+                _transport.DeadLetterMaxLength, _transport.DeadLetterRetentionMilliseconds,
+                _keys.WakeChannelPrefix, _keys.DeadLetterWakeChannelPrefix, _transport.PublishCommand]).AnyContext();
 
         if (result == 0)
             throw new MessageLeaseLostException($"The lease for message {message.MessageId} was lost.");
 
-        // An abandoned message, and the next message of a group released by this settle, can be received at once.
-        if (result == 2 || operation == "abandon")
-        {
-            _transport.Signal(_keys.Signal);
-            if (!_subscribed)
-                Wake();
-        }
-        else if (operation == "deadletter")
-        {
-            _transport.Signal(_keys.DeadLetterSignal);
-        }
+        if (result == 2 && !_subscribed)
+            Wake();
     }
 
     private void Wake() => Interlocked.Exchange(ref _wake, NewWakeSignal()).TrySetResult();
@@ -295,6 +371,18 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private static TaskCompletionSource NewWakeSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1 || _transport.IsDisposed, this);
+
+    /// <summary>
+    /// This receiver is registered as idle since a poll that drained the source. <paramref name="Wake"/> completes when
+    /// it is woken; <paramref name="DueAt"/> is the <see cref="Stopwatch"/> timestamp when the next delayed or leased
+    /// message the poll saw falls due.
+    /// </summary>
+    private sealed record IdleRegistration(Task Wake, long? DueAt)
+    {
+        public bool IsCurrent() => !Wake.IsCompleted && (DueAt is not { } due || Stopwatch.GetTimestamp() < due);
+
+        public TimeSpan? TimeUntilDue() => DueAt is { } due ? Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), due) : null;
+    }
 
     private sealed class RedisIncomingMessage : IncomingMessage
     {

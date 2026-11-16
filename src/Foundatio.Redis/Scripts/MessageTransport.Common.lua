@@ -45,6 +45,7 @@ end
 -- message's due time. The held hash maps each sequence to the message's encoded fields.
 
 -- Adds a message to the stream, or to the delayed set until it is due, and records it as its group's outstanding one.
+-- Returns true when it was added to the stream.
 local function release(k, now, due, delayedId, encoded, group)
     if due > now then
         redis.call('HSET', k.delayedData, delayedId, encoded)
@@ -52,13 +53,14 @@ local function release(k, now, due, delayedId, encoded, group)
         if group then
             redis.call('HSET', k.groups, 'a:' .. group, 'd:' .. delayedId, 'd:' .. delayedId, group)
         end
-        return
+        return false
     end
 
     local id = redis.call('XADD', k.stream, '*', unpack(decodeFields(encoded)))
     if group then
         redis.call('HSET', k.groups, 'a:' .. group, id)
     end
+    return true
 end
 
 local function hold(k, group, due, encoded)
@@ -78,12 +80,14 @@ local function hold(k, group, due, encoded)
 end
 
 -- Sends a message, holding it while an earlier message of its group is outstanding. group is nil for ungrouped messages.
+-- Returns false when the message was held, so no receiver needs to be woken for it.
 local function send(k, now, due, delayedId, encoded, group)
     if group and redis.call('HEXISTS', k.groups, 'a:' .. group) == 1 then
         hold(k, group, due, encoded)
-    else
-        release(k, now, due, delayedId, encoded, group)
+        return false
     end
+    release(k, now, due, delayedId, encoded, group)
+    return true
 end
 
 -- Called when a message left the source. If it was its group's outstanding message, releases the group's next held
@@ -191,4 +195,19 @@ local function ensureStream(k, group, now)
 
     redis.call('XGROUP', 'CREATE', k.stream, group, '0', 'MKSTREAM')
     return releaseLostGroups(k, now)
+end
+
+-- Idle receivers: a receive that finds the source drained, and has room for more messages, registers its receiver in
+-- the idle set, scored by when it found the source drained after receiving messages (or first found it empty). Making
+-- messages available pops that many receivers, most recently busy first, and publishes to each one's own channel, so a
+-- message wakes one receiver instead of every receiver of the source. Returns the number woken.
+local function wake(idle, count, channelPrefix, publish)
+    if count < 1 then
+        return 0
+    end
+    local popped = redis.call('ZPOPMAX', idle, count)
+    for i = 1, #popped, 2 do
+        redis.call(publish, channelPrefix .. popped[i], '')
+    end
+    return #popped / 2
 end

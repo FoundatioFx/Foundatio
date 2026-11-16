@@ -74,13 +74,13 @@ builder.Services.AddFoundatioMessaging(m => m
 - Both use the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. `UseRedis(connection, options)` takes the connection instead.
 - The service provider creates the transport and disposes it at shutdown. The connection stays yours.
 
-It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and subscription lives on one cluster slot. It needs Redis 6.2 or later, or Valkey.
+It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and durable subscription lives on one cluster slot; a topic's instance subscriptions all live on the topic's slot. It needs Redis 6.2 or later, or Valkey.
 
 ### Options
 
 | Option | Default | |
 |---|---|---|
-| `Prefix` | `foundatio:messaging` | Prepended to every key and signal channel. Cannot contain `{` or `}`. |
+| `Prefix` | `foundatio:messaging` | Prepended to every key and wake-up channel. Cannot contain `{` or `}`. |
 | `Database` | `-1` | The database to use; `-1` is the connection's default. |
 | `MaxMessageSize` | 16 MiB | The largest message, measured by `MessageSize.Of`. Can be raised to 256 MiB. |
 | `DeduplicationWindow` | 5 minutes | How long a `DeduplicationId` is remembered. |
@@ -112,9 +112,10 @@ Everything is kept in Redis memory, which is often shared with the app's cache a
 ### Latency and cost
 
 - Receivers poll their sources with Lua scripts on the shared multiplexer; there are no blocking reads.
-- Every send also publishes a small pub/sub signal on the source's channel (`<Prefix>:{q:<queue>}:signal`, and so on). That wakes idle receivers in every process, so delivery normally takes about a millisecond. Each signal makes every idle receiver of that source poll once.
-- Polling backs off from `MinPollInterval` to `MaxPollInterval`, and is the fallback when a signal is lost, for example while a connection reconnects. Each idle receiver runs about one script per `MaxPollInterval`.
-- Signals use classic `PUBLISH`, which Redis Cluster forwards to every node.
+- A receive that drains its source, while its receiver has room for more messages, registers the receiver as idle. Each message then made available, by a send, a publish, an abandon without a delay, the next message of a group or a disposed receiver's messages, wakes one idle receiver in any process, the one most recently busy, over that receiver's own pub/sub channel (`<Prefix>:{q:<queue>}:wake:<consumer>`, and so on). Delivery normally takes about a millisecond, and the other idle receivers don't poll. A delayed send wakes one idle receiver, so it learns when the message is due; a retry wakes none, as the receiver that abandoned it learns that.
+- Wake-ups use sharded pub/sub (`SPUBLISH`) on Redis Cluster 7 or later, so only the source's shard sends them, and classic `PUBLISH` on a single Redis, Sentinel or an older cluster. They are published by the scripts themselves, so they cost no round trip.
+- Polling backs off from `MinPollInterval` to `MaxPollInterval`, and is the fallback when a wake-up is lost, for example while a connection reconnects, or goes to a receiver that crashed. Each idle receiver runs about one script per `MaxPollInterval`.
+- Publishing to a topic runs one script on the topic's slot that copies the message into every instance subscription, plus one script per durable subscription. With many instance subscriptions on a busy topic, that slot's shard does all of their work: their copies, receives and settles.
 - One receive returns at most about 8 MiB, but always at least one message. Large messages still block Redis while scripts copy them, so store large payloads elsewhere and send a reference.
 
 ### Monitoring

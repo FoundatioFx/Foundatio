@@ -1,10 +1,14 @@
--- KEYS: stream, leases, delayed, delayed-data, groups, held, retries
+-- KEYS: stream, leases, delayed, delayed-data, groups, held, retries, idle
 -- ARGV: group, consumer, max messages, lease ms, max delayed messages to promote, max bytes, max message bytes,
---       dead letters to keep and dead-letter retention ms (0 for sources that are not dead-letter queues)
--- Reads stop once about max bytes were read, always returning at least one message when one is available.
--- Returns the messages, the ms until the next delayed or leased message is due (-1 when there is none or messages were
--- returned), and the number of groups released because their outstanding message was lost
-local stream, leases, delayed = KEYS[1], KEYS[2], KEYS[3]
+--       dead letters to keep and dead-letter retention ms (0 for sources that are not dead-letter queues),
+--       register ('0' never registers the consumer as idle, '1' registers it when the receive drains the source, '2' does
+--       too but leaves it be when it takes nothing, as it is still registered), registered ('1' when the consumer may
+--       still be registered as idle)
+-- Reads stop once about max bytes were read, always returning at least one message when one is available. The source
+-- is drained when the stream had fewer unread messages than the receive could take.
+-- Returns the messages, the ms until the next delayed or leased message is due (-1 when there is none or the source was
+-- not drained), the number of groups released because their outstanding message was lost, and 1 when it was drained
+local stream, leases, delayed, idle = KEYS[1], KEYS[2], KEYS[3], KEYS[8]
 local k = { stream = stream, delayed = delayed, delayedData = KEYS[4], groups = KEYS[5], held = KEYS[6] }
 local group, consumer = ARGV[1], ARGV[2]
 local maxMessages, lease = tonumber(ARGV[3]), tonumber(ARGV[4])
@@ -49,6 +53,7 @@ end
 
 -- Reads as many messages at once as fit in the remaining bytes at the largest message size, and one at a time once
 -- that is none.
+local drained = false
 while #messages < maxMessages and bytes < maxBytes do
     local count = math.min(maxMessages - #messages, math.max(1, math.floor((maxBytes - bytes) / maxMessageBytes)))
     local read = readGroup(count)
@@ -56,6 +61,7 @@ while #messages < maxMessages and bytes < maxBytes do
         return redis.error_reply(read.err)
     end
     if not read then
+        drained = true
         break
     end
 
@@ -66,12 +72,13 @@ while #messages < maxMessages and bytes < maxBytes do
         bytes = bytes + fieldsSize(entry[2])
     end
     if #entries < count then
+        drained = true
         break
     end
 end
 
 local wait = -1
-if #messages == 0 then
+if drained then
     local nextAt
     local nextDelayed = redis.call('ZRANGE', delayed, 0, 0, 'WITHSCORES')
     if nextDelayed[2] then
@@ -86,4 +93,15 @@ if #messages == 0 then
     end
 end
 
-return { messages, wait, released }
+-- A receiver that drained the source, and still has room, waits to be woken; one with no room is busy.
+if drained and ARGV[10] ~= '0' then
+    if #messages > 0 then
+        redis.call('ZADD', idle, now, consumer)
+    elseif ARGV[10] == '1' then
+        redis.call('ZADD', idle, 'NX', now, consumer)
+    end
+elseif not drained and ARGV[11] == '1' then
+    redis.call('ZREM', idle, consumer)
+end
+
+return { messages, wait, released, drained and 1 or 0 }
