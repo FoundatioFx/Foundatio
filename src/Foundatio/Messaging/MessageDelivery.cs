@@ -93,18 +93,29 @@ internal sealed class MessageDelivery
     public Task HoldAsync(TimeSpan delay, CancellationToken abortToken) => _holds.HoldAsync(this, delay, abortToken);
 
     /// <summary>
-    /// Gives the handler slot to other messages when the processor has room, stops renewing, then settles on a token
-    /// that is never the handler's. Returns null when it settled, or the error, which is logged: the transport delivers
-    /// the message again.
+    /// Stops renewing, then settles on a token that is never the handler's; while either waits, the handler slot goes to
+    /// other messages when the processor has room. Returns null when it settled, or the error, which is logged: the
+    /// transport delivers the message again.
     /// </summary>
     public async Task<Exception?> SettleAsync(Func<IMessageReceiver, IncomingMessage, CancellationToken, Task> settle, string operation, ILogger logger)
     {
-        _settlements.Begin(this);
-        await StopRenewingAsync().AnyContext();
+        HandlerReturned?.TrySetResult();
+        var stopRenewing = StopRenewingAsync();
+        if (!stopRenewing.IsCompleted)
+        {
+            _settlements.TryRelease(this);
+            await stopRenewing.AnyContext();
+        }
+
         using var timeout = new CancellationTokenSource(SettleTimeout);
         try
         {
-            await settle(Receiver, Message, timeout.Token).AnyContext();
+            // A settlement that completes at once, as an in-memory one does, keeps its slot: giving it away would only cost.
+            var settling = settle(Receiver, Message, timeout.Token);
+            if (!settling.IsCompleted)
+                _settlements.TryRelease(this);
+
+            await settling.AnyContext();
             return null;
         }
         catch (MessageLeaseLostException ex)

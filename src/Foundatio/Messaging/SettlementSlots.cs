@@ -4,9 +4,9 @@ using System.Threading;
 namespace Foundatio.Messaging;
 
 /// <summary>
-/// Lets one processor's settlements run without their handler slots: once a handler has returned, the complete, abandon
-/// or dead-letter that follows gives the delivery's slot to the next message, so a slot does not wait out a broker round
-/// trip. The delivery stays in flight, and its outcome is reported, only once the settlement finishes. At most
+/// Lets one processor's settlements run without their handler slots: once a handler has returned, a complete, abandon
+/// or dead-letter that waits on the broker gives the delivery's slot to the next message, so a slot does not wait out a
+/// round trip. The delivery stays in flight, and its outcome is reported, only once the settlement finishes. At most
 /// <see cref="SettlementsPerSlot"/> settlements per handler slot run without their slots at once; past that a settlement
 /// keeps its slot, so a slow broker cannot make settlements pile up without bound.
 /// </summary>
@@ -31,12 +31,11 @@ internal sealed class SettlementSlots
     }
 
     /// <summary>
-    /// Called as <paramref name="delivery"/> starts to settle: tells an in-order processor its handler has returned, and
-    /// gives its own handler slot to other messages if it still holds it and there is room.
+    /// Called while <paramref name="delivery"/> waits to settle: gives its own handler slot to other messages if it still
+    /// holds it and there is room.
     /// </summary>
-    public void Begin(MessageDelivery delivery)
+    public void TryRelease(MessageDelivery delivery)
     {
-        delivery.HandlerReturned?.TrySetResult();
         if (delivery.SequenceSlots <= 0 || delivery.SlotsReleased || delivery.SettlesOffSlot)
             return;
 
