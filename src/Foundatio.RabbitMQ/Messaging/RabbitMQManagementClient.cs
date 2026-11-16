@@ -40,10 +40,15 @@ internal sealed class RabbitMQManagementClient : IDisposable
         return GetAsync($"api/queues/{Uri.EscapeDataString(_virtualHost)}/{Uri.EscapeDataString(queue)}", cancellationToken);
     }
 
-    /// <summary>The details of up to 100 queues whose names match the regular expression <paramref name="pattern"/>, as a page whose <c>items</c> lists them.</summary>
-    public async Task<JsonDocument> GetQueuesAsync(string pattern, CancellationToken cancellationToken)
+    /// <summary>
+    /// The details of up to <paramref name="count"/> queues whose names match the regular expression
+    /// <paramref name="pattern"/>, those with the highest <paramref name="sortDescendingBy"/> first when it is set, as a
+    /// page whose <c>items</c> lists them.
+    /// </summary>
+    public async Task<JsonDocument> GetQueuesAsync(string pattern, int count, string? sortDescendingBy, CancellationToken cancellationToken)
     {
-        return await GetAsync($"api/queues/{Uri.EscapeDataString(_virtualHost)}?page=1&page_size=100&use_regex=true&name={Uri.EscapeDataString(pattern)}", cancellationToken).AnyContext()
+        string sort = sortDescendingBy is null ? String.Empty : $"&sort={Uri.EscapeDataString(sortDescendingBy)}&sort_reverse=true";
+        return await GetAsync($"api/queues/{Uri.EscapeDataString(_virtualHost)}?page=1&page_size={count}&use_regex=true&name={Uri.EscapeDataString(pattern)}{sort}", cancellationToken).AnyContext()
             ?? throw new HttpRequestException($"The management API has no virtual host {_virtualHost}.");
     }
 

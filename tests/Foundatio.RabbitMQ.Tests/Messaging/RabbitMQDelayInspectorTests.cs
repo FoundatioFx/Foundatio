@@ -1,5 +1,10 @@
+using System;
+using System.Linq;
 using System.Text.Json;
 using Foundatio.Messaging.Transport;
+using Foundatio.Xunit;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.RabbitMQ.Tests.Messaging;
@@ -15,11 +20,24 @@ public class RabbitMQDelayInspectorTests
     {
         using var queue = JsonDocument.Parse(json);
 
-        string? problem = RabbitMQDelayInspector.DescribeTarget(queue.RootElement, "app");
+        string? problem = RabbitMQDelayInspector.DescribeTarget(queue.RootElement, "app", isInstance: false);
 
         Assert.NotNull(problem);
         Assert.Contains($"once it holds {limit}", problem);
-        Assert.Contains("\"app\"", problem);
+        Assert.Contains("its landing queue", problem);
+        Assert.DoesNotContain("every queue under the prefix", problem);
+    }
+
+    [Fact]
+    public void DescribeTarget_ForAnInstanceSubscriptionThatRefusesWhenFull_WarnsThatItHoldsUpItsLevel()
+    {
+        using var queue = JsonDocument.Parse("""{ "type": "classic", "arguments": {}, "effective_policy_definition": { "max-length": 1, "overflow": "reject-publish" } }""");
+
+        string? problem = RabbitMQDelayInspector.DescribeTarget(queue.RootElement, "app", isInstance: true);
+
+        Assert.NotNull(problem);
+        Assert.Contains("once it holds 1 message", problem);
+        Assert.Contains("for every queue under the prefix \"app\"", problem);
     }
 
     [Theory]
@@ -32,7 +50,8 @@ public class RabbitMQDelayInspectorTests
     {
         using var queue = JsonDocument.Parse(json);
 
-        Assert.Null(RabbitMQDelayInspector.DescribeTarget(queue.RootElement, "app"));
+        Assert.Null(RabbitMQDelayInspector.DescribeTarget(queue.RootElement, "app", isInstance: false));
+        Assert.Null(RabbitMQDelayInspector.DescribeTarget(queue.RootElement, "app", isInstance: true));
     }
 
     [Fact]
@@ -86,6 +105,68 @@ public class RabbitMQDelayInspectorTests
 
         Assert.Null(RabbitMQDelayInspector.DescribeLevel(queue.RootElement, 7));
     }
+
+    [Theory]
+    [InlineData("""{ "max-length": 100 }""", "refuses messages once it holds 100 messages")]
+    [InlineData("""{ "overflow": "drop-head" }""", "dead-letters at most once")]
+    [InlineData("""{ "expires": 3600000 }""", "is deleted after 3600000 ms")]
+    public void DescribeLanding_WithAPolicyThatChangesIt_SaysWhatItBreaks(string policy, string expected)
+    {
+        using var queue = JsonDocument.Parse($$"""{ "name": "app.landing.queue.orders", "type": "quorum", "arguments": {{LandingArguments}}, "effective_policy_definition": {{policy}}, "policy": "broad" }""");
+
+        string? problem = RabbitMQDelayInspector.DescribeLanding(queue.RootElement);
+
+        Assert.NotNull(problem);
+        Assert.Contains(expected, problem);
+        Assert.Contains("policy broad", problem);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("""{ "message-ttl": 60000, "overflow": "reject-publish" }""")]
+    public void DescribeLanding_AsDeclaredOrWithHarmlessPolicies_ReturnsNull(string policy)
+    {
+        using var queue = JsonDocument.Parse($$"""{ "name": "app.landing.queue.orders", "type": "quorum", "arguments": {{LandingArguments}}, "effective_policy_definition": {{policy}} }""");
+
+        Assert.Null(RabbitMQDelayInspector.DescribeLanding(queue.RootElement));
+    }
+
+    [Fact]
+    public void InspectLandingQueues_WithAStuckLandingQueue_WarnsOnceNamingItsTargetAndThatItCaughtUp()
+    {
+        // Arrange
+        var log = new TestLogger();
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var management = new RabbitMQManagementClient(new Uri("http://localhost:1"), null);
+        var inspector = new RabbitMQDelayInspector(management, new RabbitMQMessageTransportNames("app"), "app", log.CreateLogger("inspector"), time,
+            TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(1));
+        using var stuck = LandingPage(("app.landing.queue.orders", RabbitMQDelayInspector.DeadLetterWorkerPrefetch + 8), ("app.landing.queue.other", 3));
+        using var caughtUp = LandingPage(("app.landing.queue.orders", 0), ("app.landing.queue.other", 0));
+
+        // Act
+        inspector.InspectLandingQueues(stuck.RootElement);
+        bool warnedEarly = Warnings(log).Length > 0;
+        time.Advance(TimeSpan.FromMinutes(1));
+        inspector.InspectLandingQueues(stuck.RootElement);
+        time.Advance(TimeSpan.FromMinutes(1));
+        inspector.InspectLandingQueues(stuck.RootElement);
+        inspector.InspectLandingQueues(caughtUp.RootElement);
+
+        // Assert
+        Assert.False(warnedEarly);
+        string warning = Assert.Single(Warnings(log));
+        Assert.Contains("Landing queue app.landing.queue.orders", warning);
+        Assert.Contains("delayed messages for app.queue.orders", warning);
+        Assert.DoesNotContain("app.landing.queue.other", warning);
+        Assert.Contains(log.LogEntries, e => e.LogLevel == LogLevel.Information && e.Message.Contains("app.landing.queue.orders caught up", StringComparison.Ordinal));
+    }
+
+    private static string[] Warnings(TestLogger log) => log.LogEntries.Where(e => e.LogLevel == LogLevel.Warning).Select(e => e.Message).ToArray();
+
+    private static JsonDocument LandingPage(params (string Name, long DeadLettering)[] queues) =>
+        JsonDocument.Parse($$"""{ "items": [{{String.Join(", ", queues.Select(q => $$"""{ "name": "{{q.Name}}", "type": "quorum", "arguments": {{LandingArguments}}, "effective_policy_definition": [], "messages_dlx": {{q.DeadLettering}} }"""))}}] }""");
+
+    private const string LandingArguments = """{ "x-queue-type": "quorum", "x-message-ttl": 0, "x-dead-letter-exchange": "app.delay.final", "x-dead-letter-strategy": "at-least-once", "x-overflow": "reject-publish" }""";
 
     private static string LevelArguments(int level) =>
         $$"""{ "x-queue-type": "quorum", "x-message-ttl": {{RabbitMQDelayLevels.TimeToLiveMilliseconds(level)}}, "x-dead-letter-exchange": "app.delay.06", "x-dead-letter-strategy": "at-least-once", "x-overflow": "reject-publish" }""";

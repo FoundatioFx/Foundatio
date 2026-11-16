@@ -22,10 +22,12 @@ internal sealed class RabbitMQMessageTransportNames
     private const int MaxPrefixLength = 64;
 
     private readonly string _prefix;
+    private readonly string _targetPrefix;
 
     public RabbitMQMessageTransportNames(string prefix)
     {
         _prefix = prefix;
+        _targetPrefix = $"{prefix}.";
     }
 
     public static void ValidatePrefix(string prefix, string parameterName)
@@ -67,8 +69,33 @@ internal sealed class RabbitMQMessageTransportNames
     /// <summary>The exchange and queue of delay level <paramref name="level"/>, which hold a message for 2^level seconds.</summary>
     public string DelayLevel(int level) => $"{_prefix}.delay.{level:D2}";
 
-    /// <summary>The exchange delayed messages reach their target through once their delay has passed.</summary>
+    /// <summary>
+    /// The exchange delayed messages reach once their delay has passed. It routes a message to its target's landing
+    /// queue, and one whose target has none to <see cref="DelayFinal"/>, its alternate exchange.
+    /// </summary>
     public string DelayDelivery => $"{_prefix}.delay";
+
+    /// <summary>The exchange every queue and topic the transport uses is bound to by its name, which delivers delayed messages to their targets.</summary>
+    public string DelayFinal => $"{_prefix}.delay.final";
+
+    /// <summary>
+    /// The landing queue of <paramref name="target"/>, a queue or a topic's exchange, which takes its due delayed
+    /// messages from <see cref="DelayDelivery"/> and dead-letters them into it through <see cref="DelayFinal"/>.
+    /// </summary>
+    public string Landing(string target) => Build("landing", target.StartsWith(_targetPrefix, StringComparison.Ordinal) ? target[_targetPrefix.Length..] : target);
+
+    /// <summary>
+    /// The target of the landing queue <paramref name="landing"/>, or null when its name is not a landing queue's or
+    /// may have been shortened, which loses the target's exact name.
+    /// </summary>
+    public string? LandingTarget(string landing)
+    {
+        string landingPrefix = $"{_prefix}.landing.";
+        if (!landing.StartsWith(landingPrefix, StringComparison.Ordinal) || landing.Length <= landingPrefix.Length || landing.Length >= MaxNameLength)
+            return null;
+
+        return _targetPrefix + landing[landingPrefix.Length..];
+    }
 
     /// <summary>
     /// The exchange and queue that drop what nothing else takes: published messages without subscriptions and delayed

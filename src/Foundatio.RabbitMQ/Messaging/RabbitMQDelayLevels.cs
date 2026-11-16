@@ -9,8 +9,10 @@ namespace Foundatio.Messaging.Transport;
 /// delay in binary, highest bit first, followed by its target's name. Each level's exchange routes the message to the
 /// level's queue when its bit is set, or straight on to the next level's exchange when it is not; each level's queue
 /// holds a message for 2^level seconds and then dead-letters it, keeping its routing key, to the next level's exchange.
-/// After level 0 the message reaches the delivery exchange, where every queue and topic the transport uses is bound by
-/// its name. Every message in one level's queue waits the same time, so they expire in order at the head of the queue.
+/// After level 0 the message reaches the delivery exchange, which routes it by its target's name to the target's landing
+/// queue, or, for a target without one, to its alternate exchange, where every queue and topic the transport uses is
+/// bound by its name; a landing queue passes it on there too. Every message in one level's queue waits the same time,
+/// so they expire in order at the head of the queue.
 /// </summary>
 internal static class RabbitMQDelayLevels
 {
@@ -68,8 +70,9 @@ internal static class RabbitMQDelayLevels
     }
 
     /// <summary>
-    /// The binding key on the delivery exchange for <paramref name="target"/>: any delay bits followed by exactly its
-    /// name, so a name that ends with another one's words does not match it.
+    /// The binding key for <paramref name="target"/>'s delayed messages, of its landing queue on the delivery exchange
+    /// and of the target itself on the exchange behind that: any delay bits followed by exactly its name, so a name that
+    /// ends with another one's words does not match it.
     /// </summary>
     public static string DeliveryBindingKey(string target)
     {

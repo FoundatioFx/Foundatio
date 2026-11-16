@@ -74,8 +74,8 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
                 await channel.QueueBindAsync(_queue, _topicExchange, String.Empty, cancellationToken: cancellationToken).AnyContext();
                 if (_transport.Options.DelayedDelivery)
                 {
-                    await channel.QueueBindAsync(_queue, _transport.Names.DelayDelivery, RabbitMQDelayLevels.DeliveryBindingKey(_queue), cancellationToken: cancellationToken).AnyContext();
-                    _transport.DelayInspector?.InspectTargetInBackground(_queue);
+                    await channel.QueueBindAsync(_queue, _transport.Names.DelayFinal, RabbitMQDelayLevels.DeliveryBindingKey(_queue), cancellationToken: cancellationToken).AnyContext();
+                    _transport.DelayInspector?.InspectTargetInBackground(_queue, isInstance: true);
                 }
             }
 

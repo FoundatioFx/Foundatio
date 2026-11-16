@@ -29,6 +29,19 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         ["x-delivery-limit"] = -1
     };
 
+    /// <summary>
+    /// A landing queue expires each message as it arrives and dead-letters it, at least once, into the exchange that
+    /// delivers it to its target. It takes the place of its target as the delay levels' next hop: a target that refuses
+    /// messages then holds up only its own landing queue, not a delay level every target shares.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, object?> LandingArguments = new Dictionary<string, object?>
+    {
+        ["x-queue-type"] = "quorum",
+        ["x-message-ttl"] = 0,
+        ["x-dead-letter-strategy"] = "at-least-once",
+        ["x-overflow"] = "reject-publish"
+    };
+
     private readonly RabbitMQMessageTransportNames _names;
     private readonly bool _delays;
     private readonly RabbitMQDelayInspector? _inspector;
@@ -46,7 +59,7 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         _channel = new RabbitMQChannelSlot(openChannel);
     }
 
-    /// <summary>A durable queue for a queue, subscription or dead-letter source, bound to the delay delivery exchange.</summary>
+    /// <summary>A durable queue for a queue, subscription or dead-letter source, bound by its name to the exchange that delivers delayed messages.</summary>
     public Task EnsureQueueAsync(string queue, CancellationToken cancellationToken)
     {
         return EnsureAsync($"queue:{queue}", async token =>
@@ -91,7 +104,10 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         }, cancellationToken);
     }
 
-    /// <summary>The delay levels and the exchange that delivers delayed messages to their targets (see <see cref="RabbitMQDelayLevels"/>).</summary>
+    /// <summary>
+    /// The delay levels (see <see cref="RabbitMQDelayLevels"/>), the exchange they deliver to, which routes to landing
+    /// queues, and the exchange that delivers to targets, its alternate exchange for targets without a landing queue.
+    /// </summary>
     public Task EnsureDelaysAsync(CancellationToken cancellationToken)
     {
         if (!_delays)
@@ -100,9 +116,12 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         return EnsureAsync("delays", async token =>
         {
             await EnsureDiscardAsync(token).AnyContext();
+            string final = _names.DelayFinal;
+            await RunAsync($"declare exchange {final}", (channel, ct) => channel.ExchangeDeclareAsync(final, ExchangeType.Topic, durable: true, autoDelete: false,
+                arguments: new Dictionary<string, object?> { ["alternate-exchange"] = _names.Discard }, cancellationToken: ct), token).AnyContext();
             string delivery = _names.DelayDelivery;
             await RunAsync($"declare exchange {delivery}", (channel, ct) => channel.ExchangeDeclareAsync(delivery, ExchangeType.Topic, durable: true, autoDelete: false,
-                arguments: new Dictionary<string, object?> { ["alternate-exchange"] = _names.Discard }, cancellationToken: ct), token).AnyContext();
+                arguments: new Dictionary<string, object?> { ["alternate-exchange"] = final }, cancellationToken: ct), token).AnyContext();
 
             for (int level = 0; level < RabbitMQDelayLevels.Count; level++)
             {
@@ -138,22 +157,50 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         }, cancellationToken);
     }
 
-    /// <summary>Removes a queue with its messages, consumers and bindings. Succeeds when it does not exist.</summary>
+    /// <summary>
+    /// The landing queue of <paramref name="target"/>, a queue or a topic's exchange, which is declared before its first
+    /// delayed message and bound to the delivery exchange by the target's name. Instance subscriptions have none: their
+    /// delayed retries reach them through the delivery exchange's alternate exchange, as do those of a target whose
+    /// landing queue an operator deleted, until it is declared again.
+    /// </summary>
+    public Task EnsureLandingAsync(string target, CancellationToken cancellationToken)
+    {
+        return EnsureAsync($"landing:{target}", async token =>
+        {
+            await EnsureDelaysAsync(token).AnyContext();
+            string landing = _names.Landing(target);
+            var arguments = new Dictionary<string, object?>(LandingArguments) { ["x-dead-letter-exchange"] = _names.DelayFinal };
+            await RunAsync($"declare landing queue {landing}", async (channel, ct) => _ = await channel.QueueDeclareAsync(landing, durable: true, exclusive: false, autoDelete: false,
+                arguments: arguments, cancellationToken: ct).AnyContext(), token).AnyContext();
+            await RunAsync($"bind {landing} to {_names.DelayDelivery}", (channel, ct) => channel.QueueBindAsync(landing, _names.DelayDelivery,
+                RabbitMQDelayLevels.DeliveryBindingKey(target), cancellationToken: ct), token).AnyContext();
+            _inspector?.InspectLandingInBackground(landing);
+        }, cancellationToken);
+    }
+
+    /// <summary>Removes a queue with its messages, consumers and bindings, and its landing queue. Succeeds when they do not exist.</summary>
     public async Task DeleteQueueAsync(string queue, CancellationToken cancellationToken)
     {
         Forget(queue);
         await RunAsync($"delete queue {queue}", async (channel, ct) => _ = await channel.QueueDeleteAsync(queue, ifUnused: false, ifEmpty: false, cancellationToken: ct).AnyContext(), cancellationToken).AnyContext();
+        if (_delays)
+        {
+            string landing = _names.Landing(queue);
+            await RunAsync($"delete queue {landing}", async (channel, ct) => _ = await channel.QueueDeleteAsync(landing, ifUnused: false, ifEmpty: false, cancellationToken: ct).AnyContext(), cancellationToken).AnyContext();
+        }
+
         Forget(queue);
     }
 
-    /// <summary>Declares a queue or subscription again when it is next used, for example after another process deleted it.</summary>
+    /// <summary>Declares a queue or subscription, and its landing queue, again when it is next used, for example after another process deleted it.</summary>
     public void Forget(string queue)
     {
         _ensured.TryRemove($"queue:{queue}", out _);
         _ensured.TryRemove($"subscription:{queue}", out _);
+        _ensured.TryRemove($"landing:{queue}", out _);
     }
 
-    /// <summary>Declares every exchange again when it is next used.</summary>
+    /// <summary>Declares every exchange, and every landing queue with its binding, again when it is next used.</summary>
     public void ForgetExchanges()
     {
         foreach (string key in _ensured.Keys)
@@ -165,13 +212,14 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
 
     public ValueTask DisposeAsync() => _channel.DisposeAsync();
 
-    /// <summary>Binds a queue or exchange to the delay delivery exchange by its name, so delayed messages for it arrive.</summary>
+    /// <summary>Binds a queue or exchange by its name to the exchange that delivers delayed messages, so delayed messages for it arrive.</summary>
     private Task BindForDelaysAsync(string target, bool isExchange, CancellationToken cancellationToken)
     {
         string key = RabbitMQDelayLevels.DeliveryBindingKey(target);
-        return RunAsync($"bind {target} to {_names.DelayDelivery}", (channel, ct) => isExchange
-            ? channel.ExchangeBindAsync(target, _names.DelayDelivery, key, cancellationToken: ct)
-            : channel.QueueBindAsync(target, _names.DelayDelivery, key, cancellationToken: ct), cancellationToken);
+        string final = _names.DelayFinal;
+        return RunAsync($"bind {target} to {final}", (channel, ct) => isExchange
+            ? channel.ExchangeBindAsync(target, final, key, cancellationToken: ct)
+            : channel.QueueBindAsync(target, final, key, cancellationToken: ct), cancellationToken);
     }
 
     private Task EnsureDiscardAsync(CancellationToken cancellationToken)

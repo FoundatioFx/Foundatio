@@ -46,6 +46,15 @@ namespace Foundatio.Messaging.Transport;
 /// waits on the broker, with no process running, and is delivered within about a second after it is due. A delayed
 /// message for a queue or subscription that was deleted is dropped when it comes due, unless it was created again.
 /// </para>
+/// <para>
+/// A due message reaches its target, a queue or a topic's exchange, through the target's landing queue: a quorum queue
+/// declared before the target's first delayed message, which passes each message on as it arrives. So a target that
+/// refuses messages, such as a full queue whose policy sets <c>overflow: reject-publish</c>, holds up only its own
+/// delayed messages (and a subscription its topic's delayed publishes), not those of other targets; the broker tries a
+/// refused message again after <c>dead_letter_worker_publisher_confirm_timeout</c> (3 minutes by default). Instance
+/// subscriptions have no landing queue, which would outlive them: their delayed retries, and those of a target whose
+/// landing queue was deleted, are delivered straight from the delay levels. Deleting a source deletes its landing queue.
+/// </para>
 /// </remarks>
 public sealed class RabbitMQMessageTransport : IMessageTransport
 {
@@ -215,7 +224,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
                 }
 
                 if (delayed)
-                    await Topology.EnsureDelaysAsync(ct).AnyContext();
+                    await Topology.EnsureLandingAsync(target, ct).AnyContext();
             }, target, cancellationToken).AnyContext();
         }
         catch (MessageBusException ex) when (ex is not MessageTooLargeException)
@@ -283,9 +292,9 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
 
     /// <inheritdoc />
     /// <remarks>
-    /// Deletes the source's queue and its dead-letter queue, or only the dead-letter queue. Receivers open on a
-    /// deleted queue, in any process, are cancelled by the broker and fault, so Foundatio replaces them and the queue
-    /// is declared again. A subscription's topic exchange is kept.
+    /// Deletes the source's queue and its dead-letter queue, or only the dead-letter queue, with their landing queues.
+    /// Receivers open on a deleted queue, in any process, are cancelled by the broker and fault, so Foundatio replaces
+    /// them and the queue is declared again. A subscription's topic exchange, and its landing queue, are kept.
     /// </remarks>
     public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
     {
@@ -321,9 +330,9 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// source shares, so they are not counted. Nothing is declared; a source that does not exist counts as empty.
     /// </para>
     /// <para>
-    /// With the management API and delayed delivery, a call also has the delay levels inspected, at most every 15
-    /// seconds and without waiting for it, and a warning is logged for a level whose expired messages have waited a
-    /// minute or more for their next hop, or a queue whose policy holds up delayed delivery.
+    /// With the management API and delayed delivery, a call also has the delay levels and landing queues inspected, at
+    /// most every 15 seconds and without waiting for it, and a warning is logged for a level or landing queue whose
+    /// expired messages have waited a minute or more for their next hop, or a queue whose policy holds up delayed delivery.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
@@ -444,7 +453,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// <summary>
     /// Sends a received message again, to its own queue (an abandon, carrying its delivery count) or to a dead-letter
     /// queue, after <paramref name="delay"/>. An instance subscription's queue is not declared: it exists while its
-    /// receiver is open, and only on that receiver's connection.
+    /// receiver is open, and only on that receiver's connection. Nor does it get a landing queue, which would outlive it.
     /// </summary>
     internal async Task PublishCopyAsync(string queue, bool declareQueue, RabbitMQIncomingMessage message, IReadOnlyDictionary<string, string> headers,
         int previousDeliveries, TimeSpan delay, CancellationToken cancellationToken)
@@ -461,7 +470,12 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
             if (declareQueue)
                 await Topology.EnsureQueueAsync(queue, ct).AnyContext();
             if (delaySeconds > 0)
-                await Topology.EnsureDelaysAsync(ct).AnyContext();
+            {
+                if (declareQueue)
+                    await Topology.EnsureLandingAsync(queue, ct).AnyContext();
+                else
+                    await Topology.EnsureDelaysAsync(ct).AnyContext();
+            }
         }, queue, cancellationToken).AnyContext();
     }
 
