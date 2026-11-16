@@ -60,6 +60,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     private static readonly string StatsScript = LoadScript("Stats");
     internal static readonly string ReceiveScript = LoadScript("Receive");
     internal static readonly string SettleScript = LoadScript("Settle");
+    internal static readonly string CompleteScript = LoadScript("Complete");
     internal static readonly string ReleaseScript = LoadScript("Release");
     private static readonly TimeSpan ConsumerPruneIdleTime = TimeSpan.FromHours(1);
 

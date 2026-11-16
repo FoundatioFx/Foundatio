@@ -388,6 +388,46 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task CompleteAsync_CalledConcurrently_SharesRoundTrips()
+    {
+        using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        var transport = Track(new RedisMessageTransport(connection, new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log }));
+        var source = MessageSource.Queue(NewName("complete-batch"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 20).Select(i => Message($"m{i}")).ToList(), TestCancellationToken);
+        var messages = await ReceiveAsync(receiver, 20);
+        await WaitUntilQuietAsync(connection);
+
+        long before = Operations(connection);
+        await Task.WhenAll(messages.Select(m => receiver.CompleteAsync(m, TestCancellationToken)));
+
+        long roundTrips = Operations(connection) - before;
+        Assert.True(roundTrips <= 10, $"Completing 20 messages at once took {roundTrips} round trips.");
+        await AssertStatsAsync(source, transport: transport);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ConcurrentlyWithAMessageWhoseLeaseWasLost_FailsOnlyThatOne()
+    {
+        var source = MessageSource.Queue(NewName("complete-mixed"));
+        await using var first = await CreateReceiverAsync(source, ShortLease);
+        await using var second = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("stale", "stale")], TestCancellationToken);
+        var stale = await ReceiveOneAsync(first);
+        var redelivered = await ReceiveOneAsync(second, ShortLease + DeliveryTimeout);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("a", "a"), Message("b", "b")], TestCancellationToken);
+        var fresh = await ReceiveAsync(first, 2);
+
+        var completes = new[] { stale }.Concat(fresh).Select(m => first.CompleteAsync(m, TestCancellationToken)).ToList();
+
+        await Assert.ThrowsAsync<MessageLeaseLostException>(() => completes[0]);
+        await Task.WhenAll(completes.Skip(1));
+        await second.CompleteAsync(redelivered, TestCancellationToken);
+        await AssertStatsAsync(source);
+    }
+
+    [Fact]
     public async Task ReceiveAsync_CalledRepeatedlyWhileIdle_KeepsItsPollBackoff()
     {
         using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);

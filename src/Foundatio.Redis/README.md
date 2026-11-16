@@ -116,6 +116,7 @@ Everything is kept in Redis memory, which is often shared with the app's cache a
 - Wake-ups use sharded pub/sub (`SPUBLISH`) on Redis Cluster 7 or later, so only the source's shard sends them, and classic `PUBLISH` on a single Redis, Sentinel or an older cluster. They are published by the scripts themselves, so they cost no round trip.
 - Polling backs off from `MinPollInterval` to `MaxPollInterval`, and is the fallback when a wake-up is lost, for example while a connection reconnects, or goes to a receiver that crashed. Each idle receiver runs about one script per `MaxPollInterval`.
 - Publishing to a topic runs one script on the topic's slot that copies the message into every instance subscription, plus one script per durable subscription. With many instance subscriptions on a busy topic, that slot's shard does all of their work: their copies, receives and settles.
+- Completes that a receiver's handlers call while one of its completes is running are sent together, as one script, when it ends.
 - One receive returns at most about 8 MiB, but always at least one message. Large messages still block Redis while scripts copy them, so store large payloads elsewhere and send a reference.
 
 ### Monitoring
