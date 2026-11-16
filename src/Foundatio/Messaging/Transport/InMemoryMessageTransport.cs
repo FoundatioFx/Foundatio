@@ -370,7 +370,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
         public Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default)
         {
-            _state.Renew(GetDelivery(message), _transport._timeProvider.GetUtcNow().Add(_options.LeaseDuration));
+            _state.Renew(GetDelivery(message), _transport._timeProvider.GetUtcNow(), _options.LeaseDuration);
             return Task.CompletedTask;
         }
 
@@ -422,6 +422,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         /// <summary>The entry's place in its ordered group, or null when it is not ordered.</summary>
         public LinkedListNode<InMemoryEntry>? GroupNode { get; set; }
 
+        /// <summary>The entry's place among the leases of its duration while it is indexed as leased, reused for every lease.</summary>
+        public LinkedListNode<InMemoryEntry>? LeaseNode { get; set; }
+
         /// <summary>Which of its source's indexes the entry is in.</summary>
         public EntryIndex Index { get; set; }
 
@@ -439,21 +442,20 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
     /// <summary>
     /// One queue or subscription. Besides every entry in the order added, it indexes the entries a receive can hand out
-    /// now (by position), the ones it can hand out once they are due (by time), and the leased ones (by when their lease
-    /// ends), so a receive takes the earliest available entries and stops once its batch is full instead of looking at
-    /// every entry. Entries no receive has looked at yet wait after a cursor, in order. In an ordered group only the
+    /// now (by position), the ones it can hand out once they are due (by time), and the leased ones (in the order their
+    /// leases end, one list per lease duration), so a receive takes the earliest available entries and stops once its
+    /// batch is full instead of looking at every entry. Entries no receive has looked at yet wait after a cursor, in order. In an ordered group only the
     /// earliest entry is indexed as available; a later one goes out in the same batch right behind it, when it is due.
     /// </summary>
     private sealed class InMemorySource
     {
         private static readonly Comparer<InMemoryEntry> ByPosition = Comparer<InMemoryEntry>.Create(static (a, b) => a.Position.CompareTo(b.Position));
         private static readonly Comparer<InMemoryEntry> ByAvailableAt = Comparer<InMemoryEntry>.Create(static (a, b) => a.AvailableAt != b.AvailableAt ? a.AvailableAt.CompareTo(b.AvailableAt) : a.Position.CompareTo(b.Position));
-        private static readonly Comparer<InMemoryEntry> ByLeaseExpiry = Comparer<InMemoryEntry>.Create(static (a, b) => a.LeaseExpiresAt != b.LeaseExpiresAt ? a.LeaseExpiresAt.CompareTo(b.LeaseExpiresAt) : a.Position.CompareTo(b.Position));
 
         private readonly LinkedList<InMemoryEntry> _entries = new();
         private readonly SortedSet<InMemoryEntry> _ready = new(ByPosition);
         private readonly SortedSet<InMemoryEntry> _waiting = new(ByAvailableAt);
-        private readonly SortedSet<InMemoryEntry> _leased = new(ByLeaseExpiry);
+        private readonly List<(TimeSpan Duration, LinkedList<InMemoryEntry> Entries)> _leases = [];
         private readonly Dictionary<string, LinkedList<InMemoryEntry>> _groups = new(StringComparer.Ordinal);
         private LinkedListNode<InMemoryEntry>? _cursor;
         private long _nextPosition;
@@ -546,11 +548,14 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 var result = new List<IncomingMessage>();
 
                 // Without lease expiration a delivery stays leased until it is settled or its receiver is disposed, which signal.
-                while (_leased.Min is { } ended && ended.LeaseExpiresAt <= now)
+                foreach (var (_, leases) in _leases)
                 {
-                    Unindex(ended);
-                    if (IsHead(ended))
-                        AddTo(_ready, ended, EntryIndex.Ready);
+                    while (leases.First?.Value is { } ended && ended.LeaseExpiresAt <= now)
+                    {
+                        Unindex(ended);
+                        if (IsHead(ended))
+                            AddTo(_ready, ended, EntryIndex.Ready);
+                    }
                 }
 
                 while (_waiting.Min is { } due && due.AvailableAt <= now)
@@ -564,10 +569,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 {
                     entry.DeliveryCount++;
                     entry.Receipt = Guid.NewGuid();
-                    entry.LeaseExpiresAt = now.Add(leaseDuration);
                     entry.Owner = owner;
-                    if (LeaseExpiration)
-                        AddTo(_leased, entry, EntryIndex.Leased);
+                    Lease(entry, now, leaseDuration);
 
                     result.Add(new InMemoryDelivery
                     {
@@ -603,8 +606,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
                 AdvanceCursor();
                 DateTimeOffset? nextChange = _waiting.Min?.AvailableAt;
-                if (_leased.Min is { } leased && (nextChange is null || leased.LeaseExpiresAt < nextChange))
-                    nextChange = leased.LeaseExpiresAt;
+                foreach (var (_, leases) in _leases)
+                {
+                    if (leases.First?.Value is { } leased && (nextChange is null || leased.LeaseExpiresAt < nextChange))
+                        nextChange = leased.LeaseExpiresAt;
+                }
 
                 return (result, nextChange, changed);
             }
@@ -652,16 +658,14 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             Signal();
         }
 
-        public void Renew(InMemoryDelivery delivery, DateTimeOffset leaseExpiresAt)
+        public void Renew(InMemoryDelivery delivery, DateTimeOffset now, TimeSpan leaseDuration)
         {
             lock (_entries)
             {
                 ThrowIfStale(delivery);
                 var entry = delivery.Entry;
                 Unindex(entry);
-                entry.LeaseExpiresAt = leaseExpiresAt;
-                if (LeaseExpiration)
-                    AddTo(_leased, entry, EntryIndex.Leased);
+                Lease(entry, now, leaseDuration);
             }
         }
 
@@ -673,7 +677,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 _entries.Clear();
                 _ready.Clear();
                 _waiting.Clear();
-                _leased.Clear();
+                _leases.Clear();
                 _groups.Clear();
                 _cursor = null;
             }
@@ -762,6 +766,33 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             AddTo(_waiting, entry, EntryIndex.Waiting);
         }
 
+        /// <summary>
+        /// Sets the entry's lease and, when leases expire, adds it to the end of the leases of its duration, which keeps
+        /// each list in the order the leases end.
+        /// </summary>
+        private void Lease(InMemoryEntry entry, DateTimeOffset now, TimeSpan leaseDuration)
+        {
+            entry.LeaseExpiresAt = now.Add(leaseDuration);
+            if (!LeaseExpiration)
+                return;
+
+            LinkedList<InMemoryEntry>? leases = null;
+            foreach (var (duration, entries) in _leases)
+            {
+                if (duration == leaseDuration)
+                {
+                    leases = entries;
+                    break;
+                }
+            }
+
+            if (leases is null)
+                _leases.Add((leaseDuration, leases = new LinkedList<InMemoryEntry>()));
+
+            leases.AddLast(entry.LeaseNode ??= new LinkedListNode<InMemoryEntry>(entry));
+            entry.Index = EntryIndex.Leased;
+        }
+
         private bool IsLeased(InMemoryEntry entry, DateTimeOffset now) => entry.Receipt is not null && (!LeaseExpiration || entry.LeaseExpiresAt > now);
 
         private bool IsAvailable(InMemoryEntry entry, DateTimeOffset now) => !IsLeased(entry, now) && entry.AvailableAt <= now;
@@ -785,7 +816,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                     _waiting.Remove(entry);
                     break;
                 case EntryIndex.Leased:
-                    _leased.Remove(entry);
+                    entry.LeaseNode!.List!.Remove(entry.LeaseNode);
                     break;
             }
 
