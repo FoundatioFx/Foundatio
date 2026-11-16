@@ -283,6 +283,64 @@ public class LegacyMessageBusAdapterTests : MessageBusTestBase, IAsyncDisposable
     }
 
     [Fact]
+    public async Task SubscribeAsync_WhileAMessageSettles_ReceivesFullBatchesAndHandlesTheNextMessages()
+    {
+        var requested = new ConcurrentQueue<int>();
+        var completing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishCompleting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnReceive = (_, maxMessages, _) => requested.Enqueue(maxMessages),
+            OnSettleAsync = async (operation, message) =>
+            {
+                if (operation != "complete" || message.MessageId != "first")
+                    return;
+
+                completing.TrySetResult();
+                await finishCompleting.Task;
+            }
+        };
+        await using var bus = new LegacyMessageBusAdapter(transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-batches" });
+        var received = new ConcurrentQueue<int>();
+        await bus.SubscribeAsync<LegacyEvent>(e => received.Enqueue(e.Id), TestCancellationToken);
+
+        await bus.PublishAsync(new LegacyEvent(1), new MessageOptions { UniqueId = "first" }, TestCancellationToken);
+        await completing.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        for (int id = 2; id <= 5; id++)
+            await bus.PublishAsync(new LegacyEvent(id), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => received.Count == 5);
+        Assert.Equal([1, 2, 3, 4, 5], received);
+        Assert.Equal(Math.Min(_transport.Capabilities.MaxReceiveBatchSize, LegacyMessageBusAdapter.MaxBatchSize), requested.First());
+
+        finishCompleting.SetResult();
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WithABurstWhileEarlierMessagesSettle_CallsEachSubscriberOneMessageAtATimeInOrder()
+    {
+        const int count = 500;
+        var transport = new InterceptingMessageTransport(_transport) { OnSettleAsync = (_, _) => Task.Delay(2) };
+        await using var bus = new LegacyMessageBusAdapter(transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-burst" });
+        var subscribers = new[] { new OrderRecorder(), new OrderRecorder() };
+        foreach (var subscriber in subscribers)
+            await bus.SubscribeAsync<LegacyEvent>(subscriber.HandleAsync, TestCancellationToken);
+
+        for (int id = 0; id < count; id++)
+            await bus.PublishAsync(new LegacyEvent(id), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => subscribers.All(s => s.Count == count));
+        foreach (var subscriber in subscribers)
+        {
+            Assert.Equal(Enumerable.Range(0, count), subscriber.Ids);
+            Assert.Equal(1, subscriber.MaxRunning);
+        }
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+    }
+
+    [Fact]
     public async Task SubscribeAsync_WithASubscriberSlowerThanTheLease_ReceivesEachMessageOnce()
     {
         var transport = new InterceptingMessageTransport(_transport, _transport.Capabilities with { MaxLeaseDuration = TimeSpan.FromSeconds(1) });
@@ -360,4 +418,29 @@ public class LegacyMessageBusAdapterTests : MessageBusTestBase, IAsyncDisposable
     }
 
     public record LegacyEvent(int Id);
+
+    /// <summary>Records the order a subscriber sees messages in, and how many of its calls overlapped.</summary>
+    private sealed class OrderRecorder
+    {
+        private readonly ConcurrentQueue<int> _ids = new();
+        private int _running;
+        private int _maxRunning;
+
+        public int Count => _ids.Count;
+        public int[] Ids => _ids.ToArray();
+        public int MaxRunning => Volatile.Read(ref _maxRunning);
+
+        public async Task HandleAsync(LegacyEvent message, CancellationToken cancellationToken)
+        {
+            int running = Interlocked.Increment(ref _running);
+            int max;
+            while (running > (max = Volatile.Read(ref _maxRunning)) && Interlocked.CompareExchange(ref _maxRunning, running, max) != max)
+            {
+            }
+
+            _ids.Enqueue(message.Id);
+            await Task.Yield();
+            Interlocked.Decrement(ref _running);
+        }
+    }
 }

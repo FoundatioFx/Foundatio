@@ -16,4 +16,11 @@ internal sealed record MessageProcessorSettings
 
     /// <summary>What handles the deliveries, for the log.</summary>
     public required string Description { get; init; }
+
+    /// <summary>
+    /// Handles deliveries one at a time in the order they were received, across batches, instead of
+    /// <see cref="MaxConcurrency"/> at once: each one settles while the next is handled. One receive at a time asks for a
+    /// full batch, up to <see cref="MaxConcurrency"/>, once that many slots are free; ordered groups are not split into sequences.
+    /// </summary>
+    public bool InOrder { get; init; }
 }

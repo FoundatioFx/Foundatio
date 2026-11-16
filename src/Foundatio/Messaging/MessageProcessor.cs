@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
 using Foundatio.Utility;
@@ -31,7 +32,9 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private readonly RetryHolds _holds;
     private readonly SettlementSlots _settlements;
     private readonly ReceiveBackoff _backoff;
+    private readonly Channel<MessageDelivery>? _inOrder;
     private readonly int _maxBatch;
+    private readonly int _fullBatch;
     private readonly int _concurrentReceives;
     private readonly CancellationTokenSource _stopReceiving = new();
     private readonly CancellationTokenSource _abortHandlers = new();
@@ -69,6 +72,13 @@ internal sealed class MessageProcessor : IAsyncDisposable
         _maxBatch = Math.Max(1, capabilities.MaxReceiveBatchSize);
         int receivesToFill = (int)Math.Min((settings.MaxConcurrency + (long)_maxBatch - 1) / _maxBatch, Int32.MaxValue);
         _concurrentReceives = Math.Max(1, Math.Min(capabilities.MaxConcurrentReceives, receivesToFill));
+        _fullBatch = _maxBatch;
+        if (settings.InOrder)
+        {
+            _concurrentReceives = 1;
+            _fullBatch = Math.Min(_maxBatch, settings.MaxConcurrency);
+            _inOrder = Channel.CreateUnbounded<MessageDelivery>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+        }
     }
 
     public MessageSource Source { get; }
@@ -94,6 +104,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 _started = started = true;
                 _receiver = receiver;
                 Status.MarkRunning();
+                // Ends once the receive loop has ended and every delivery it received was handed to the handler.
+                if (_inOrder is not null)
+                    _ = Task.Run(RunInOrderLoopAsync, CancellationToken.None);
+
                 _receiveLoop = Task.Run(RunReceiveLoopAsync, CancellationToken.None);
             }
         }
@@ -154,6 +168,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
             Status.MarkFaulted(ex);
             _logger.LogCritical(ex, "Stopped receiving from {Source} after an unexpected error", Source);
         }
+        finally
+        {
+            _inOrder?.Writer.TryComplete();
+        }
     }
 
     /// <summary>
@@ -199,7 +217,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
     /// messages and starts handling them, until <paramref name="receiving"/> is cancelled, which it does itself when
     /// the receiver must be replaced. Every receive shares the slots, so together they never exceed the concurrency.
     /// Only one at a time asks for less than a full batch; the others wait until a full batch of slots is free, so slots
-    /// that free up one by one under load do not each cost a broker receive.
+    /// that free up one by one under load do not each cost a broker receive. In order, the single receive waits for a
+    /// full batch of free slots while any delivery is in flight.
     /// </summary>
     private async Task ReceiveFromAsync(IMessageReceiver receiver, CancellationTokenSource receiving)
     {
@@ -221,8 +240,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 while (slots < _maxBatch && _slots.CurrentCount > 0 && await _slots.WaitAsync(0, CancellationToken.None).AnyContext())
                     slots++;
 
-                bool partial = slots < _maxBatch;
-                if (partial && Interlocked.CompareExchange(ref _partialReceive, 1, 0) != 0)
+                bool partial = slots < _fullBatch;
+                if (partial && (_inOrder is not null ? Volatile.Read(ref _inFlight) > 0 : Interlocked.CompareExchange(ref _partialReceive, 1, 0) != 0))
                 {
                     _slots.Release(slots);
                     await WaitForRoomAsync(token).AnyContext();
@@ -273,7 +292,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 }
                 finally
                 {
-                    if (partial)
+                    if (partial && _inOrder is null)
                     {
                         Volatile.Write(ref _partialReceive, 0);
                         SignalRoom();
@@ -290,6 +309,15 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer, _holds, _settlements);
 
                 _renewer.Track(deliveries);
+                if (_inOrder is not null)
+                {
+                    Interlocked.Add(ref _inFlight, deliveries.Length);
+                    foreach (var delivery in deliveries)
+                        _inOrder.Writer.TryWrite(delivery);
+
+                    continue;
+                }
+
                 foreach (var sequence in SplitIntoSequences(deliveries))
                 {
                     Interlocked.Add(ref _inFlight, sequence.Count);
@@ -305,14 +333,14 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
     }
 
-    /// <summary>Waits until no receive asks for a partial batch, or a full batch of slots is free.</summary>
+    /// <summary>Waits until no receive asks for a partial batch (or, in order, none is in flight), or a full batch of slots is free.</summary>
     private async Task WaitForRoomAsync(CancellationToken token)
     {
         Interlocked.Increment(ref _waitingForRoom);
         try
         {
             var room = Volatile.Read(ref _room).Task;
-            if (Volatile.Read(ref _partialReceive) == 0 || _slots.CurrentCount >= _maxBatch)
+            if ((_inOrder is not null ? Volatile.Read(ref _inFlight) == 0 : Volatile.Read(ref _partialReceive) == 0) || _slots.CurrentCount >= _fullBatch)
                 return;
 
             await room.WaitAsync(token).AnyContext();
@@ -338,7 +366,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private void ReleaseSlots(int count)
     {
         _slots.Release(count);
-        if (_slots.CurrentCount >= _maxBatch)
+        if (_slots.CurrentCount >= _fullBatch)
             SignalRoom();
     }
 
@@ -482,6 +510,57 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 holdsSlots &= !delivery.SlotsReleased;
                 await FinishAsync(delivery, holdsSlots).AnyContext();
             }
+        }
+    }
+
+    /// <summary>
+    /// Handles the in-order deliveries one at a time as they were received. Each is handed to its handler once the one
+    /// before it has returned, while that one may still be settling.
+    /// </summary>
+    private async Task RunInOrderLoopAsync()
+    {
+        var reader = _inOrder!.Reader;
+        while (await reader.WaitToReadAsync(CancellationToken.None).AnyContext())
+        {
+            while (reader.TryRead(out var delivery))
+            {
+                var handlerReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                delivery.HandlerReturned = handlerReturned;
+                _ = ProcessInOrderAsync(delivery);
+                await handlerReturned.Task.AnyContext();
+            }
+        }
+    }
+
+    private async Task ProcessInOrderAsync(MessageDelivery delivery)
+    {
+        delivery.SequenceSlots = 1;
+        try
+        {
+            if (delivery.IsLeaseLost)
+            {
+                await delivery.StopRenewingAsync().AnyContext();
+                _logger.LogWarning("Lost the lease on message {MessageId} while it waited its turn; another consumer will handle it", delivery.Message.MessageId);
+                _handler.OnReleased(delivery, "lease-lost");
+            }
+            else if (_abortHandlers.IsCancellationRequested)
+            {
+                await delivery.SettleAsync(static (receiver, message, ct) => receiver.AbandonAsync(message, TimeSpan.Zero, ct), "abandon", _logger).AnyContext();
+                _handler.OnReleased(delivery, "cancelled");
+            }
+            else
+            {
+                await _handler.HandleAsync(delivery, _abortHandlers.Token).AnyContext();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error processing message {MessageId} from {Source}", delivery.Message.MessageId, Source);
+        }
+        finally
+        {
+            delivery.HandlerReturned?.TrySetResult();
+            await FinishAsync(delivery, !delivery.SlotsReleased).AnyContext();
         }
     }
 

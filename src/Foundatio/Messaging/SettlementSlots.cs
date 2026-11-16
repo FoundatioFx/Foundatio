@@ -31,11 +31,12 @@ internal sealed class SettlementSlots
     }
 
     /// <summary>
-    /// Called as <paramref name="delivery"/> starts to settle: gives its own handler slot to other messages if it still
-    /// holds it and there is room.
+    /// Called as <paramref name="delivery"/> starts to settle: tells an in-order processor its handler has returned, and
+    /// gives its own handler slot to other messages if it still holds it and there is room.
     /// </summary>
     public void Begin(MessageDelivery delivery)
     {
+        delivery.HandlerReturned?.TrySetResult();
         if (delivery.SequenceSlots <= 0 || delivery.SlotsReleased || delivery.SettlesOffSlot)
             return;
 

@@ -58,6 +58,12 @@ internal sealed class MessageDelivery
     /// <summary>True once a settlement gave the delivery's own handler slot to other messages (see <see cref="SettlementSlots"/>).</summary>
     internal bool SettlesOffSlot { get; set; }
 
+    /// <summary>
+    /// Set by a processor that handles deliveries in order: completed once the handler has returned, when the delivery
+    /// starts to settle or its handling ends, so the next delivery is handled while this one settles.
+    /// </summary>
+    internal TaskCompletionSource? HandlerReturned { get; set; }
+
     /// <summary>Cancels <paramref name="handlerCancellation"/> if the lease is lost while the handler runs.</summary>
     public void AttachHandler(CancellationTokenSource handlerCancellation)
     {

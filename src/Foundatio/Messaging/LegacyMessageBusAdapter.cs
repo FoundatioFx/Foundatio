@@ -19,13 +19,18 @@ namespace Foundatio.Messaging;
 /// <remarks>
 /// Semantics match the original buses: every running instance receives every message once, subscribers also receive
 /// derived types, delivery is best effort, and handler exceptions are logged rather than retried. Messages are
-/// received by a <see cref="MessageProcessor"/>, so a failed receiver is replaced, leases are renewed while subscribers
-/// run, and a slow subscriber does not hold up the others or later messages.
+/// received by a <see cref="MessageProcessor"/> in batches of up to <see cref="MaxBatchSize"/>, so a failed receiver
+/// is replaced and leases are renewed while subscribers run. They are handled one at a time in arrival order, each
+/// completed while the next is handled, and a slow subscriber does not hold up the other subscribers of a message.
 /// </remarks>
 internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHandler
 {
     private const string LegacyTypeHeader = "legacy-type";
     private const int MaxCachedTypeMisses = 1000;
+
+    /// <summary>The most messages received at once, and so held in flight, when the transport allows that many.</summary>
+    internal const int MaxBatchSize = 100;
+
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan ReplaceTimeout = TimeSpan.FromSeconds(5);
 
@@ -188,7 +193,8 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
             // called concurrently with itself; the subscribers of one message run concurrently.
             var settings = new MessageProcessorSettings
             {
-                MaxConcurrency = 1,
+                MaxConcurrency = Math.Max(1, Math.Min(_transport.Capabilities.MaxReceiveBatchSize, MaxBatchSize)),
+                InOrder = true,
                 LeaseDuration = LeaseDuration,
                 ReplaceTimeout = ReplaceTimeout,
                 Description = "legacy message bus subscribers"
