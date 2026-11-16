@@ -5687,6 +5687,39 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(false, 1)]
+    [InlineData(false, 4)]
+    [InlineData(true, 1)]
+    [InlineData(true, 4)]
+    [InlineData(true, 128)]
+    public async Task ListAddAsync_WithEqualExpirationTicks_StoresUpdatedDateTimeKind(bool indexed, int batchSize)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        var expiration = DateTime.SpecifyKind(clock.GetUtcNow().UtcDateTime.AddMinutes(1), DateTimeKind.Local);
+        var source = Enumerable.Range(0, 128).ToDictionary(key => key, _ => (DateTime?)expiration);
+        await cache.SetAsync("list", source);
+        await cache.ListAddAsync("list", [127], TimeSpan.FromMinutes(1));
+        if (indexed)
+        {
+            await cache.ListAddAsync("list", [126], TimeSpan.FromMinutes(2));
+            await cache.ListAddAsync("list", [126], TimeSpan.FromMinutes(1));
+        }
+        var previous = GetEntry(cache, "list");
+
+        Assert.Equal(batchSize, await cache.ListAddAsync("list", Enumerable.Range(0, batchSize), TimeSpan.FromMinutes(1)));
+
+        var currentEntry = GetEntry(cache, "list");
+        var current = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value;
+        Assert.All(Enumerable.Range(0, batchSize), key => Assert.Equal(DateTimeKind.Utc, current[key]!.Value.Kind));
+        Assert.Equal(DateTimeKind.Utc, currentEntry.ExpiresAt!.Value.Kind);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("list"));
+        Assert.Equal(Enumerable.Range(0, 128), current.Keys);
+        Assert.Equal(DateTimeKind.Local, Assert.IsType<Dictionary<int, DateTime?>>(previous.PeekValue())[0]!.Value.Kind);
+        Assert.All(source.Values, value => Assert.Equal(DateTimeKind.Local, value!.Value.Kind));
+    }
+
+    [Theory]
     [InlineData(false, DateTimeKind.Local)]
     [InlineData(false, DateTimeKind.Utc)]
     [InlineData(true, DateTimeKind.Local)]

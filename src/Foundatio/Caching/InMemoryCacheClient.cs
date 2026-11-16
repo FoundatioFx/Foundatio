@@ -2018,6 +2018,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return dictionary;
         }
 
+        private static bool ExpirationsEqual(DateTime? left, DateTime? right) =>
+            left == right && left.GetValueOrDefault().Kind == right.GetValueOrDefault().Kind;
+
         public ListSnapshot<T> Update(ICollection<T> items, DateTime? expiration, DateTime utcNow, bool remove, out long removed)
         {
             var storage = Volatile.Read(ref _storage);
@@ -2129,7 +2132,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 if (index >= 0)
                 {
                     var previous = values[index];
-                    if (previous.Expiration == expiration)
+                    if (ExpirationsEqual(previous.Expiration, expiration))
                         continue;
                     key = previous.Key;
                     next = previous.Next;
@@ -2174,7 +2177,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 // Equal counts and comparers let us count new keys by scanning for missing stored keys.
                 int changes = 0;
                 foreach (var pair in Enumerate(storage))
-                    if (pair.Value != expiration || !keys.Contains(pair.Key))
+                    if (!ExpirationsEqual(pair.Value, expiration) || !keys.Contains(pair.Key))
                         if (storage.FreeListHead != 0 || ++changes >= largeBatchThreshold)
                             return false;
                 smallUpdate = changes > 0;
@@ -2184,9 +2187,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             bool IsUnchanged(T key)
             {
                 if (storage.Dictionary is { } dictionary)
-                    return dictionary.TryGetValue(key, out var previous) && previous == expiration;
+                    return dictionary.TryGetValue(key, out var previous) && ExpirationsEqual(previous, expiration);
                 int index = Find(key, out _, out _, out _);
-                return index >= 0 && storage.Items![index].Expiration == expiration;
+                return index >= 0 && ExpirationsEqual(storage.Items![index].Expiration, expiration);
             }
 
             int Find(T key, out int previous, out int bucket, out int hash)
@@ -2309,7 +2312,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }
 
             public bool Equals(ExpirationRange other) => HasExpiration == other.HasExpiration
-                && (!HasExpiration || Minimum == other.Minimum && Maximum == other.Maximum);
+                && (!HasExpiration || ExpirationsEqual(Minimum, other.Minimum) && ExpirationsEqual(Maximum, other.Maximum));
         }
 
         private sealed class ExpirationIndex(ExpirationRange range, ExpirationIndex.Group?[]? groups = null)
