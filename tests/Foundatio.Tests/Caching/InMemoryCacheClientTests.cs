@@ -592,6 +592,99 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal(Enumerable.Range(0, 1000), (await cache.GetListAsync<int>("list")).Value);
     }
 
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(false, 30)]
+    [InlineData(false, 60)]
+    [InlineData(false, 120)]
+    [InlineData(true, null)]
+    [InlineData(true, 30)]
+    [InlineData(true, 60)]
+    [InlineData(true, 120)]
+    public async Task ListAddAsync_WhenInitialSizingChangesExpiration_UsesPublishedLifetime(bool cloneValues, int? lifetimeSeconds)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        DateTime? expiration = lifetimeSeconds.HasValue ? clock.GetUtcNow().UtcDateTime.AddSeconds(lifetimeSeconds.Value) : null;
+        Dictionary<int, DateTime?>? retained = null;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock)
+            .MaxMemorySize(1000).SizeCalculator(value =>
+            {
+                retained = Assert.IsType<Dictionary<int, DateTime?>>(value);
+                retained[1] = expiration;
+                retained[2] = expiration;
+                return retained.Count;
+            }));
+
+        Assert.Equal(2, await cache.ListAddAsync("list", [1, 2], TimeSpan.FromMinutes(1)));
+
+        var current = GetEntry(cache, "list");
+        Assert.Equal(expiration, current.ExpiresAt);
+        Assert.Equal(lifetimeSeconds.HasValue ? TimeSpan.FromSeconds(lifetimeSeconds.Value) : null,
+            await cache.GetExpirationAsync("list"));
+        Assert.Equal(2, cache.CurrentMemorySize);
+        if (cloneValues)
+            retained!.Clear();
+        else
+            Assert.Same(retained, current.StoredValue);
+        Assert.Equal([1, 2], (await cache.GetListAsync<int>("list")).Value);
+
+        clock.Advance(TimeSpan.FromSeconds(61));
+
+        bool expectedLive = lifetimeSeconds is null or > 61;
+        Assert.Equal(expectedLive, await cache.ExistsAsync("list"));
+        Assert.Equal(expectedLive, (await cache.GetListAsync<int>("list")).HasValue);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WhenSizingRetriesAsInsertion_UsesFinalInputLifetime(bool cloneValues, bool expireIncumbent)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        InMemoryCacheClient? cache = null;
+        Dictionary<int, DateTime?>? retained = null;
+        bool armed = false;
+        bool retried = false;
+        using (cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock)
+            .MaxMemorySize(1000).SizeCalculator(value =>
+            {
+                var dictionary = Assert.IsType<Dictionary<int, DateTime?>>(value);
+                if (armed && !dictionary.ContainsKey(-1))
+                {
+                    retained = dictionary;
+                    if (cloneValues)
+                        dictionary[1] = null;
+                }
+                else if (armed && !retried)
+                {
+                    retried = true;
+                    retained![1] = null;
+                    if (expireIncumbent)
+                        clock.Advance(TimeSpan.FromSeconds(2));
+                    else
+                        cache!.RemoveAsync("list").GetAwaiter().GetResult();
+                }
+                return dictionary.Count;
+            })))
+        {
+            await cache.ListAddAsync("list", [-1], TimeSpan.FromSeconds(1));
+            armed = true;
+
+            Assert.Equal(1, await cache.ListAddAsync("list", [1], TimeSpan.FromMinutes(1)));
+
+            Assert.True(retried);
+            Assert.Null(GetEntry(cache, "list").ExpiresAt);
+            Assert.Equal(1, cache.CurrentMemorySize);
+            if (cloneValues)
+                retained!.Clear();
+            clock.Advance(TimeSpan.FromMinutes(2));
+            Assert.True(await cache.ExistsAsync("list"));
+            Assert.Equal([1], (await cache.GetListAsync<int>("list")).Value);
+        }
+    }
+
     [Fact]
     public override Task GetUnixTimeMillisecondsAsync_WithLocalDateTime_ReturnsCorrectly()
     {

@@ -726,6 +726,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 values ??= CreateListValues(sharedItems!, expiresAt);
                 entry ??= new CacheEntry(values, expiresAt, _timeProvider, shouldClone: false, size: inputSize);
+                // Callbacks can change member expirations, including between update attempts.
+                if (!_canShareListValues && !valueIsOwned)
+                    entry = entry.WithExpiration(GetListExpiration((Dictionary<T, DateTime?>)entry.StoredValue!));
                 var replacement = _canShareListValues && values is Dictionary<T, DateTime?> initial && initial.Count > ListSnapshot<T>.BlockSize
                     ? entry.WithValue(new ListSnapshot<T>(initial), expiresAt, entry.Size)
                     : entry;
