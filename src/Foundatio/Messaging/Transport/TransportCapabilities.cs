@@ -79,10 +79,46 @@ public sealed record TransportCapabilities
     /// <remarks>
     /// Foundatio runs up to as many receives as it takes to fill the handlers' <c>MaxConcurrency</c> with batches of
     /// <see cref="MaxReceiveBatchSize"/>, within this limit, and only one of them at a time asks for less than a full
-    /// batch. With <see cref="OrderedGroups"/>, no call may return a message of a group while an earlier one returned
-    /// by another call is unsettled. Failures of receives in flight together count as one toward replacing the receiver.
+    /// batch. With <see cref="ReceiveAhead"/> it runs one more, to read ahead, and parks the extra ones while the source
+    /// is drained. With <see cref="OrderedGroups"/>, no call may return a message of a group while an earlier one
+    /// returned by another call is unsettled. Failures of receives in flight together count as one toward replacing
+    /// the receiver.
     /// </remarks>
     public int MaxConcurrentReceives { get; init; } = 1;
+
+    /// <summary>
+    /// True when Foundatio may receive ahead of its free handler slots: receives then ask for full batches while the
+    /// handlers are busy, and the messages wait in a small in-process buffer, leased and renewed, until a slot frees.
+    /// Declare it when a receive is a round trip to the broker that returns the messages it has at once (SQS, Redis,
+    /// Service Bus without sessions). Defaults to false: each receive asks only for the handler slots free at that
+    /// moment, which suits receivers that already buffer (Kafka, RabbitMQ), receive in the background (Service Bus
+    /// sessions) or serve receives from memory.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// How far Foundatio reads ahead, its depth, adapts to how long a message keeps its handler slot and how long a
+    /// receive takes: what the handlers get through during one receive, plus a batch. It is capped so that a buffered
+    /// message normally waits at most a second, or a quarter of the lease (the shortest
+    /// <see cref="IncomingMessage.LeaseExpiresAt"/> seen, when the transport sets it), and it is zero until both times
+    /// have been measured, while handlers take longer than that, and while the buffered bodies exceed 16 MiB. At depth
+    /// zero, receives ask only for free slots, as without this capability. Up to 13 × <c>MaxConcurrency</c> plus the
+    /// depth deliveries can then be unsettled at once.
+    /// </para>
+    /// <para>
+    /// A receive that returns fewer messages than it asked for parks the other receives, each once its current call
+    /// returns (a call is never cancelled to park it), so a drained source keeps one long poll open. Each receive that
+    /// returns as many as it asked for lets one more poll, up to one more than it takes to fill the slots, within
+    /// <see cref="MaxConcurrentReceives"/>.
+    /// </para>
+    /// <para>
+    /// A buffered message is an unsettled delivery like any other: the broker counts it in flight, and with
+    /// <see cref="OrderedGroups"/> it holds back its group's later messages. Buffered messages are handled within the
+    /// shutdown drain. Those still buffered when the drain times out, or when their receiver is replaced, are released
+    /// without running their handlers, and are delivered again with a higher <see cref="IncomingMessage.DeliveryCount"/>.
+    /// Foundatio never reads ahead for a handler that processes messages one at a time in order.
+    /// </para>
+    /// </remarks>
+    public bool ReceiveAhead { get; init; }
 
     /// <summary>
     /// The largest message the transport accepts, measured as body bytes plus the UTF-8 bytes of every header name and
