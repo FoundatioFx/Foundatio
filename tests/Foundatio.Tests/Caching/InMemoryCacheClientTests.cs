@@ -4712,6 +4712,61 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListRemoveAsync_WhenHalfTheMembersExpire_DoesNotAllocatePerVacantSlot(bool dynamicSizing)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        using var calculator = new SizeCalculator(Log);
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(false).TimeProvider(clock);
+            return dynamicSizing ? o.WithDynamicSizing(100_000_000, Log) : o;
+        });
+        int[] source = Enumerable.Range(0, 10_000).ToArray();
+        int[] expired = source.Where(key => key % 2 == 0).ToArray();
+        int[] missing = [-2];
+        await cache.ListAddAsync("list", source);
+        await cache.ListAddAsync("list", expired, TimeSpan.FromSeconds(1));
+        await cache.ListAddAsync("list", [-1]);
+        await cache.ListRemoveAsync("list", [-1]);
+        var previous = GetEntry(cache, "list");
+        long allocationBudget = GetStorageArraySize(previous.StoredValue!) + 32_768;
+        var expiration = clock.GetUtcNow().UtcDateTime.AddSeconds(1);
+        var expected = source.ToDictionary(key => key, key => key % 2 == 0 ? (DateTime?)expiration : null);
+        expected[-1] = null;
+        expected.Remove(-1);
+        clock.Advance(TimeSpan.FromSeconds(2));
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        long removed = await cache.ListRemoveAsync("list", missing);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(0, removed);
+        Assert.True(allocated <= allocationBudget,
+            $"Pruning should fit within one storage copy without an object per vacant slot: allocated={allocated}, budget={allocationBudget} bytes.");
+        foreach (int key in expired)
+            expected.Remove(key);
+        Assert.Equal(expected.Keys, (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(expected.Keys.Take(17), (await cache.GetListAsync<int>("list", 1, 17)).Value);
+        Assert.Null(await cache.GetExpirationAsync("list"));
+        Assert.Equal(dynamicSizing ? calculator.CalculateSize(expected) : 0, cache.CurrentMemorySize);
+
+        int[] added = Enumerable.Range(10_001, 65).ToArray();
+        Assert.Equal(added.Length, await cache.ListAddAsync("list", added));
+        foreach (int key in added)
+            expected[key] = null;
+        Assert.Equal(expected.Keys, (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(expected.Keys.Skip(4990).Take(10), (await cache.GetListAsync<int>("list", 500, 10)).Value);
+        Assert.Equal(expected.Keys.Skip(5000).Take(10), (await cache.GetListAsync<int>("list", 501, 10)).Value);
+        Assert.Equal(dynamicSizing ? calculator.CalculateSize(expected) : 0, cache.CurrentMemorySize);
+        var priorValues = Assert.IsType<Dictionary<int, DateTime?>>(previous.PeekValue());
+        Assert.Equal(source, priorValues.Keys);
+        Assert.All(expired, key => Assert.Equal(expiration, priorValues[key]));
+        Assert.Equal(expected, (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(1)]
     public async Task ListRemoveAsync_WithFiniteMemberAtOrAfterNow_PreservesMember(int remainingSeconds)

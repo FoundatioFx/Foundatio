@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -1853,7 +1852,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 heads[bucket] = ++index;
             }
             _storage = new Storage(values.Value, heads.Value, hashes.Value, comparer, keys.Count, bucketCount,
-                ImmutableStack<int>.Empty, keys.Count, expiration.HasValue ? 0 : keys.Count);
+                0, keys.Count, expiration.HasValue ? 0 : keys.Count);
         }
 
         private ListSnapshot(Storage storage) => _storage = storage;
@@ -2107,7 +2106,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 }
             }
 
-            var freeIndices = storage.FreeIndices;
+            int freeListHead = storage.FreeListHead;
             int permanentCount = storage.PermanentCount;
             bool changed = rebuildIndex;
             if (prune)
@@ -2139,10 +2138,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 }
                 else
                 {
-                    if (!freeIndices.IsEmpty)
+                    if (freeListHead != 0)
                     {
-                        index = freeIndices.Peek();
-                        freeIndices = freeIndices.Pop();
+                        index = freeListHead - 1;
+                        freeListHead = values[index].Next;
                     }
                     else
                         index = nextIndex++;
@@ -2160,7 +2159,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return this;
 
             var updated = new Storage(values.Value, heads.Value, hashes.Value, storage.Comparer, count, bucketCount,
-                freeIndices, nextIndex, permanentCount, storage);
+                freeListHead, nextIndex, permanentCount, storage);
             return count > 0 && count < nextIndex / 4
                 ? new ListSnapshot<T>(CopyValues(updated))
                 : new ListSnapshot<T>(updated);
@@ -2176,7 +2175,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 int changes = 0;
                 foreach (var pair in Enumerate(storage))
                     if (pair.Value != expiration || !keys.Contains(pair.Key))
-                        if (!storage.FreeIndices.IsEmpty || ++changes >= largeBatchThreshold)
+                        if (storage.FreeListHead != 0 || ++changes >= largeBatchThreshold)
                             return false;
                 smallUpdate = changes > 0;
                 return changes == 0;
@@ -2223,10 +2222,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     var predecessor = values[previous];
                     values[previous] = new Item(predecessor.Key, predecessor.Expiration, true, item.Next);
                 }
-                values[index] = default;
+                // Vacant slots hold the free-list link without retaining the removed key.
+                values[index] = new Item(default!, null, false, freeListHead);
                 if (item.Expiration is null)
                     permanentCount--;
-                freeIndices = freeIndices.Push(index);
+                freeListHead = index + 1;
                 count--;
                 changed = true;
                 return true;
@@ -2245,7 +2245,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             public int Count => Dictionary?.Count ?? _count;
             public int BucketCount { get; }
             public ExpirationIndex? Expirations { get; }
-            public ImmutableStack<int> FreeIndices { get; } = ImmutableStack<int>.Empty;
+            public int FreeListHead { get; }
             public int NextIndex { get; }
             public int PermanentCount { get; }
             public DateTime? LatestExpiration => Expirations?.Range.Maximum;
@@ -2274,7 +2274,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }
 
             public Storage(Pages<Item> items, Pages<int> heads, Pages<int> hashes, IEqualityComparer<T> comparer, int count, int bucketCount,
-                ImmutableStack<int> freeIndices, int nextIndex, int permanentCount, Storage? previous = null)
+                int freeListHead, int nextIndex, int permanentCount, Storage? previous = null)
             {
                 Items = items;
                 Heads = heads;
@@ -2282,7 +2282,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 Comparer = comparer;
                 _count = count;
                 BucketCount = bucketCount;
-                FreeIndices = freeIndices;
+                FreeListHead = freeListHead;
                 NextIndex = nextIndex;
                 PermanentCount = permanentCount;
                 if (permanentCount != count)
