@@ -72,6 +72,8 @@ internal sealed class RetryHolds
         } while (Interlocked.CompareExchange(ref _count, count + slots, count) != count);
 
         delivery.SlotsReleased = true;
-        _releaseSlots(slots);
+        int release = delivery.SettlesOffSlot ? slots - 1 : slots;
+        if (release > 0)
+            _releaseSlots(release);
     }
 }

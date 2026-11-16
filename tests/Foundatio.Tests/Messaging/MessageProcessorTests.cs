@@ -342,6 +342,151 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.Equal(1, Volatile.Read(ref attempts));
     }
 
+    [Fact]
+    public async Task Settle_AfterTheHandlerReturns_GivesTheSlotToTheNextMessageAndReportsTheOutcomeOnceSettled()
+    {
+        var source = MessageSource.Queue(QueueName<RenewedCommand>());
+        var completing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishCompleting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnSettleAsync = async (operation, message) =>
+            {
+                if (operation != "complete" || message.MessageId != "first")
+                    return;
+
+                completing.TrySetResult();
+                await finishCompleting.Task;
+            }
+        };
+        var observer = new RecordingObserver();
+        var handled = new ConcurrentQueue<int>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((message, _, _) =>
+        {
+            handled.Enqueue(message.Id);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 1 }), s => s.AddSingleton<IMessagingObserver>(observer));
+        var status = consumer.Services.GetRequiredService<MessagingStatus>();
+
+        await consumer.Client.SendAsync(new RenewedCommand(1), new SendOptions { MessageId = "first" }, TestCancellationToken);
+        await completing.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        await consumer.Client.SendAsync(new RenewedCommand(2), new SendOptions { MessageId = "second" }, TestCancellationToken);
+
+        await WaitForAsync(() => handled.Count == 2 && observer.Outcomes.ContainsKey("second"), TimeSpan.FromSeconds(10));
+        Assert.Equal([1, 2], handled);
+        Assert.False(observer.Outcomes.ContainsKey("first"), "The outcome was reported before the message was settled.");
+        Assert.Equal(1, status.GetProcessors().Single().Active);
+        Assert.Equal(1, _transport.GetMessageCount(source));
+
+        finishCompleting.SetResult();
+        await WaitForAsync(() => observer.Outcomes.ContainsKey("first"), TimeSpan.FromSeconds(10));
+        Assert.Equal("success", observer.Outcomes["first"]);
+        Assert.Equal(0, _transport.GetMessageCount(source));
+        await WaitForAsync(() => status.GetProcessors().Single().Active == 0, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task Settle_WhenTheSettlementsWithoutSlotsAreFull_KeepsFurtherSettlementsInTheirSlots()
+    {
+        const int maxConcurrency = 2, count = 20;
+        const int expectedHandled = maxConcurrency * (1 + SettlementSlots.SettlementsPerSlot);
+        int settling = 0;
+        var finishCompleting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnSettleAsync = async (_, _) =>
+            {
+                Interlocked.Increment(ref settling);
+                await finishCompleting.Task;
+            }
+        };
+        var handled = new ConcurrentDictionary<int, int>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((message, _, _) =>
+        {
+            handled.AddOrUpdate(message.Id, 1, (_, n) => n + 1);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = maxConcurrency }));
+        var status = consumer.Services.GetRequiredService<MessagingStatus>();
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, count).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref settling) == expectedHandled, TimeSpan.FromSeconds(10));
+
+        // Every slot now waits for its own settlement, so no further message may be handled until one finishes.
+        await Task.Delay(300, TestCancellationToken);
+        Assert.Equal(expectedHandled, handled.Count);
+        Assert.Equal(expectedHandled, Volatile.Read(ref settling));
+        Assert.Equal(expectedHandled, status.GetProcessors().Single().Active);
+
+        finishCompleting.SetResult();
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        Assert.Equal(count, handled.Count);
+        Assert.All(handled.Values, n => Assert.Equal(1, n));
+    }
+
+    [Fact]
+    public async Task Settle_InAnOrderedGroup_HandlesTheGroupsNextMessageOnlyOnceTheSettlementFinishes()
+    {
+        var events = new ConcurrentQueue<string>();
+        var finishCompleting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnSettleAsync = async (operation, message) =>
+            {
+                if (operation == "complete" && message.MessageId == "g1")
+                    await finishCompleting.Task;
+
+                events.Enqueue($"settled {message.MessageId}");
+            }
+        };
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<GroupedCommand>((message, _, _) =>
+        {
+            events.Enqueue($"handled {message.Id}");
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 4 }));
+
+        for (int id = 1; id <= 3; id++)
+            await consumer.Client.SendAsync(new GroupedCommand(id), new SendOptions { GroupKey = "customer-1", MessageId = $"g{id}" }, TestCancellationToken);
+        await WaitForAsync(() => events.Contains("handled 1"), TimeSpan.FromSeconds(10));
+        for (int id = 10; id <= 11; id++)
+            await consumer.Client.SendAsync(new GroupedCommand(id), new SendOptions { MessageId = $"u{id}" }, TestCancellationToken);
+
+        // Other messages are handled and settled meanwhile, but not the group's next one.
+        await WaitForAsync(() => events.Contains("settled u10") && events.Contains("settled u11"), TimeSpan.FromSeconds(10));
+        Assert.DoesNotContain("handled 2", events);
+
+        finishCompleting.SetResult();
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        var order = events.ToList();
+        Assert.Equal(["handled 1", "handled 2", "handled 3"], order.Where(e => e is "handled 1" or "handled 2" or "handled 3"));
+        Assert.True(order.IndexOf("settled g1") < order.IndexOf("handled 2"), String.Join(", ", order));
+        Assert.True(order.IndexOf("settled g2") < order.IndexOf("handled 3"), String.Join(", ", order));
+    }
+
+    [Fact]
+    public async Task StopAsync_WhileASettlementIsInFlight_WaitsForItToFinish()
+    {
+        var source = MessageSource.Queue(QueueName<RenewedCommand>());
+        var completing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool completed = false;
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnSettleAsync = async (operation, _) =>
+            {
+                completing.TrySetResult();
+                await Task.Delay(500, CancellationToken.None);
+                Volatile.Write(ref completed, operation == "complete");
+            }
+        };
+        var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) => Task.CompletedTask, new HandlerOptions { MaxConcurrency = 1 }));
+
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+        await completing.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        await consumer.DisposeAsync();
+
+        Assert.True(Volatile.Read(ref completed));
+        Assert.Equal(0, _transport.GetMessageCount(source));
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(4)]
@@ -579,8 +724,8 @@ public class MessageProcessorTests : TestWithLoggingBase
         await base.DisposeAsync();
     }
 
-    private Task<MessagingTestHost> StartAsync(IMessageTransport transport, Action<FoundatioMessagingBuilder> configure)
-        => MessagingTestHost.StartAsync(transport, Log, "tests", configure);
+    private Task<MessagingTestHost> StartAsync(IMessageTransport transport, Action<FoundatioMessagingBuilder> configure, Action<IServiceCollection>? configureServices = null)
+        => MessagingTestHost.StartAsync(transport, Log, "tests", configure, configureServices);
 
     private static string QueueName<T>() => typeof(T).FullName!.Replace('+', '.');
 
@@ -617,5 +762,18 @@ public class MessageProcessorTests : TestWithLoggingBase
     private sealed class OpenGate : IStartupGate
     {
         public Task<bool> WaitAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+    }
+
+    /// <summary>Records the outcome reported for each message id.</summary>
+    private sealed class RecordingObserver : IMessagingObserver
+    {
+        public ConcurrentDictionary<string, string> Outcomes { get; } = new();
+
+        public void OnSent(MessageDestination destination, object message, OutgoingMessage outgoing)
+        {
+        }
+
+        public void OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error, MessageContext? context = null)
+            => Outcomes[message.MessageId] = outcome;
     }
 }

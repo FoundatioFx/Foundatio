@@ -44,6 +44,9 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
     /// <summary>Runs before each complete, abandon or dead-letter, with the operation name.</summary>
     public Action<string, IncomingMessage>? OnSettle { get; set; }
 
+    /// <summary>Runs after <see cref="OnSettle"/>, before the settlement reaches the inner receiver, like a broker round trip.</summary>
+    public Func<string, IncomingMessage, Task>? OnSettleAsync { get; set; }
+
     public int ReceiversCreated => Volatile.Read(ref _receiversCreated);
 
     public int OpenReceivers => _receivers.Count;
@@ -129,21 +132,21 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
             }
         }
 
-        public Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default)
+        public async Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default)
         {
-            transport.OnSettle?.Invoke("complete", message);
-            return inner.CompleteAsync(message, cancellationToken);
+            await SettlingAsync("complete", message);
+            await inner.CompleteAsync(message, cancellationToken);
         }
 
-        public Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
+        public async Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
         {
-            transport.OnSettle?.Invoke("abandon", message);
-            return inner.AbandonAsync(message, delay, cancellationToken);
+            await SettlingAsync("abandon", message);
+            await inner.AbandonAsync(message, delay, cancellationToken);
         }
 
         public async Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default)
         {
-            transport.OnSettle?.Invoke("dead-letter", message);
+            await SettlingAsync("dead-letter", message);
             if (transport.OnDeadLetter is { } onDeadLetter)
                 await onDeadLetter(message, reason);
 
@@ -157,6 +160,13 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
             await inner.RenewAsync(message, cancellationToken);
             ReportBrokerLease(message);
+        }
+
+        private async Task SettlingAsync(string operation, IncomingMessage message)
+        {
+            transport.OnSettle?.Invoke(operation, message);
+            if (transport.OnSettleAsync is { } onSettle)
+                await onSettle(operation, message);
         }
 
         private void ReportBrokerLease(IncomingMessage message)

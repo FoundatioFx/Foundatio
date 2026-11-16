@@ -18,15 +18,17 @@ internal sealed class MessageDelivery
 
     private readonly LeaseRenewer _renewer;
     private readonly RetryHolds _holds;
+    private readonly SettlementSlots _settlements;
     private CancellationTokenSource? _handlerCancellation;
     private int _leaseLost;
 
-    public MessageDelivery(IMessageReceiver receiver, IncomingMessage message, LeaseRenewer renewer, RetryHolds holds)
+    public MessageDelivery(IMessageReceiver receiver, IncomingMessage message, LeaseRenewer renewer, RetryHolds holds, SettlementSlots settlements)
     {
         Receiver = receiver;
         Message = message;
         _renewer = renewer;
         _holds = holds;
+        _settlements = settlements;
     }
 
     public IMessageReceiver Receiver { get; }
@@ -52,6 +54,9 @@ internal sealed class MessageDelivery
 
     /// <summary>True once a retry hold gave the slots in <see cref="SequenceSlots"/> to other messages.</summary>
     internal bool SlotsReleased { get; set; }
+
+    /// <summary>True once a settlement gave the delivery's own handler slot to other messages (see <see cref="SettlementSlots"/>).</summary>
+    internal bool SettlesOffSlot { get; set; }
 
     /// <summary>Cancels <paramref name="handlerCancellation"/> if the lease is lost while the handler runs.</summary>
     public void AttachHandler(CancellationTokenSource handlerCancellation)
@@ -82,11 +87,13 @@ internal sealed class MessageDelivery
     public Task HoldAsync(TimeSpan delay, CancellationToken abortToken) => _holds.HoldAsync(this, delay, abortToken);
 
     /// <summary>
-    /// Stops renewing, then settles on a token that is never the handler's. Returns null when it settled, or the error,
-    /// which is logged: the transport delivers the message again.
+    /// Gives the handler slot to other messages when the processor has room, stops renewing, then settles on a token
+    /// that is never the handler's. Returns null when it settled, or the error, which is logged: the transport delivers
+    /// the message again.
     /// </summary>
     public async Task<Exception?> SettleAsync(Func<IMessageReceiver, IncomingMessage, CancellationToken, Task> settle, string operation, ILogger logger)
     {
+        _settlements.Begin(this);
         await StopRenewingAsync().AnyContext();
         using var timeout = new CancellationTokenSource(SettleTimeout);
         try

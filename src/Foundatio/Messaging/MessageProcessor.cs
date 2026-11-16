@@ -12,6 +12,7 @@ namespace Foundatio.Messaging;
 /// <summary>
 /// Receives from one source with bounded concurrency, keeps every delivery's lease renewed until it is settled,
 /// replaces a failed receiver and drains on shutdown. What happens to each delivery is up to its <see cref="IMessageDeliveryHandler"/>.
+/// A delivery's handler slot goes to the next message while it settles, when there is room (see <see cref="SettlementSlots"/>).
 /// </summary>
 internal sealed class MessageProcessor : IAsyncDisposable
 {
@@ -28,6 +29,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private readonly LeaseRenewer _renewer;
     private readonly SemaphoreSlim _slots;
     private readonly RetryHolds _holds;
+    private readonly SettlementSlots _settlements;
     private readonly ReceiveBackoff _backoff;
     private readonly int _maxBatch;
     private readonly int _concurrentReceives;
@@ -60,6 +62,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         _renewer = new LeaseRenewer(lease, capabilities.LeaseExpiration, timeProvider, _logger);
         _slots = new SemaphoreSlim(settings.MaxConcurrency, settings.MaxConcurrency);
         _holds = new RetryHolds(settings.MaxConcurrency, timeProvider, _stopReceiving.Token, ReleaseSlots);
+        _settlements = new SettlementSlots(settings.MaxConcurrency, ReleaseSlots);
         _backoff = new ReceiveBackoff(timeProvider);
 
         // Enough receives to fill every slot, as far as the transport allows: full batches and one for the rest.
@@ -284,7 +287,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
                 var deliveries = new MessageDelivery[messages.Count];
                 for (int i = 0; i < messages.Count; i++)
-                    deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer, _holds);
+                    deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer, _holds, _settlements);
 
                 _renewer.Track(deliveries);
                 foreach (var sequence in SplitIntoSequences(deliveries))
@@ -436,8 +439,9 @@ internal sealed class MessageProcessor : IAsyncDisposable
     }
 
     /// <summary>
-    /// Handles a sequence's deliveries one after another. Each holds a handler slot until it is settled, unless a retry
-    /// hold gave the slots of the rest of the sequence to other messages (see <see cref="RetryHolds"/>).
+    /// Handles a sequence's deliveries one after another, each once the one before it has settled. Each holds a handler
+    /// slot until it is settled, unless its settlement gave its slot to other messages (see <see cref="SettlementSlots"/>)
+    /// or a retry hold gave the slots of the rest of the sequence away (see <see cref="RetryHolds"/>).
     /// </summary>
     private async Task ProcessSequenceAsync(List<MessageDelivery> sequence)
     {
@@ -445,6 +449,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         for (int i = 0; i < sequence.Count; i++)
         {
             var delivery = sequence[i];
+            delivery.SequenceSlots = holdsSlots ? sequence.Count - i : 0;
             try
             {
                 if (delivery.IsLeaseLost)
@@ -465,7 +470,6 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     continue;
                 }
 
-                delivery.SequenceSlots = sequence.Count - i;
                 release = !await _handler.HandleAsync(delivery, _abortHandlers.Token).AnyContext() && sequence.Count > 1;
             }
             catch (Exception ex)
@@ -476,14 +480,23 @@ internal sealed class MessageProcessor : IAsyncDisposable
             finally
             {
                 holdsSlots &= !delivery.SlotsReleased;
-                await delivery.StopRenewingAsync().AnyContext();
-                Interlocked.Decrement(ref _inFlight);
-                if (holdsSlots)
-                    ReleaseSlots(1);
-                else
-                    _holds.Leave();
+                await FinishAsync(delivery, holdsSlots).AnyContext();
             }
         }
+    }
+
+    /// <summary>Ends a delivery's time in flight once it is settled or released, and gives back whatever slot it still holds.</summary>
+    private async Task FinishAsync(MessageDelivery delivery, bool holdsSlots)
+    {
+        await delivery.StopRenewingAsync().AnyContext();
+        Interlocked.Decrement(ref _inFlight);
+        if (delivery.SettlesOffSlot)
+            _settlements.Leave();
+
+        if (!holdsSlots)
+            _holds.Leave();
+        else if (!delivery.SettlesOffSlot)
+            ReleaseSlots(1);
     }
 
     private async Task<bool> WaitForInFlightAsync(TimeSpan timeout, CancellationToken cancellationToken)
