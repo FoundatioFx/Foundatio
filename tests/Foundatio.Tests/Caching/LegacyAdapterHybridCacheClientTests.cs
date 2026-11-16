@@ -81,8 +81,8 @@ public class LegacyAdapterHybridCacheClientTests : InMemoryHybridCacheClientTest
         long newValue = await firstCache.IncrementAsync(cacheKey, 5L);
         Assert.Equal(15L, newValue);
         await WaitForInvalidationsAsync(secondCache, 2);
+        await WaitForLocalCacheCountAsync(secondCache, 0);
 
-        Assert.Equal(0, secondCache.LocalCache.Count);
         result = await secondCache.GetAsync<long>(cacheKey);
         Assert.True(result.HasValue);
         Assert.Equal(15L, result.Value);
@@ -91,8 +91,8 @@ public class LegacyAdapterHybridCacheClientTests : InMemoryHybridCacheClientTest
         Assert.Equal(0, zeroExpResult);
         Assert.Equal(0, firstCache.LocalCache.Count);
         await WaitForInvalidationsAsync(secondCache, 3);
+        await WaitForLocalCacheCountAsync(secondCache, 0);
 
-        Assert.Equal(0, secondCache.LocalCache.Count);
         Assert.False(await firstCache.ExistsAsync(cacheKey));
         Assert.False(await secondCache.ExistsAsync(cacheKey));
     }
@@ -103,6 +103,20 @@ public class LegacyAdapterHybridCacheClientTests : InMemoryHybridCacheClientTest
         while (cache.InvalidateCacheCalls < count)
         {
             Assert.True(DateTime.UtcNow < deadline, $"Only {cache.InvalidateCacheCalls} of {count} invalidations arrived.");
+            await Task.Delay(10, TestCancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// An invalidation is counted when it arrives, before its keys are removed from the local cache, so the removal is
+    /// awaited separately.
+    /// </summary>
+    private async Task WaitForLocalCacheCountAsync(HybridCacheClient cache, int count)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (cache.LocalCache.Count != count)
+        {
+            Assert.True(DateTime.UtcNow < deadline, $"The local cache still holds {cache.LocalCache.Count} items, not {count}.");
             await Task.Delay(10, TestCancellationToken);
         }
     }
