@@ -61,6 +61,7 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
         Assert.Equal(HealthStatus.Healthy, entry.Status);
         Assert.Equal($"Running: {PingQueue}", entry.Description);
         Assert.Equal(0, Detail(entry, PingQueue, "active"));
+        Assert.Equal(0, Detail(entry, PingQueue, "buffered"));
     }
 
     [Fact]

@@ -60,7 +60,8 @@ internal static class ProcessingHealth
         {
             ["status"] = health.ToString(),
             ["state"] = status.State.ToString(),
-            ["active"] = status.Active
+            ["active"] = status.Active,
+            ["buffered"] = status.Buffered
         };
 
         if (status.ActiveByName.Count > 0)
