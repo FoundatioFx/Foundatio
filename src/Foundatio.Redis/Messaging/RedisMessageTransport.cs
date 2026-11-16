@@ -103,6 +103,7 @@ public sealed class RedisMessageTransport : IMessageTransport
             MaxRetryDelay = null,
             MaxSendBatchSize = 1000,
             MaxReceiveBatchSize = ScriptBatchSize,
+            ReceiveAhead = true,
             MaxMessageSize = Options.MaxMessageSize,
             MaxLeaseDuration = null,
             LeaseExpiration = true,

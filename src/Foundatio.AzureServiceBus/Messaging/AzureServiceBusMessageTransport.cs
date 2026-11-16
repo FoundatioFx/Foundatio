@@ -556,6 +556,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
         MaxSendBatchSize = MaxBatchSize,
         MaxReceiveBatchSize = MaxBatchSize,
         MaxConcurrentReceives = options.RequiresSession ? 1 : MaxConcurrentReceives,
+        ReceiveAhead = !options.RequiresSession,
         MaxMessageSize = options.MaxMessageSize - AzureServiceBusMessageTransportCodec.ReservedBytes,
         MaxLeaseDuration = MaxLockDuration,
         LeaseExpiration = true,

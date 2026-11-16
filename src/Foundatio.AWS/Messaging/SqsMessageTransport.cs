@@ -83,8 +83,9 @@ public sealed class SqsMessageTransport : IMessageTransport
     /// <summary>
     /// How many receives Foundatio may run at once on one receiver. A receive returns at most 10 messages per round
     /// trip, so concurrent receives keep handlers busy; SQS never hands one message, or one FIFO group, to two of them.
+    /// Reading ahead, Foundatio parks all but one while the queue is drained.
     /// </summary>
-    private const int MaxReceivesInFlight = 4;
+    private const int MaxReceivesInFlight = 16;
 
     private static readonly TimeSpan MaxNativeDelay = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MessageRetention = TimeSpan.FromDays(14);
@@ -374,6 +375,7 @@ public sealed class SqsMessageTransport : IMessageTransport
         MaxSendBatchSize = MaxBatchSize,
         MaxReceiveBatchSize = MaxBatchSize,
         MaxConcurrentReceives = MaxReceivesInFlight,
+        ReceiveAhead = true,
         MaxMessageSize = SqsMessageTransportCodec.MaxMessageSize,
         MaxLeaseDuration = TimeSpan.FromSeconds(MaxVisibilityTimeoutSeconds),
         LeaseExpiration = true,
