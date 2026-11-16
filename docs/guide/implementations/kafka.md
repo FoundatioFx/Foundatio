@@ -60,13 +60,21 @@ builder.Services.AddFoundatioMessaging(m => m
 
 See [Using Kafka](/guide/messages#using-kafka) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for options, topics and limits.
 
+### Ordered groups and partitions
+
+A group's messages share a partition with other groups, and each partition is read by one receiver at a time, in order, so groups are isolated from each other only per partition.
+
+- **A busy group**: when a group holds 100 messages behind its unsettled ones and doesn't drain within 100 ms, the receiver skips its later messages on that partition, leaves them uncommitted, and reads them again in order with a second consumer once the group has drained to 50. The partition's other groups go on being delivered. That consumer is created the first time a group skips and fetches nothing while no group is catching up.
+- **Limits**: a partition skips at most 10,000 messages, and none past 100,000 offsets behind its oldest skipped one. Past either, the receiver logs a warning naming the group and pauses the partition until the group catches up, which holds up its other groups. After a crash, the partition's next owner reads again from the group's oldest skipped message.
+- **Partitions**: topics the transport creates get `Partitions` partitions, or the broker's `num.partitions` (1 unless the broker sets it). Set it before the topics are created, to at least the number of instances you run and of groups you expect to be busy at once; adding partitions later reorders groups. The first grouped send to a topic with one partition logs a warning.
+
 ## Monitoring
 
 `KafkaMessageTransport.GetStatsAsync(source)` reports a queue's or durable subscription's backlog from Kafka's consumer lag, without joining a consumer group or creating anything:
 
 | Count | On Kafka |
 | ----- | -------- |
-| `Queued` | Records after the group's committed offset, summed over the partitions the source reads: a queue's topic, or a subscription's share of its topic plus its own topic. Includes messages received and not yet settled, since their offset is not committed yet. |
+| `Queued` | Records after the group's committed offset, summed over the partitions the source reads: a queue's topic, or a subscription's share of its topic plus its own topic. Includes messages received and not yet settled, since their offset is not committed yet, and those after a busy group's skipped messages. |
 | `DeadLettered` | Records in the dead-letter topic after its consumer group's committed offset: what retention keeps (at least 14 days), less dead letters a replay completed. |
 | `InFlight` | `null`: Kafka does not know what a receiver holds. |
 | `Delayed` | `null`: delayed messages without a group key wait in delay topics that every source shares. |

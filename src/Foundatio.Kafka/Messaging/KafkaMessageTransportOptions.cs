@@ -19,7 +19,9 @@ public sealed record KafkaMessageTransportOptions
 
     /// <summary>
     /// Partitions for topics the transport creates, or <c>null</c> for the broker's <c>num.partitions</c>. Competing
-    /// receivers of a queue or subscription share partitions, so use at least as many as you run instances.
+    /// receivers of a queue or subscription share partitions, so use at least as many as you run instances. Ordered
+    /// groups are isolated from each other per partition too, so also use at least as many as groups you expect to be
+    /// busy at once; the first grouped send to a topic with one partition logs a warning.
     /// </summary>
     public int? Partitions { get; init; }
 
