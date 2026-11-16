@@ -873,6 +873,26 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Send_GroupedMessagesToATopicWithOnePartition_WarnsOnce()
+    {
+        Log.MaxLogEntriesToStore = 10_000;
+        var single = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false }));
+        string grouped = NewName("one-grouped");
+        string ungrouped = NewName("one-ungrouped");
+        await single.SendAsync(MessageDestination.Queue(grouped), [Message("a") with { GroupKey = "customer-1" }], TestCancellationToken);
+        await single.SendAsync(MessageDestination.Queue(grouped), [Message("b") with { GroupKey = "customer-2" }], TestCancellationToken);
+        await single.SendAsync(MessageDestination.Queue(ungrouped), [Message("c")], TestCancellationToken);
+
+        var several = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 2, DelayedDelivery = false }));
+        string spread = NewName("two-grouped");
+        await several.SendAsync(MessageDestination.Queue(spread), [Message("d") with { GroupKey = "customer-1" }], TestCancellationToken);
+
+        var warning = Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("one partition", StringComparison.Ordinal));
+        Assert.Contains(single.Names.Queue(grouped), warning.Message, StringComparison.Ordinal);
+        Assert.Contains("busy group", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildState_WithTheOldestUnfinishedRecordSkipped_AnchorsOnItAndKeepsItsAttempt()
     {
         var state = new KafkaPartitionState(new TopicPartition("topic", 0));

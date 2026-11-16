@@ -64,6 +64,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
     private readonly IAdminClient _admin;
     private readonly ConcurrentDictionary<string, Lazy<Task>> _topics = new(StringComparer.Ordinal);
+
+    /// <summary>The topics found to have one partition, and whether a grouped send to them was warned about.</summary>
+    private readonly ConcurrentDictionary<string, bool> _onePartitionTopics = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<KafkaMessageReceiver, byte> _receivers = new();
     private readonly object _forwarderLock = new();
     private Task<KafkaDelayForwarder>? _forwarder;
@@ -137,7 +140,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// destination when due; delayed messages with one go to the destination at once, and receivers hold them (and the
     /// group's later messages) until they are due. A receiver holds a bounded number of them in memory and stops
     /// reading their partitions past that, so long delays are better sent without a group key. A message to one
-    /// subscription goes to that subscription's own topic, which only it reads.
+    /// subscription goes to that subscription's own topic, which only it reads. The first grouped send to a topic this
+    /// transport created or found with one partition logs a warning, since all its groups then share one partition.
     /// </remarks>
     /// <exception cref="MessageTooLargeException">A message is larger than <see cref="TransportCapabilities.MaxMessageSize"/>.</exception>
     public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
@@ -162,6 +166,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
         var now = TimeProvider.GetUtcNow();
         var records = new List<(string Topic, Message<byte[]?, byte[]> Message)>(messages.Count);
         bool delayed = false;
+        bool grouped = false;
 
         foreach (var message in messages)
         {
@@ -174,6 +179,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
             // The reserve covers the transport's headers and framing; only thousands of tiny headers could exceed it.
             var record = KafkaMessageTransportCodec.Encode(message.MessageId, message.Body, message.Headers, message.GroupKey);
+            grouped |= message.GroupKey is not null;
             long encoded = KafkaMessageTransportCodec.GetSize(record);
             if (encoded > maxRecordSize)
                 throw new MessageTooLargeException($"Message {message.MessageId} encodes to {encoded} bytes, which exceeds the record limit of {maxRecordSize} bytes.") { Size = encoded, Limit = maxRecordSize };
@@ -200,6 +206,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
 
         await EnsureTopicsAsync([topic]).AnyContext();
+        if (grouped && _onePartitionTopics.TryUpdate(topic, true, false))
+            Logger.LogWarning("Grouped messages are sent to {Topic}, which has one partition: one receiver of each queue or subscription reads all its groups, and a busy group can then delay every other group. Create it with more partitions (KafkaMessageTransportOptions.Partitions)", topic);
+
         if (delayed)
             await EnsureForwarderAsync(cancellationToken).AnyContext();
 
@@ -315,7 +324,10 @@ public sealed class KafkaMessageTransport : IMessageTransport
         // Every source's consumer group is named after its own topic, so the topics name the groups too.
         await DeleteGroupsAsync(topics, source).AnyContext();
         foreach (string topic in topics)
+        {
             _topics.TryRemove(topic, out _);
+            _onePartitionTopics.TryRemove(topic, out _);
+        }
 
         try
         {
@@ -866,7 +878,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
         {
         }
 
-        await GetPartitionsAsync(name, CancellationToken.None).AnyContext();
+        if ((await GetPartitionsAsync(name, CancellationToken.None).AnyContext()).Count == 1)
+            _onePartitionTopics.TryAdd(name, false);
     }
 
     /// <summary>
