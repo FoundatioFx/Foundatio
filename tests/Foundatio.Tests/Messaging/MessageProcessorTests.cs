@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -14,6 +15,7 @@ using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
@@ -488,14 +490,16 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Theory]
-    [InlineData(1)]
-    [InlineData(4)]
-    public async Task Receive_WhenIdle_LongPollsAndStillStopsPromptly(int maxConcurrentReceives)
+    [InlineData(1, false, 1)]
+    [InlineData(4, false, 4)]
+    [InlineData(4, true, 1)]
+    public async Task Receive_WhenIdle_LongPollsAndStillStopsPromptly(int maxConcurrentReceives, bool receiveAhead, int expectedPolls)
     {
         var waits = new ConcurrentQueue<TimeSpan>();
-        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(maxConcurrentReceives)) { OnReceive = (_, _, wait) => waits.Enqueue(wait) };
+        var capabilities = receiveAhead ? ReceiveAheadCapabilities(maxConcurrentReceives: maxConcurrentReceives) : ConcurrentReceiveCapabilities(maxConcurrentReceives);
+        var transport = new InterceptingMessageTransport(_transport, capabilities) { OnReceive = (_, _, wait) => waits.Enqueue(wait) };
         var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) => Task.CompletedTask, new HandlerOptions { MaxConcurrency = 40 }));
-        await WaitForAsync(() => waits.Count >= maxConcurrentReceives, TimeSpan.FromSeconds(5));
+        await WaitForAsync(() => waits.Count >= expectedPolls, TimeSpan.FromSeconds(5));
 
         var stopwatch = Stopwatch.StartNew();
         await consumer.DisposeAsync();
@@ -505,14 +509,18 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.Equal(0, transport.OpenReceivers);
     }
 
+    /// <summary>Reading ahead, one receive more than it takes to fill the slots is in flight, within the transport's limit.</summary>
     [Theory]
-    [InlineData(1, 40, 1)]
-    [InlineData(4, 40, 4)]
-    [InlineData(8, 15, 2)]
-    public async Task Receive_WithConcurrentReceives_KeepsUpToOneReceivePerBatchOfFreeSlotsInFlight(int maxConcurrentReceives, int maxConcurrency, int expectedReceives)
+    [InlineData(1, 40, false, 1)]
+    [InlineData(4, 40, false, 4)]
+    [InlineData(8, 15, false, 2)]
+    [InlineData(4, 40, true, 4)]
+    [InlineData(8, 15, true, 3)]
+    public async Task Receive_WithConcurrentReceives_KeepsUpToOneReceivePerBatchOfFreeSlotsInFlight(int maxConcurrentReceives, int maxConcurrency, bool receiveAhead, int expectedReceives)
     {
         const int count = 200;
-        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(maxConcurrentReceives)) { ReceiveDelay = TimeSpan.FromMilliseconds(50) };
+        var capabilities = receiveAhead ? ReceiveAheadCapabilities(maxConcurrentReceives: maxConcurrentReceives) : ConcurrentReceiveCapabilities(maxConcurrentReceives);
+        var transport = new InterceptingMessageTransport(_transport, capabilities) { ReceiveDelay = TimeSpan.FromMilliseconds(50) };
         await using (var producer = await StartAsync(_transport, _ => { }))
             await producer.Client.SendBatchAsync(Enumerable.Range(0, count).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
 
@@ -530,11 +538,18 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.Equal(expectedReceives, transport.MaxReceivesInFlight);
     }
 
-    [Fact]
-    public async Task Receive_WhenConcurrentReceivesFailTogether_CountsThemAsOneFailureAndKeepsTheReceiver()
+    /// <summary>
+    /// Reading ahead, an idle source keeps one poll in flight, so the failing receives run under a backlog, which keeps
+    /// every receive polling.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Receive_WhenConcurrentReceivesFailTogether_CountsThemAsOneFailureAndKeepsTheReceiver(bool receiveAhead)
     {
-        int failingReceives = 8, handled = 0;
-        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(4))
+        int backlog = receiveAhead ? 400 : 0;
+        int failingReceives = receiveAhead ? 0 : 8, handled = 0;
+        var transport = new InterceptingMessageTransport(_transport, receiveAhead ? ReceiveAheadCapabilities() : ConcurrentReceiveCapabilities(4))
         {
             ReceiveDelay = TimeSpan.FromMilliseconds(100),
             OnReceive = (_, _, _) =>
@@ -543,32 +558,43 @@ public class MessageProcessorTests : TestWithLoggingBase
                     throw new IOException("The broker timed out");
             }
         };
+        if (backlog > 0)
+            await PrefillAsync(Enumerable.Range(0, backlog).Select(i => new RenewedCommand(i)));
 
         await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) =>
         {
             Interlocked.Increment(ref handled);
             return Task.CompletedTask;
         }, new HandlerOptions { MaxConcurrency = 40 }));
+        if (receiveAhead)
+        {
+            await WaitForAsync(() => transport.ReceivesInFlight == 4, TimeSpan.FromSeconds(10));
+            Volatile.Write(ref failingReceives, 8);
+        }
+
         await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
 
-        await WaitForAsync(() => Volatile.Read(ref handled) == 1, TimeSpan.FromSeconds(20));
+        await WaitForAsync(() => Volatile.Read(ref handled) == backlog + 1, TimeSpan.FromSeconds(20));
         Assert.True(Volatile.Read(ref failingReceives) < 0, "Not every failing receive ran.");
         Assert.Equal(1, transport.ReceiversCreated);
         Assert.InRange(Log.LogEntries.Count(e => e.Message.StartsWith("Error receiving from", StringComparison.Ordinal)), 1, 4);
         Assert.DoesNotContain(Log.LogEntries, e => e.Message.Contains("replacing it", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task ReplaceReceiver_WithConcurrentReceives_ReplacesTheFaultedReceiverOnceAndKeepsReceiving()
+    /// <summary>Reading ahead, an idle source keeps one poll in flight, which sees the fault.</summary>
+    [Theory]
+    [InlineData(false, 4)]
+    [InlineData(true, 1)]
+    public async Task ReplaceReceiver_WithConcurrentReceives_ReplacesTheFaultedReceiverOnceAndKeepsReceiving(bool receiveAhead, int expectedPolls)
     {
         var handled = new ConcurrentQueue<int>();
-        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(4));
+        var transport = new InterceptingMessageTransport(_transport, receiveAhead ? ReceiveAheadCapabilities() : ConcurrentReceiveCapabilities(4));
         await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((message, _, _) =>
         {
             handled.Enqueue(message.Id);
             return Task.CompletedTask;
         }, new HandlerOptions { MaxConcurrency = 40 }));
-        await WaitForAsync(() => transport.MaxReceivesInFlight == 4, TimeSpan.FromSeconds(5));
+        await WaitForAsync(() => transport.MaxReceivesInFlight == expectedPolls, TimeSpan.FromSeconds(5));
 
         transport.FaultReceivers();
         await WaitForAsync(() => transport.ReceiversCreated == 2 && transport.OpenReceivers == 1, TimeSpan.FromSeconds(20));
@@ -718,6 +744,387 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.DoesNotContain(provider.GetRequiredService<MessagingStatus>().GetProcessors(), p => p.State == ProcessingState.Running);
     }
 
+    [Fact]
+    public async Task Receive_WhenHandlersAreBusy_AsksForFullBatchesAndNeverRunsMoreThanMaxConcurrency()
+    {
+        const int maxConcurrency = 4, count = 60;
+        var asks = new ConcurrentQueue<int>();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: maxConcurrency))
+        {
+            ReceiveDelay = TimeSpan.FromMilliseconds(50),
+            OnReceive = (_, maxMessages, _) => asks.Enqueue(maxMessages)
+        };
+        await PrefillAsync(Enumerable.Range(0, count).Select(i => new RenewedCommand(i)));
+
+        int running = 0, maxRunning = 0;
+        var handled = new ConcurrentDictionary<int, int>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, _, _) =>
+        {
+            InterlockedMax(ref maxRunning, Interlocked.Increment(ref running));
+            await Task.Delay(30, CancellationToken.None);
+            Interlocked.Decrement(ref running);
+            handled.AddOrUpdate(message.Id, 1, (_, n) => n + 1);
+        }, new HandlerOptions { MaxConcurrency = maxConcurrency }));
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(30), TestCancellationToken));
+        Assert.Equal(count, handled.Count);
+        Assert.All(handled.Values, n => Assert.Equal(1, n));
+        Assert.All(asks, ask => Assert.Equal(maxConcurrency, ask));
+        Assert.Equal(maxConcurrency, Volatile.Read(ref maxRunning));
+
+        // Two receives in flight, one more than fills the slots, read at most two batches and one more ahead of them.
+        Assert.InRange(transport.MaxUnsettled, maxConcurrency + 1, maxConcurrency + 3 * maxConcurrency);
+    }
+
+    [Fact]
+    public async Task Receive_WhenAReceiveReturnsLessThanItAsked_ParksTheOtherReceives()
+    {
+        const int count = 400;
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities())
+        {
+            ReceiveDelay = TimeSpan.FromMilliseconds(20),
+            MaxReceiveWait = TimeSpan.FromMilliseconds(20)
+        };
+        await PrefillAsync(Enumerable.Range(0, count).Select(i => new RenewedCommand(i)));
+        int handled = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) =>
+        {
+            Interlocked.Increment(ref handled);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 40 }));
+
+        await WaitForAsync(() => Volatile.Read(ref handled) == count, TimeSpan.FromSeconds(20));
+        Assert.Equal(4, transport.MaxReceivesInFlight);
+
+        // Drained, every receive comes back short, so once those in flight have returned only the first polls.
+        int calls = transport.ReceiveCalls;
+        await WaitForAsync(() => transport.ReceiveCalls >= calls + 8, TimeSpan.FromSeconds(10));
+        transport.ResetMaxReceivesInFlight();
+        calls = transport.ReceiveCalls;
+        await WaitForAsync(() => transport.ReceiveCalls >= calls + 5, TimeSpan.FromSeconds(10));
+        Assert.Equal(1, transport.MaxReceivesInFlight);
+
+        // A receive that returns a full batch lets one more poll.
+        await consumer.Client.SendBatchAsync(Enumerable.Range(count, count).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 2 * count, TimeSpan.FromSeconds(20));
+        Assert.True(transport.MaxReceivesInFlight > 1, $"At most {transport.MaxReceivesInFlight} receive was in flight.");
+    }
+
+    [Fact]
+    public async Task Receive_WhenIdle_KeepsTheMinimumOfLongPollsInFlight()
+    {
+        var waits = new ConcurrentQueue<TimeSpan>();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities()) { OnReceive = (_, _, wait) => waits.Enqueue(wait) };
+        int handled = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>((_, _, _) =>
+        {
+            Interlocked.Increment(ref handled);
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 40 }));
+        await WaitForAsync(() => transport.ReceivesInFlight == 1, TimeSpan.FromSeconds(5));
+
+        // Each message wakes the one long poll, which returns less than it asked for, so no other starts.
+        for (int i = 1; i <= 5; i++)
+        {
+            int expected = i;
+            await consumer.Client.SendAsync(new RenewedCommand(i), cancellationToken: TestCancellationToken);
+            await WaitForAsync(() => Volatile.Read(ref handled) == expected, TimeSpan.FromSeconds(5));
+        }
+
+        Assert.Equal(1, transport.MaxReceivesInFlight);
+        Assert.All(waits, wait => Assert.Equal(TimeSpan.FromSeconds(20), wait));
+    }
+
+    [Fact]
+    public async Task Receive_WithReceiveAheadOff_AsksOnlyForFreeSlots()
+    {
+        const int maxConcurrency = 4;
+        var asks = new ConcurrentQueue<int>();
+        var transport = new InterceptingMessageTransport(_transport, ConcurrentReceiveCapabilities(4)) { OnReceive = (_, maxMessages, _) => asks.Enqueue(maxMessages) };
+        await PrefillAsync(Enumerable.Range(0, 20).Select(i => new RenewedCommand(i)));
+        using var release = new SemaphoreSlim(0);
+        int started = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (_, _, ct) =>
+        {
+            Interlocked.Increment(ref started);
+            await release.WaitAsync(ct);
+        }, new HandlerOptions { MaxConcurrency = maxConcurrency }));
+        await WaitForAsync(() => Volatile.Read(ref started) == maxConcurrency, TimeSpan.FromSeconds(5));
+
+        Assert.Equal([maxConcurrency], asks);
+        Assert.Equal(0, transport.ReceivesInFlight);
+        Assert.Equal(maxConcurrency, transport.MaxUnsettled);
+
+        release.Release();
+        await WaitForAsync(() => Volatile.Read(ref started) == maxConcurrency + 1, TimeSpan.FromSeconds(5));
+        Assert.Equal([maxConcurrency, 1], asks);
+        Assert.Equal(maxConcurrency, transport.MaxUnsettled);
+        release.Release(20);
+    }
+
+    [Fact]
+    public async Task StopAsync_WithBufferedMessages_HandlesThemWithinTheDrain()
+    {
+        var source = MessageSource.Queue(QueueName<RenewedCommand>());
+        var settled = new ConcurrentQueue<string>();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 2)) { OnSettle = (operation, _) => settled.Enqueue(operation) };
+        await PrefillAsync(WarmUp(2));
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handled = new ConcurrentDictionary<int, int>();
+        int running = 0;
+        var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, _, _) =>
+        {
+            if (message.Id >= 0)
+            {
+                Interlocked.Increment(ref running);
+                await gate.Task;
+            }
+
+            handled.AddOrUpdate(message.Id, 1, (_, n) => n + 1);
+        }, new HandlerOptions { MaxConcurrency = 2 }));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => handled.Count == 2 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, 3).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref running) == 2 && processor.GetStatus().Buffered == 1, TimeSpan.FromSeconds(5));
+
+        var stopping = consumer.DisposeAsync().AsTask();
+        await WaitForAsync(() => processor.GetStatus().State == ProcessingState.Stopped, TimeSpan.FromSeconds(5));
+        Assert.Equal(1, processor.GetStatus().Buffered);
+        gate.SetResult();
+        await stopping;
+
+        Assert.Equal(5, handled.Count);
+        Assert.All(handled.Values, n => Assert.Equal(1, n));
+        Assert.All(settled, operation => Assert.Equal("complete", operation));
+        Assert.Equal(0, _transport.GetMessageCount(source));
+    }
+
+    [Fact]
+    public async Task StopAsync_WhenTheDrainTimesOut_ReleasesBufferedMessagesWithoutRunningTheirHandlers()
+    {
+        var source = MessageSource.Queue(QueueName<RenewedCommand>());
+        var settled = new ConcurrentQueue<string>();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 2)) { OnSettle = (operation, _) => settled.Enqueue(operation) };
+        await PrefillAsync(WarmUp(2));
+        var started = new ConcurrentQueue<int>();
+        var consumer = await StartAsync(transport, m => m
+            .Configure(o => o.ShutdownTimeout = TimeSpan.FromMilliseconds(200))
+            .AddConsumer<RenewedCommand>(async (message, _, ct) =>
+            {
+                started.Enqueue(message.Id);
+                if (message.Id >= 0)
+                    await Task.Delay(Timeout.Infinite, ct);
+            }, new HandlerOptions { MaxConcurrency = 2 }));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => started.Count == 2 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, 3).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => started.Count == 4 && processor.GetStatus().Buffered == 1, TimeSpan.FromSeconds(5));
+        int buffered = Enumerable.Range(0, 3).Single(i => !started.Contains(i));
+
+        await consumer.DisposeAsync();
+
+        Assert.DoesNotContain(buffered, started);
+        Assert.Equal(["abandon", "abandon", "abandon"], settled.Where(s => s != "complete"));
+        Assert.Equal(3, _transport.GetMessageCount(source));
+    }
+
+    [Fact]
+    public async Task ReplaceReceiver_WithBufferedMessages_ReleasesThemWithoutRunningTheirHandlers()
+    {
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 2));
+        await PrefillAsync(WarmUp(2));
+        var calls = new ConcurrentQueue<(int Id, int Attempt)>();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, context, _) =>
+        {
+            calls.Enqueue((message.Id, context.Attempt));
+            if (message.Id >= 0 && context.Attempt == 1)
+                await gate.Task;
+        }, new HandlerOptions { MaxConcurrency = 2 }));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => calls.Count == 2 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, 3).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => calls.Count == 4 && processor.GetStatus().Buffered == 1 && transport.ReceivesInFlight > 0, TimeSpan.FromSeconds(5));
+        int buffered = Enumerable.Range(0, 3).Single(i => !calls.Any(c => c.Id == i));
+
+        // A receive in flight sees the fault, and the receiver is replaced.
+        transport.FaultReceivers();
+        await WaitForAsync(() => processor.GetStatus().Buffered == 0, TimeSpan.FromSeconds(10));
+        Assert.DoesNotContain(calls, c => c.Id == buffered);
+        gate.SetResult();
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        Assert.Equal([(buffered, 2)], calls.Where(c => c.Id == buffered));
+        Assert.Equal(5, calls.Count);
+        Assert.Equal(2, transport.ReceiversCreated);
+    }
+
+    [Fact]
+    public async Task LeaseRenewal_WhileBuffered_RenewsFromReceipt()
+    {
+        var time = new FakeTimeProvider();
+        var renewed = new ConcurrentQueue<string>();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 1, maxConcurrentReceives: 1))
+        {
+            OnRenew = (message, _) =>
+            {
+                renewed.Enqueue(message.MessageId);
+                return Task.CompletedTask;
+            }
+        };
+        await PrefillAsync(WarmUp(1));
+        var started = new ConcurrentQueue<int>();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, _, _) =>
+        {
+            started.Enqueue(message.Id);
+            if (message.Id >= 0)
+                await gate.Task;
+        }, new HandlerOptions { MaxConcurrency = 1, LeaseDuration = TimeSpan.FromSeconds(30) }), s => s.AddSingleton<TimeProvider>(time));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => started.Count == 1 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+
+        await consumer.Client.SendAsync(new RenewedCommand(0), new SendOptions { MessageId = "running" }, TestCancellationToken);
+        await consumer.Client.SendAsync(new RenewedCommand(1), new SendOptions { MessageId = "buffered" }, TestCancellationToken);
+        await WaitForAsync(() => started.Count == 2 && processor.GetStatus().Buffered == 1, TimeSpan.FromSeconds(5));
+        Assert.Empty(renewed);
+
+        // A third of the lease after it was received, the buffered message is renewed like the one being handled.
+        time.Advance(TimeSpan.FromSeconds(11));
+        await WaitForAsync(() => renewed.Contains("buffered") && renewed.Contains("running"), TimeSpan.FromSeconds(5));
+        Assert.Equal([-1, 0], started);
+
+        gate.SetResult();
+        await WaitForAsync(() => started.Count == 3 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task OrderedGroupBatch_WhenBuffered_HandlesEachGroupInOrderOneAtATime()
+    {
+        const int maxConcurrency = 4;
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: maxConcurrency, maxConcurrentReceives: 1));
+        await PrefillAsync(Enumerable.Range(1, maxConcurrency).Select(i => new GroupedCommand(-i)));
+        await PrefillAsync(Enumerable.Range(100, maxConcurrency).Select(i => new GroupedCommand(i)));
+        await PrefillAsync(Enumerable.Range(1, 3).Select(i => new GroupedCommand(i)), new SendOptions { GroupKey = "a" });
+        await PrefillAsync(Enumerable.Range(11, 3).Select(i => new GroupedCommand(i)), new SendOptions { GroupKey = "b" });
+
+        using var blockers = new SemaphoreSlim(0);
+        var events = new ConcurrentQueue<string>();
+        int blocked = 0, overlapped = 0;
+        var running = new ConcurrentDictionary<string, int>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<GroupedCommand>(async (message, context, _) =>
+        {
+            if (message.Id >= 100)
+            {
+                Interlocked.Increment(ref blocked);
+                await blockers.WaitAsync(TestCancellationToken);
+                return;
+            }
+
+            if (context.GroupKey is not { } group)
+                return;
+
+            if (running.AddOrUpdate(group, 1, (_, n) => n + 1) > 1)
+                Interlocked.Increment(ref overlapped);
+
+            events.Enqueue($"{group}{message.Id}");
+            await Task.Delay(10, CancellationToken.None);
+            running.AddOrUpdate(group, 0, (_, n) => n - 1);
+        }, new HandlerOptions { MaxConcurrency = maxConcurrency }));
+        var processor = GetProcessor(consumer);
+
+        // The blockers hold every slot; the first group's sequence and the second group's first message wait, in that order.
+        await WaitForAsync(() => Volatile.Read(ref blocked) == maxConcurrency && processor.GetStatus().Buffered == 4, TimeSpan.FromSeconds(10));
+        blockers.Release();
+        await WaitForAsync(() => processor.GetStatus().Buffered == 3, TimeSpan.FromSeconds(5));
+        blockers.Release();
+        await WaitForAsync(() => processor.GetStatus().Buffered == 2, TimeSpan.FromSeconds(5));
+
+        // b11 would fit in a free slot, but it waits behind the sequence received before it.
+        Assert.Empty(events);
+        blockers.Release();
+        await WaitForAsync(() => events.Count == 6, TimeSpan.FromSeconds(10));
+        blockers.Release();
+
+        var order = events.ToList();
+        Assert.Equal(["a1", "a2", "a3"], order.Where(e => e[0] == 'a'));
+        Assert.Equal(["b11", "b12", "b13"], order.Where(e => e[0] == 'b'));
+        Assert.True(order.IndexOf("a1") < order.IndexOf("b11"), String.Join(", ", order));
+        Assert.Equal(0, Volatile.Read(ref overlapped));
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task RetryHold_WithBufferedMessages_GivesItsSlotToTheNextBufferedMessage()
+    {
+        var source = MessageSource.Queue(QueueName<RenewedCommand>());
+        var settled = new ConcurrentQueue<(string Operation, string MessageId)>();
+        var capabilities = WithoutRetryDelays() with { MaxReceiveBatchSize = 1, ReceiveAhead = true };
+        var transport = new InterceptingMessageTransport(_transport, capabilities) { OnSettle = (operation, message) => settled.Enqueue((operation, message.MessageId)) };
+        await PrefillAsync(WarmUp(1));
+        var failing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handled = new ConcurrentQueue<(int Id, int Attempt)>();
+        var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, context, _) =>
+        {
+            handled.Enqueue((message.Id, context.Attempt));
+            if (message.Id == 0)
+            {
+                await failing.Task;
+                throw new InvalidOperationException("transient");
+            }
+        }, new HandlerOptions { MaxConcurrency = 1, RetryPolicy = LongRetries }));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => handled.Count == 1 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+
+        await consumer.Client.SendAsync(new RenewedCommand(0), new SendOptions { MessageId = "held" }, TestCancellationToken);
+        await consumer.Client.SendAsync(new RenewedCommand(1), new SendOptions { MessageId = "next" }, TestCancellationToken);
+        await WaitForAsync(() => handled.Count == 2 && processor.GetStatus().Buffered == 1, TimeSpan.FromSeconds(5));
+
+        failing.SetResult();
+        await WaitForAsync(() => handled.Contains((1, 1)) && processor.InFlight == 1, TimeSpan.FromSeconds(5));
+        var status = processor.GetStatus();
+        Assert.Equal((1, 0), (status.Active, status.Buffered));
+        Assert.DoesNotContain(settled, s => s.MessageId == "held");
+        Assert.Contains(("complete", "next"), settled);
+
+        await consumer.DisposeAsync();
+        Assert.Contains(("abandon", "held"), settled);
+        Assert.Equal(1, _transport.GetMessageCount(source));
+    }
+
+    [Fact]
+    public async Task GetStatus_WithBufferedMessages_ReportsThemAsBufferedNotActive()
+    {
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 2));
+        await PrefillAsync(WarmUp(2));
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int warmedUp = 0, running = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, _, _) =>
+        {
+            if (message.Id < 0)
+            {
+                Interlocked.Increment(ref warmedUp);
+                return;
+            }
+
+            Interlocked.Increment(ref running);
+            await gate.Task;
+        }, new HandlerOptions { MaxConcurrency = 2 }));
+        var status = consumer.Services.GetRequiredService<MessagingStatus>();
+        await WaitForAsync(() => Volatile.Read(ref warmedUp) == 2 && status.GetProcessors().Single().Active == 0, TimeSpan.FromSeconds(5));
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, 3).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref running) == 2 && status.GetProcessors().Single().Buffered == 1, TimeSpan.FromSeconds(5));
+
+        var processing = status.GetProcessors().Single();
+        Assert.Equal((2, 1), (processing.Active, processing.Buffered));
+        gate.SetResult();
+        await WaitForAsync(() => status.GetProcessors().Single() is { Active: 0, Buffered: 0 }, TimeSpan.FromSeconds(5));
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await _transport.DisposeAsync();
@@ -731,6 +1138,23 @@ public class MessageProcessorTests : TestWithLoggingBase
 
     private static TransportCapabilities ConcurrentReceiveCapabilities(int maxConcurrentReceives)
         => new InMemoryMessageTransport().Capabilities with { MaxReceiveBatchSize = 10, MaxConcurrentReceives = maxConcurrentReceives };
+
+    private static TransportCapabilities ReceiveAheadCapabilities(int maxReceiveBatchSize = 10, int maxConcurrentReceives = 4)
+        => ConcurrentReceiveCapabilities(maxConcurrentReceives) with { MaxReceiveBatchSize = maxReceiveBatchSize, ReceiveAhead = true };
+
+    /// <summary>
+    /// Messages the tests' handlers return from at once. Sent before a consumer starts, they fill its first receive and
+    /// finish at once, so the processor has measured both times it needs to read ahead.
+    /// </summary>
+    private static IEnumerable<RenewedCommand> WarmUp(int count) => Enumerable.Range(1, count).Select(i => new RenewedCommand(-i));
+
+    private async Task PrefillAsync<T>(IEnumerable<T> messages, SendOptions? options = null) where T : class
+    {
+        await using var producer = await StartAsync(_transport, _ => { });
+        await producer.Client.SendBatchAsync(messages, options, TestCancellationToken);
+    }
+
+    private static MessageProcessor GetProcessor(MessagingTestHost host) => host.Services.GetRequiredService<MessagingRuntime>().GetProcessors().Single();
 
     private static TransportCapabilities WithoutRetryDelays() => new InMemoryMessageTransport().Capabilities with { MaxRetryDelay = TimeSpan.Zero };
 

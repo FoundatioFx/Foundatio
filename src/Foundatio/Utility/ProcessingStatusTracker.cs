@@ -109,7 +109,7 @@ internal sealed class ProcessingStatusTracker
         }
     }
 
-    public ProcessingStatus GetStatus(string name, int active = 0, IReadOnlyDictionary<string, int>? activeByName = null)
+    public ProcessingStatus GetStatus(string name, int active = 0, IReadOnlyDictionary<string, int>? activeByName = null, int buffered = 0)
     {
         lock (_lock)
         {
@@ -119,6 +119,7 @@ internal sealed class ProcessingStatusTracker
                 Name = name,
                 State = _state,
                 Active = active,
+                Buffered = buffered,
                 FailingSince = _failingSince is { } receiveFailingSince && (settleFailingSince is null || receiveFailingSince < settleFailingSince) ? receiveFailingSince : settleFailingSince,
                 LastError = _lastError,
                 LastErrorAt = _lastErrorAt

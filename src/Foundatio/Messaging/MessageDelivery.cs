@@ -19,16 +19,27 @@ internal sealed class MessageDelivery
     private readonly LeaseRenewer _renewer;
     private readonly RetryHolds _holds;
     private readonly SettlementSlots _settlements;
+    private readonly TimeProvider? _slotClock;
     private CancellationTokenSource? _handlerCancellation;
     private int _leaseLost;
 
-    public MessageDelivery(IMessageReceiver receiver, IncomingMessage message, LeaseRenewer renewer, RetryHolds holds, SettlementSlots settlements)
+    /// <param name="receiver">The receiver that received it.</param>
+    /// <param name="message">The message.</param>
+    /// <param name="renewer">Renews its lease until it is settled.</param>
+    /// <param name="holds">Holds it for a retry the broker cannot delay.</param>
+    /// <param name="settlements">Lets its settlement give the handler slot away.</param>
+    /// <param name="slotClock">
+    /// Set by a processor that reads ahead, which measures how long a delivery keeps its handler slot: records
+    /// <see cref="HandlerReturnedAt"/> on it.
+    /// </param>
+    public MessageDelivery(IMessageReceiver receiver, IncomingMessage message, LeaseRenewer renewer, RetryHolds holds, SettlementSlots settlements, TimeProvider? slotClock = null)
     {
         Receiver = receiver;
         Message = message;
         _renewer = renewer;
         _holds = holds;
         _settlements = settlements;
+        _slotClock = slotClock;
     }
 
     public IMessageReceiver Receiver { get; }
@@ -64,6 +75,12 @@ internal sealed class MessageDelivery
     /// </summary>
     internal TaskCompletionSource? HandlerReturned { get; set; }
 
+    /// <summary>
+    /// With a slot clock, its timestamp when the handler returned: when the delivery began to settle or was held for a
+    /// retry, after which its handler slot may go to other messages. Zero until then, and without a slot clock.
+    /// </summary>
+    internal long HandlerReturnedAt { get; private set; }
+
     /// <summary>Cancels <paramref name="handlerCancellation"/> if the lease is lost while the handler runs.</summary>
     public void AttachHandler(CancellationTokenSource handlerCancellation)
     {
@@ -90,7 +107,11 @@ internal sealed class MessageDelivery
     /// delay; meanwhile its handler slot goes to other messages if the processor has room for another hold. Ends early
     /// when the lease is lost, when <paramref name="abortToken"/> is cancelled or when the processor stops.
     /// </summary>
-    public Task HoldAsync(TimeSpan delay, CancellationToken abortToken) => _holds.HoldAsync(this, delay, abortToken);
+    public Task HoldAsync(TimeSpan delay, CancellationToken abortToken)
+    {
+        MarkHandlerReturned();
+        return _holds.HoldAsync(this, delay, abortToken);
+    }
 
     /// <summary>
     /// Stops renewing, then settles on a token that is never the handler's; while either waits, the handler slot goes to
@@ -100,6 +121,7 @@ internal sealed class MessageDelivery
     public async Task<Exception?> SettleAsync(Func<IMessageReceiver, IncomingMessage, CancellationToken, Task> settle, string operation, ILogger logger)
     {
         HandlerReturned?.TrySetResult();
+        MarkHandlerReturned();
         var stopRenewing = StopRenewingAsync();
         if (!stopRenewing.IsCompleted)
         {
@@ -128,6 +150,12 @@ internal sealed class MessageDelivery
             logger.LogError(ex, "Could not {Operation} message {MessageId}; the transport will deliver it again", operation, Message.MessageId);
             return ex;
         }
+    }
+
+    private void MarkHandlerReturned()
+    {
+        if (_slotClock is not null && HandlerReturnedAt == 0)
+            HandlerReturnedAt = _slotClock.GetTimestamp();
     }
 
     private static void TryCancel(CancellationTokenSource cancellation)

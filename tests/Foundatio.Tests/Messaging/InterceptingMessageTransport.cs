@@ -14,6 +14,9 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
     private int _receiversCreated;
     private int _receivesInFlight;
     private int _maxReceivesInFlight;
+    private int _receiveCalls;
+    private int _unsettled;
+    private int _maxUnsettled;
 
     public TransportCapabilities Capabilities { get; } = capabilities ?? inner.Capabilities;
 
@@ -25,6 +28,9 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
     /// <summary>How long each receive takes before it reaches the inner receiver, like a broker round trip.</summary>
     public TimeSpan ReceiveDelay { get; init; }
+
+    /// <summary>When set, the longest a receive waits for messages, whatever it asks for, like a broker with short polls.</summary>
+    public TimeSpan? MaxReceiveWait { get; init; }
 
     /// <summary>Runs before a receiver is opened.</summary>
     public Func<MessageSource, CancellationToken, Task>? OnCreateReceiver { get; set; }
@@ -53,6 +59,21 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
     /// <summary>The most <see cref="IMessageReceiver.ReceiveAsync"/> calls that were in flight at once, across every receiver.</summary>
     public int MaxReceivesInFlight => Volatile.Read(ref _maxReceivesInFlight);
+
+    /// <summary>The <see cref="IMessageReceiver.ReceiveAsync"/> calls in flight now, across every receiver.</summary>
+    public int ReceivesInFlight => Volatile.Read(ref _receivesInFlight);
+
+    /// <summary>How many <see cref="IMessageReceiver.ReceiveAsync"/> calls have started, across every receiver.</summary>
+    public int ReceiveCalls => Volatile.Read(ref _receiveCalls);
+
+    /// <summary>
+    /// The most messages that were received and not yet completed, abandoned or dead-lettered at once, across every
+    /// receiver. Messages a disposed receiver released still count.
+    /// </summary>
+    public int MaxUnsettled => Volatile.Read(ref _maxUnsettled);
+
+    /// <summary>Starts <see cref="MaxReceivesInFlight"/> again from the receives in flight now.</summary>
+    public void ResetMaxReceivesInFlight() => Volatile.Write(ref _maxReceivesInFlight, ReceivesInFlight);
 
     /// <summary>Makes every open receiver throw <see cref="MessageReceiverFaultedException"/> from now on.</summary>
     public void FaultReceivers()
@@ -100,11 +121,8 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
         public async Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default)
         {
-            int inFlight = Interlocked.Increment(ref transport._receivesInFlight);
-            int max;
-            while (inFlight > (max = Volatile.Read(ref transport._maxReceivesInFlight)) && Interlocked.CompareExchange(ref transport._maxReceivesInFlight, inFlight, max) != max)
-            {
-            }
+            Interlocked.Increment(ref transport._receiveCalls);
+            RaiseMax(ref transport._maxReceivesInFlight, Interlocked.Increment(ref transport._receivesInFlight));
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _fault.Token);
             try
@@ -116,10 +134,12 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
                 if (_fault.IsCancellationRequested)
                     throw new MessageReceiverFaultedException("This receiver can never deliver again");
 
-                var messages = await inner.ReceiveAsync(maxMessages, maxWait, linked.Token);
+                var wait = transport.MaxReceiveWait is { } maxReceiveWait && maxReceiveWait < maxWait ? maxReceiveWait : maxWait;
+                var messages = await inner.ReceiveAsync(maxMessages, wait, linked.Token);
                 foreach (var message in messages)
                     ReportBrokerLease(message);
 
+                RaiseMax(ref transport._maxUnsettled, Interlocked.Add(ref transport._unsettled, messages.Count));
                 return messages;
             }
             catch (OperationCanceledException) when (_fault.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -136,12 +156,14 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
         {
             await SettlingAsync("complete", message);
             await inner.CompleteAsync(message, cancellationToken);
+            Interlocked.Decrement(ref transport._unsettled);
         }
 
         public async Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
         {
             await SettlingAsync("abandon", message);
             await inner.AbandonAsync(message, delay, cancellationToken);
+            Interlocked.Decrement(ref transport._unsettled);
         }
 
         public async Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default)
@@ -151,6 +173,7 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
                 await onDeadLetter(message, reason);
 
             await inner.DeadLetterAsync(message, reason, cancellationToken);
+            Interlocked.Decrement(ref transport._unsettled);
         }
 
         public async Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default)
@@ -167,6 +190,14 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
             transport.OnSettle?.Invoke(operation, message);
             if (transport.OnSettleAsync is { } onSettle)
                 await onSettle(operation, message);
+        }
+
+        private static void RaiseMax(ref int max, int value)
+        {
+            int current;
+            while (value > (current = Volatile.Read(ref max)) && Interlocked.CompareExchange(ref max, value, current) != current)
+            {
+            }
         }
 
         private void ReportBrokerLease(IncomingMessage message)

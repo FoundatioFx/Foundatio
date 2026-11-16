@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -14,12 +15,20 @@ namespace Foundatio.Messaging;
 /// Receives from one source with bounded concurrency, keeps every delivery's lease renewed until it is settled,
 /// replaces a failed receiver and drains on shutdown. What happens to each delivery is up to its <see cref="IMessageDeliveryHandler"/>.
 /// A delivery's handler slot goes to the next message while it settles, when there is room (see <see cref="SettlementSlots"/>).
+/// When the transport declares <see cref="TransportCapabilities.ReceiveAhead"/>, receives may also run ahead of the free
+/// slots, into a buffer that gives each message a slot as one frees (see <see cref="ReceiveAhead"/>).
 /// </summary>
 internal sealed class MessageProcessor : IAsyncDisposable
 {
     // Long enough to be one SQS long poll; stopping cancels a receive in progress, so shutdown does not wait for it.
     private static readonly TimeSpan ReceiveWait = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan AbortGracePeriod = TimeSpan.FromSeconds(5);
+
+    // What happens to buffered messages: they are given slots, dropped unstarted because their receiver is being
+    // replaced, or released because shutdown stopped waiting.
+    private const int BufferPumping = 0;
+    private const int BufferDropping = 1;
+    private const int BufferReleasing = 2;
 
     private readonly IMessageTransport _transport;
     private readonly MessageProcessorSettings _settings;
@@ -47,6 +56,21 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private int _partialReceive;
     private bool _started;
     private bool _stopped;
+
+    // Reading ahead. Receives at depth zero take slots as above; otherwise they ask for up to the free slots plus the
+    // depth, less what is buffered or already asked for, and Pump gives each buffered message a slot.
+    private readonly ReceiveAhead? _ahead;
+    private readonly int _aheadBatch;
+    private readonly int _aheadReceives;
+    private readonly object _bufferLock = new();
+    private readonly Queue<List<MessageDelivery>> _buffer = new();
+    private int _buffered;
+    private long _bufferedBytes;
+    private int _requested;
+    private int _pumpSlots;
+    private int _bufferMode;
+    private int _pollingReceives = 1;
+    private TaskCompletionSource _turn = NewSignal();
 
     public MessageProcessor(IMessageTransport transport, MessageSource source, MessageProcessorSettings settings, IMessageDeliveryHandler handler,
         ProcessingStatusTracker status, TimeProvider timeProvider, ILoggerFactory loggerFactory)
@@ -79,6 +103,14 @@ internal sealed class MessageProcessor : IAsyncDisposable
             _fullBatch = Math.Min(_maxBatch, settings.MaxConcurrency);
             _inOrder = Channel.CreateUnbounded<MessageDelivery>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
         }
+        else if (capabilities.ReceiveAhead)
+        {
+            // Batches no larger than the slots, so a batch's group always fits in them, and one receive more than it
+            // takes to fill the slots, to read ahead.
+            _aheadBatch = Math.Min(_maxBatch, settings.MaxConcurrency);
+            _aheadReceives = (int)Math.Max(1, Math.Min(capabilities.MaxConcurrentReceives, receivesToFill + 1L));
+            _ahead = new ReceiveAhead(settings.MaxConcurrency, _aheadBatch, _aheadReceives, lease, timeProvider.TimestampFrequency);
+        }
     }
 
     public MessageSource Source { get; }
@@ -86,10 +118,17 @@ internal sealed class MessageProcessor : IAsyncDisposable
     /// <summary>Read by health checks. Receive errors are recorded here; they never stop the processor.</summary>
     public ProcessingStatusTracker Status { get; }
 
-    /// <summary>Unsettled deliveries, including retries held in-process, with or without their handler slots.</summary>
+    /// <summary>Unsettled deliveries, including retries held in-process and buffered ones, with or without their handler slots.</summary>
     public int InFlight => Volatile.Read(ref _inFlight);
 
-    public ProcessingStatus GetStatus() => Status.GetStatus(Source.ToString(), InFlight);
+    /// <summary>Received ahead of the free handler slots, and waiting for one.</summary>
+    public int Buffered => Math.Max(0, Volatile.Read(ref _buffered));
+
+    public ProcessingStatus GetStatus()
+    {
+        int buffered = Buffered;
+        return Status.GetStatus(Source.ToString(), Math.Max(0, InFlight - buffered), buffered: buffered);
+    }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -118,8 +157,16 @@ internal sealed class MessageProcessor : IAsyncDisposable
             return;
         }
 
-        _logger.LogInformation("Receiving {Source} with {Handlers} (concurrency {MaxConcurrency}, receives in flight {ConcurrentReceives})",
-            Source, _settings.Description, _settings.MaxConcurrency, _concurrentReceives);
+        if (_ahead is null)
+        {
+            _logger.LogInformation("Receiving {Source} with {Handlers} (concurrency {MaxConcurrency}, receives in flight {ConcurrentReceives})",
+                Source, _settings.Description, _settings.MaxConcurrency, _concurrentReceives);
+        }
+        else
+        {
+            _logger.LogInformation("Receiving {Source} with {Handlers} (concurrency {MaxConcurrency}, receives in flight {ConcurrentReceives}, reading ahead)",
+                Source, _settings.Description, _settings.MaxConcurrency, _aheadReceives);
+        }
     }
 
     /// <summary>
@@ -145,6 +192,9 @@ internal sealed class MessageProcessor : IAsyncDisposable
         if (!await WaitForInFlightAsync(drainTimeout, cancellationToken).AnyContext())
         {
             _logger.LogWarning("Cancelling {Count} in-flight messages from {Source} at shutdown; they will be delivered again", Volatile.Read(ref _inFlight), Source);
+            if (_ahead is not null)
+                CloseBuffer(BufferReleasing);
+
             _abortHandlers.Cancel();
             await WaitForInFlightAsync(AbortGracePeriod, CancellationToken.None).AnyContext();
         }
@@ -186,7 +236,11 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             using (var receiving = CancellationTokenSource.CreateLinkedTokenSource(token))
             {
-                if (_concurrentReceives == 1)
+                if (_ahead is not null)
+                {
+                    await ReceiveAheadOnAsync(receiver, receiving).AnyContext();
+                }
+                else if (_concurrentReceives == 1)
                 {
                     await ReceiveFromAsync(receiver, receiving).AnyContext();
                 }
@@ -209,6 +263,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
             receiver = replacement;
             _backoff.Reset();
+            if (_ahead is not null)
+                ReopenBuffer();
         }
     }
 
@@ -273,19 +329,11 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     catch (Exception ex)
                     {
                         _slots.Release(slots);
-                        Status.RecordFailure(ex);
-                        bool replace = _backoff.RecordFailure(ex, round, out bool counted, out var backoff);
-                        if (replace)
+                        if (RecordReceiveFailure(ex, round))
                         {
-                            _logger.LogError(ex, "Receiver for {Source} failed; replacing it in {Backoff}", Source, backoff);
                             receiving.Cancel();
                             break;
                         }
-
-                        if (counted)
-                            _logger.LogError(ex, "Error receiving from {Source}; retrying in {Backoff}", Source, backoff);
-                        else
-                            _logger.LogDebug(ex, "Another receive from {Source} failed at the same time; retrying in {Backoff}", Source, backoff);
 
                         continue;
                     }
@@ -333,14 +381,475 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
     }
 
-    /// <summary>Waits until no receive asks for a partial batch (or, in order, none is in flight), or a full batch of slots is free.</summary>
+    /// <summary>Runs the receives on <paramref name="receiver"/> when reading ahead, one more than it takes to fill the slots.</summary>
+    private async Task ReceiveAheadOnAsync(IMessageReceiver receiver, CancellationTokenSource receiving)
+    {
+        if (_aheadReceives == 1)
+        {
+            await ReceiveAheadFromAsync(receiver, receiving, 0).AnyContext();
+            return;
+        }
+
+        var receives = new Task[_aheadReceives];
+        for (int i = 0; i < receives.Length; i++)
+        {
+            int index = i;
+            receives[i] = Task.Run(() => ReceiveAheadFromAsync(receiver, receiving, index), CancellationToken.None);
+        }
+
+        await Task.WhenAll(receives).AnyContext();
+    }
+
+    /// <summary>
+    /// One of the receives in flight on <paramref name="receiver"/> when reading ahead. At depth zero it receives into
+    /// free slots, as <see cref="ReceiveFromAsync"/> does, once the buffer has drained. Otherwise it takes no slots: it
+    /// asks for up to a batch of the free slots plus the depth, less what is buffered or already asked for, and buffers
+    /// what it gets for <see cref="Pump"/>. Only <see cref="_pollingReceives"/> of the receives poll: one that returns fewer
+    /// messages than it asked for parks the others once their calls return, and each that returns as many lets one more poll.
+    /// </summary>
+    private async Task ReceiveAheadFromAsync(IMessageReceiver receiver, CancellationTokenSource receiving, int index)
+    {
+        var token = receiving.Token;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                if (!MayPoll(index))
+                {
+                    await WaitForTurnAsync(index, token).AnyContext();
+                    continue;
+                }
+
+                int count;
+                bool partial, holdsSlots = GetDepth() == 0;
+                if (holdsSlots)
+                {
+                    if (Volatile.Read(ref _buffered) > 0)
+                    {
+                        await WaitForRoomAsync(token).AnyContext();
+                        continue;
+                    }
+
+                    try
+                    {
+                        await _slots.WaitAsync(token).AnyContext();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+
+                    count = 1;
+                    while (count < _maxBatch && _slots.CurrentCount > 0 && await _slots.WaitAsync(0, CancellationToken.None).AnyContext())
+                        count++;
+
+                    // The depth may have risen, or another receive buffered messages, while this one waited for a slot.
+                    if (GetDepth() > 0 || Volatile.Read(ref _buffered) > 0)
+                    {
+                        ReleaseSlots(count);
+                        continue;
+                    }
+
+                    partial = count < _fullBatch;
+                    if (partial && Interlocked.CompareExchange(ref _partialReceive, 1, 0) != 0)
+                    {
+                        ReleaseSlots(count);
+                        await WaitForRoomAsync(token).AnyContext();
+                        continue;
+                    }
+                }
+                else if (!TryReserve(out count, out partial))
+                {
+                    await WaitForRoomAsync(token).AnyContext();
+                    continue;
+                }
+
+                long round = _backoff.BeginReceive(out var wait);
+                if (wait > TimeSpan.Zero)
+                {
+                    EndReceive(count, holdsSlots, partial);
+                    await _timeProvider.SafeDelay(wait, token).AnyContext();
+                    continue;
+                }
+
+                IReadOnlyList<IncomingMessage> messages;
+                long started = _timeProvider.GetTimestamp();
+                try
+                {
+                    messages = await receiver.ReceiveAsync(count, ReceiveWait, token).AnyContext();
+                    _backoff.RecordSuccess(round);
+                    Status.RecordSuccess();
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    EndReceive(count, holdsSlots, partial);
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    EndReceive(count, holdsSlots, partial);
+                    if (RecordReceiveFailure(ex, round))
+                    {
+                        // The receiver is disposed once its handlers finish, which releases the messages it buffered.
+                        CloseBuffer(BufferDropping);
+                        receiving.Cancel();
+                        break;
+                    }
+
+                    continue;
+                }
+
+                if (messages.Count == count && _ahead!.RecordReceiveTime(_timeProvider.GetTimestamp() - started))
+                    OnDepthRaised();
+
+                UpdatePolling(count, messages.Count);
+                if (messages.Count == 0)
+                {
+                    EndReceive(count, holdsSlots, partial);
+                    continue;
+                }
+
+                var deliveries = CreateDeliveries(receiver, messages);
+                _renewer.Track(deliveries);
+                Interlocked.Add(ref _inFlight, deliveries.Length);
+                if (!holdsSlots)
+                {
+                    Buffer(deliveries, count, partial);
+                    continue;
+                }
+
+                EndReceive(count - deliveries.Length, holdsSlots, partial);
+                foreach (var sequence in SplitIntoSequences(deliveries))
+                    _ = Task.Run(() => ProcessSequenceAsync(sequence), CancellationToken.None);
+            }
+        }
+        catch
+        {
+            receiving.Cancel();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Reserves a receive that reads ahead: up to a batch of the free slots plus the depth, less what is buffered or
+    /// already asked for. It starts with room for a full batch, or as the one partial receive while nothing is buffered.
+    /// </summary>
+    private bool TryReserve(out int count, out bool partial)
+    {
+        lock (_bufferLock)
+        {
+            count = Math.Min(_aheadBatch, _slots.CurrentCount + GetDepth() - _buffered - _requested);
+            partial = count < _aheadBatch;
+            if (count <= 0 || partial && (_buffered > 0 || Interlocked.CompareExchange(ref _partialReceive, 1, 0) != 0))
+                return false;
+
+            _requested += count;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Ends a receive that gets no further than this: gives back <paramref name="unused"/> of the slots it holds, or of
+    /// the messages it reserved, and lets another receive ask for a partial batch.
+    /// </summary>
+    private void EndReceive(int unused, bool holdsSlots, bool partial)
+    {
+        if (!holdsSlots)
+        {
+            lock (_bufferLock)
+                _requested -= unused;
+        }
+
+        if (partial)
+            Volatile.Write(ref _partialReceive, 0);
+
+        if (holdsSlots && unused > 0)
+            ReleaseSlots(unused);
+        else
+            SignalRoomAhead();
+    }
+
+    /// <summary>Queues a receive's deliveries, as the sequences they are handled in, for <see cref="Pump"/>.</summary>
+    private void Buffer(MessageDelivery[] deliveries, int requested, bool partial)
+    {
+        var sequences = SplitIntoSequences(deliveries);
+        long bytes = 0;
+        foreach (var delivery in deliveries)
+            bytes += delivery.Message.Body.Length;
+
+        lock (_bufferLock)
+        {
+            foreach (var sequence in sequences)
+                _buffer.Enqueue(sequence);
+
+            _buffered += deliveries.Length;
+            _bufferedBytes += bytes;
+            _requested -= requested;
+            if (partial)
+                Volatile.Write(ref _partialReceive, 0);
+        }
+
+        Pump();
+        SignalRoomAhead();
+    }
+
+    /// <summary>
+    /// Gives buffered sequences the handler slots they need, one per message, in the order they were received, and
+    /// starts each once it has them all. Once the buffer is closed, releases them instead without running their handlers.
+    /// </summary>
+    private void Pump()
+    {
+        if (Volatile.Read(ref _buffered) == 0)
+            return;
+
+        List<List<MessageDelivery>>? starting = null, releasing = null;
+        int mode, returned = 0;
+        bool emptied;
+        lock (_bufferLock)
+        {
+            mode = _bufferMode;
+            if (mode != BufferPumping)
+            {
+                releasing = [.. _buffer];
+                _buffer.Clear();
+                returned = _pumpSlots;
+                _pumpSlots = 0;
+                _buffered = 0;
+                _bufferedBytes = 0;
+            }
+            else
+            {
+                while (_buffer.TryPeek(out var sequence))
+                {
+                    while (_pumpSlots < sequence.Count && _slots.Wait(0))
+                    {
+                        _pumpSlots++;
+                        _buffered--;
+                    }
+
+                    if (_pumpSlots < sequence.Count)
+                        break;
+
+                    _buffer.Dequeue();
+                    _pumpSlots = 0;
+                    foreach (var delivery in sequence)
+                        _bufferedBytes -= delivery.Message.Body.Length;
+
+                    (starting ??= []).Add(sequence);
+                }
+            }
+
+            emptied = _buffer.Count == 0;
+        }
+
+        if (starting is not null)
+        {
+            foreach (var sequence in starting)
+                _ = Task.Run(() => ProcessSequenceAsync(sequence), CancellationToken.None);
+        }
+
+        if (releasing is not null)
+        {
+            if (mode == BufferDropping)
+                _logger.LogWarning("Releasing {Count} buffered messages from the failed receiver for {Source}; they will be delivered again", releasing.Sum(r => r.Count), Source);
+
+            foreach (var sequence in releasing)
+                _ = ReleaseUnstartedAsync(sequence, mode);
+        }
+
+        if (returned > 0)
+            _slots.Release(returned);
+
+        if (emptied)
+            SignalRoom();
+    }
+
+    /// <summary>
+    /// Releases a buffered sequence whose handlers never ran. At shutdown it is abandoned, which delivers it again; when
+    /// its receiver is being replaced it is marked lost instead, and disposing the receiver releases it.
+    /// </summary>
+    private async Task ReleaseUnstartedAsync(List<MessageDelivery> sequence, int mode)
+    {
+        foreach (var delivery in sequence)
+        {
+            try
+            {
+                if (mode == BufferDropping || delivery.IsLeaseLost)
+                {
+                    await delivery.StopRenewingAsync().AnyContext();
+                    delivery.MarkLeaseLost();
+                    _handler.OnReleased(delivery, "lease-lost");
+                }
+                else
+                {
+                    await delivery.SettleAsync(static (receiver, message, ct) => receiver.AbandonAsync(message, TimeSpan.Zero, ct), "abandon", _logger).AnyContext();
+                    _handler.OnReleased(delivery, "cancelled");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error releasing message {MessageId} from {Source}", delivery.Message.MessageId, Source);
+            }
+            finally
+            {
+                await delivery.StopRenewingAsync().AnyContext();
+                Interlocked.Decrement(ref _inFlight);
+            }
+        }
+    }
+
+    /// <summary>Stops giving buffered messages slots, and releases them (see <see cref="ReleaseUnstartedAsync"/>).</summary>
+    private void CloseBuffer(int mode)
+    {
+        lock (_bufferLock)
+        {
+            if (_bufferMode < mode)
+                _bufferMode = mode;
+        }
+
+        Pump();
+    }
+
+    /// <summary>Starts giving buffered messages slots again, on a new receiver, which starts with one poll.</summary>
+    private void ReopenBuffer()
+    {
+        lock (_bufferLock)
+            _bufferMode = BufferPumping;
+
+        Volatile.Write(ref _pollingReceives, 1);
+    }
+
+    /// <summary>The depth to read ahead to now: zero while the buffered bodies exceed the byte cap.</summary>
+    private int GetDepth() => _ahead!.GetDepth(Interlocked.Read(ref _bufferedBytes));
+
+    /// <summary>
+    /// Whether a receive that reads ahead could start. At depth zero, once the buffer has drained, as for receives
+    /// into free slots; otherwise with room for a full batch, or for a partial one while nothing is buffered.
+    /// </summary>
+    private bool HasRoomAhead()
+    {
+        int buffered = Volatile.Read(ref _buffered), depth = GetDepth();
+        if (depth == 0)
+            return buffered == 0 && (Volatile.Read(ref _partialReceive) == 0 || _slots.CurrentCount >= _fullBatch);
+
+        int room = _slots.CurrentCount + depth - buffered - Volatile.Read(ref _requested);
+        return room >= _aheadBatch || room > 0 && buffered == 0 && Volatile.Read(ref _partialReceive) == 0;
+    }
+
+    private void SignalRoomAhead()
+    {
+        if (Volatile.Read(ref _waitingForRoom) > 0 && HasRoomAhead())
+            SignalRoom();
+    }
+
+    /// <summary>The depth rose, which may let receives waiting for room or for their turn poll.</summary>
+    private void OnDepthRaised()
+    {
+        SignalRoom();
+        SignalTurn();
+    }
+
+    /// <summary>
+    /// Whether the receive at <paramref name="index"/> may poll: within <see cref="_pollingReceives"/>, and at depth zero
+    /// within the receives it takes to fill the slots.
+    /// </summary>
+    private bool MayPoll(int index) => index < Math.Min(Volatile.Read(ref _pollingReceives), GetDepth() > 0 ? _aheadReceives : _concurrentReceives);
+
+    private async Task WaitForTurnAsync(int index, CancellationToken token)
+    {
+        var turn = Volatile.Read(ref _turn).Task;
+        if (MayPoll(index))
+            return;
+
+        try
+        {
+            await turn.WaitAsync(token).AnyContext();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void SignalTurn() => Interlocked.Exchange(ref _turn, NewSignal()).TrySetResult();
+
+    /// <summary>
+    /// A receive that returned fewer messages than it asked for found the source drained, so only the first receive keeps
+    /// polling; one that returned as many found a backlog, so one more may poll.
+    /// </summary>
+    private void UpdatePolling(int asked, int received)
+    {
+        if (_aheadReceives == 1)
+            return;
+
+        if (received < asked)
+        {
+            Volatile.Write(ref _pollingReceives, 1);
+            return;
+        }
+
+        int polling = Volatile.Read(ref _pollingReceives);
+        if (polling < _aheadReceives && Interlocked.CompareExchange(ref _pollingReceives, polling + 1, polling) == polling)
+            SignalTurn();
+    }
+
+    /// <summary>Records how long <paramref name="delivery"/> kept its slot: until its handler returned, or until now.</summary>
+    private void RecordSlotTime(MessageDelivery delivery, long started)
+    {
+        long returned = delivery.HandlerReturnedAt;
+        if (_ahead!.RecordSlotTime((returned != 0 ? returned : _timeProvider.GetTimestamp()) - started))
+            OnDepthRaised();
+    }
+
+    /// <summary>Wraps received messages for reading ahead, and records the leases a broker that decides them granted.</summary>
+    private MessageDelivery[] CreateDeliveries(IMessageReceiver receiver, IReadOnlyList<IncomingMessage> messages)
+    {
+        var deliveries = new MessageDelivery[messages.Count];
+        DateTimeOffset? now = null;
+        for (int i = 0; i < messages.Count; i++)
+        {
+            var message = messages[i];
+            deliveries[i] = new MessageDelivery(receiver, message, _renewer, _holds, _settlements, _timeProvider);
+            if (message.LeaseExpiresAt is { } expiresAt)
+            {
+                now ??= _timeProvider.GetUtcNow();
+                if (_ahead!.RecordLease(expiresAt - now.Value))
+                    OnDepthRaised();
+            }
+        }
+
+        return deliveries;
+    }
+
+    /// <summary>Records a failed receive and logs it. Returns true when the receiver must be replaced.</summary>
+    private bool RecordReceiveFailure(Exception ex, long round)
+    {
+        Status.RecordFailure(ex);
+        bool replace = _backoff.RecordFailure(ex, round, out bool counted, out var backoff);
+        if (replace)
+        {
+            _logger.LogError(ex, "Receiver for {Source} failed; replacing it in {Backoff}", Source, backoff);
+            return true;
+        }
+
+        if (counted)
+            _logger.LogError(ex, "Error receiving from {Source}; retrying in {Backoff}", Source, backoff);
+        else
+            _logger.LogDebug(ex, "Another receive from {Source} failed at the same time; retrying in {Backoff}", Source, backoff);
+
+        return false;
+    }
+
+    /// <summary>
+    /// Waits until no receive asks for a partial batch (or, in order, none is in flight), or a full batch of slots is
+    /// free; when reading ahead, until <see cref="HasRoomAhead"/>.
+    /// </summary>
     private async Task WaitForRoomAsync(CancellationToken token)
     {
         Interlocked.Increment(ref _waitingForRoom);
         try
         {
             var room = Volatile.Read(ref _room).Task;
-            if ((_inOrder is not null ? Volatile.Read(ref _inFlight) == 0 : Volatile.Read(ref _partialReceive) == 0) || _slots.CurrentCount >= _fullBatch)
+            if (HasRoom())
                 return;
 
             await room.WaitAsync(token).AnyContext();
@@ -352,6 +861,14 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             Interlocked.Decrement(ref _waitingForRoom);
         }
+    }
+
+    private bool HasRoom()
+    {
+        if (_ahead is not null)
+            return HasRoomAhead();
+
+        return (_inOrder is not null ? Volatile.Read(ref _inFlight) == 0 : Volatile.Read(ref _partialReceive) == 0) || _slots.CurrentCount >= _fullBatch;
     }
 
     /// <summary>Wakes the receives waiting for room, if any.</summary>
@@ -366,8 +883,15 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private void ReleaseSlots(int count)
     {
         _slots.Release(count);
-        if (_slots.CurrentCount >= _fullBatch)
+        if (_ahead is not null)
+        {
+            Pump();
+            SignalRoomAhead();
+        }
+        else if (_slots.CurrentCount >= _fullBatch)
+        {
             SignalRoom();
+        }
     }
 
     /// <summary>
@@ -498,7 +1022,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     continue;
                 }
 
+                long started = _ahead is null ? 0 : _timeProvider.GetTimestamp();
                 release = !await _handler.HandleAsync(delivery, _abortHandlers.Token).AnyContext() && sequence.Count > 1;
+                if (_ahead is not null)
+                    RecordSlotTime(delivery, started);
             }
             catch (Exception ex)
             {

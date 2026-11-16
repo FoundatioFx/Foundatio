@@ -17,8 +17,14 @@ public sealed record ProcessingStatus
     /// <summary>Whether the loop is starting, running, stopped or faulted.</summary>
     public required ProcessingState State { get; init; }
 
-    /// <summary>Messages being handled, or jobs running, right now.</summary>
+    /// <summary>Messages being handled, or jobs running, right now. Messages in <see cref="Buffered"/> are not counted.</summary>
     public int Active { get; init; }
+
+    /// <summary>
+    /// For a message processor that reads ahead (<see cref="Foundatio.Messaging.Transport.TransportCapabilities.ReceiveAhead"/>),
+    /// messages received and waiting, leased and renewed, for a free handler slot. The broker counts them as in flight.
+    /// </summary>
+    public int Buffered { get; init; }
 
     /// <summary>For the job worker, the running jobs of every registered job name.</summary>
     public IReadOnlyDictionary<string, int> ActiveByName { get; init; } = EmptyCounts;
