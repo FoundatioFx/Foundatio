@@ -31,7 +31,6 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, InMemorySource>> _topics = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _deduplication = new();
     private readonly TimeProvider _timeProvider;
-    private long _sequence;
     private bool _disposed;
 
     /// <summary>Creates a transport that supports every capability, with no limits.</summary>
@@ -85,7 +84,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
             if (destination.Kind == MessageDestinationKind.Queue)
             {
-                GetOrAddSource(MessageSource.Queue(destination.Name)).Add(message, now, NextSequence());
+                GetOrAddSource(MessageSource.Queue(destination.Name)).Add(message, now);
                 continue;
             }
 
@@ -94,7 +93,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 var source = MessageSource.Subscription(destination.Name, destination.SubscriptionName!);
                 var subscription = GetOrAddSource(source);
                 _topics.GetOrAdd(source.Topic!, _ => new()).TryAdd(subscription.Key, subscription);
-                subscription.Add(message, now, NextSequence());
+                subscription.Add(message, now);
                 continue;
             }
 
@@ -102,7 +101,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 continue;
 
             foreach (var subscription in subscriptions.Values)
-                subscription.Add(message, now, NextSequence());
+                subscription.Add(message, now);
         }
 
         return Task.CompletedTask;
@@ -284,8 +283,6 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         return !_deduplication.TryAdd(key, now.Add(DeduplicationWindow));
     }
 
-    private long NextSequence() => Interlocked.Increment(ref _sequence);
-
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private void RemoveInstanceSubscription(MessageSource source, InMemorySource state)
@@ -366,7 +363,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
             var headers = new Dictionary<string, string>(message.Headers) { [KnownHeaders.DeadLetterReason] = reason };
             var deadLetter = new OutgoingMessage { MessageId = message.MessageId, Body = message.Body, Headers = headers, GroupKey = message.GroupKey };
-            _transport.GetOrAddSource(deadLetterSource).Add(deadLetter, _transport._timeProvider.GetUtcNow(), _transport.NextSequence());
+            _transport.GetOrAddSource(deadLetterSource).Add(deadLetter, _transport._timeProvider.GetUtcNow());
 
             return Task.CompletedTask;
         }
@@ -411,7 +408,6 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     private sealed class InMemoryEntry
     {
         public required OutgoingMessage Message { get; init; }
-        public required long Sequence { get; init; }
         public required DateTimeOffset EnqueuedAt { get; init; }
         public DateTimeOffset AvailableAt { get; set; }
         public int DeliveryCount { get; set; }
@@ -419,11 +415,48 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         public Receiver? Owner { get; set; }
         public DateTimeOffset LeaseExpiresAt { get; set; }
         public LinkedListNode<InMemoryEntry>? Node { get; set; }
+
+        /// <summary>Where the entry was added in its source; entries are handed out in this order.</summary>
+        public long Position { get; set; }
+
+        /// <summary>The entry's place in its ordered group, or null when it is not ordered.</summary>
+        public LinkedListNode<InMemoryEntry>? GroupNode { get; set; }
+
+        /// <summary>Which of its source's indexes the entry is in.</summary>
+        public EntryIndex Index { get; set; }
+
+        /// <summary>True once a receive has looked at the entry; until then it waits after the source's cursor.</summary>
+        public bool Seen { get; set; }
     }
 
+    private enum EntryIndex
+    {
+        None,
+        Ready,
+        Waiting,
+        Leased
+    }
+
+    /// <summary>
+    /// One queue or subscription. Besides every entry in the order added, it indexes the entries a receive can hand out
+    /// now (by position), the ones it can hand out once they are due (by time), and the leased ones (by when their lease
+    /// ends), so a receive takes the earliest available entries and stops once its batch is full instead of looking at
+    /// every entry. Entries no receive has looked at yet wait after a cursor, in order. In an ordered group only the
+    /// earliest entry is indexed as available; a later one goes out in the same batch right behind it, when it is due.
+    /// </summary>
     private sealed class InMemorySource
     {
+        private static readonly Comparer<InMemoryEntry> ByPosition = Comparer<InMemoryEntry>.Create(static (a, b) => a.Position.CompareTo(b.Position));
+        private static readonly Comparer<InMemoryEntry> ByAvailableAt = Comparer<InMemoryEntry>.Create(static (a, b) => a.AvailableAt != b.AvailableAt ? a.AvailableAt.CompareTo(b.AvailableAt) : a.Position.CompareTo(b.Position));
+        private static readonly Comparer<InMemoryEntry> ByLeaseExpiry = Comparer<InMemoryEntry>.Create(static (a, b) => a.LeaseExpiresAt != b.LeaseExpiresAt ? a.LeaseExpiresAt.CompareTo(b.LeaseExpiresAt) : a.Position.CompareTo(b.Position));
+
         private readonly LinkedList<InMemoryEntry> _entries = new();
+        private readonly SortedSet<InMemoryEntry> _ready = new(ByPosition);
+        private readonly SortedSet<InMemoryEntry> _waiting = new(ByAvailableAt);
+        private readonly SortedSet<InMemoryEntry> _leased = new(ByLeaseExpiry);
+        private readonly Dictionary<string, LinkedList<InMemoryEntry>> _groups = new(StringComparer.Ordinal);
+        private LinkedListNode<InMemoryEntry>? _cursor;
+        private long _nextPosition;
         private TaskCompletionSource _changed = NewSignal();
         private volatile bool _deleted;
 
@@ -464,7 +497,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             {
                 foreach (var entry in _entries)
                 {
-                    if (entry.Receipt is not null && (!LeaseExpiration || entry.LeaseExpiresAt > now))
+                    if (IsLeased(entry, now))
                         inFlight++;
                     else if (entry.AvailableAt > now)
                         delayed++;
@@ -476,18 +509,31 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             return (queued, delayed, inFlight);
         }
 
-        public void Add(OutgoingMessage message, DateTimeOffset now, long sequence)
+        public void Add(OutgoingMessage message, DateTimeOffset now)
         {
             var entry = new InMemoryEntry
             {
                 Message = message,
-                Sequence = sequence,
                 EnqueuedAt = now,
                 AvailableAt = message.DeliverAt is { } deliverAt && deliverAt > now ? deliverAt : now
             };
 
             lock (_entries)
+            {
+                entry.Position = ++_nextPosition;
                 entry.Node = _entries.AddLast(entry);
+                _cursor ??= entry.Node;
+
+                // A group's messages are handed out in order: later ones wait while an earlier one is leased or not yet due.
+                // Dead letters are not ordered, so all of a group's dead letters can be inspected at once.
+                if (OrderedGroups && !IsDeadLetter && message.GroupKey is { } group)
+                {
+                    if (!_groups.TryGetValue(group, out var entries))
+                        _groups[group] = entries = new LinkedList<InMemoryEntry>();
+
+                    entry.GroupNode = entries.AddLast(entry);
+                }
+            }
 
             Signal();
         }
@@ -498,37 +544,31 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             {
                 var changed = _changed.Task;
                 var result = new List<IncomingMessage>();
-                var blockedGroups = new HashSet<string>(StringComparer.Ordinal);
-                DateTimeOffset? nextChange = null;
 
-                foreach (var entry in _entries)
+                // Without lease expiration a delivery stays leased until it is settled or its receiver is disposed, which signal.
+                while (_leased.Min is { } ended && ended.LeaseExpiresAt <= now)
                 {
-                    // Without lease expiration a delivery stays leased until it is settled or its receiver is disposed, which signal.
-                    bool leased = entry.Receipt is not null && (!LeaseExpiration || entry.LeaseExpiresAt > now);
-                    bool available = !leased && entry.AvailableAt <= now;
-                    DateTimeOffset? changesAt = available ? null : leased ? (LeaseExpiration ? entry.LeaseExpiresAt : null) : entry.AvailableAt;
-                    if (changesAt is { } at && (nextChange is null || at < nextChange))
-                        nextChange = at;
+                    Unindex(ended);
+                    if (IsHead(ended))
+                        AddTo(_ready, ended, EntryIndex.Ready);
+                }
 
-                    // A group's messages are handed out in order: later ones wait while an earlier one is leased or not yet due.
-                    // Dead letters are not ordered, so all of a group's dead letters can be inspected at once.
-                    string? group = entry.Message.GroupKey;
-                    string? orderedGroup = IsDeadLetter || !OrderedGroups ? null : group;
-                    if (orderedGroup is not null && blockedGroups.Contains(orderedGroup))
-                        continue;
+                while (_waiting.Min is { } due && due.AvailableAt <= now)
+                {
+                    Unindex(due);
+                    AddTo(_ready, due, EntryIndex.Ready);
+                }
 
-                    if (!available || result.Count >= maxMessages)
-                    {
-                        if (orderedGroup is not null)
-                            blockedGroups.Add(orderedGroup);
-
-                        continue;
-                    }
-
+                List<InMemoryEntry>? followers = null;
+                while (result.Count < maxMessages && NextAvailable(now) is { } entry)
+                {
                     entry.DeliveryCount++;
                     entry.Receipt = Guid.NewGuid();
                     entry.LeaseExpiresAt = now.Add(leaseDuration);
                     entry.Owner = owner;
+                    if (LeaseExpiration)
+                        AddTo(_leased, entry, EntryIndex.Leased);
+
                     result.Add(new InMemoryDelivery
                     {
                         Owner = owner,
@@ -537,11 +577,34 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                         MessageId = entry.Message.MessageId,
                         Body = entry.Message.Body,
                         Headers = entry.Message.Headers,
-                        GroupKey = group,
+                        GroupKey = entry.Message.GroupKey,
                         EnqueuedAt = entry.EnqueuedAt,
                         DeliveryCount = entry.DeliveryCount
                     });
+
+                    // Once a group's message is handed out, its next one may follow in the same batch.
+                    if (entry.GroupNode?.Next?.Value is { Index: EntryIndex.None } next && IsAvailable(next, now))
+                    {
+                        next.Seen = true;
+                        AddTo(_ready, next, EntryIndex.Ready);
+                        (followers ??= []).Add(next);
+                    }
                 }
+
+                // A follower that did not fit now waits behind the leased message before it.
+                if (followers is not null)
+                {
+                    foreach (var follower in followers)
+                    {
+                        if (follower.Index == EntryIndex.Ready)
+                            Unindex(follower);
+                    }
+                }
+
+                AdvanceCursor();
+                DateTimeOffset? nextChange = _waiting.Min?.AvailableAt;
+                if (_leased.Min is { } leased && (nextChange is null || leased.LeaseExpiresAt < nextChange))
+                    nextChange = leased.LeaseExpiresAt;
 
                 return (result, nextChange, changed);
             }
@@ -552,8 +615,21 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             lock (_entries)
             {
                 ThrowIfStale(delivery);
-                _entries.Remove(delivery.Entry.Node!);
-                delivery.Entry.Node = null;
+                var entry = delivery.Entry;
+                Unindex(entry);
+                _entries.Remove(entry.Node!);
+                entry.Node = null;
+                if (entry.GroupNode is { } groupNode)
+                {
+                    var group = groupNode.List!;
+                    var next = groupNode.Previous is null ? groupNode.Next?.Value : null;
+                    group.Remove(groupNode);
+                    entry.GroupNode = null;
+                    if (group.Count == 0)
+                        _groups.Remove(entry.Message.GroupKey!);
+                    else if (next is not null)
+                        TrackNewHead(next);
+                }
             }
 
             Signal();
@@ -564,9 +640,13 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             lock (_entries)
             {
                 ThrowIfStale(delivery);
-                delivery.Entry.Receipt = null;
-                delivery.Entry.Owner = null;
-                delivery.Entry.AvailableAt = availableAt;
+                var entry = delivery.Entry;
+                Unindex(entry);
+                entry.Receipt = null;
+                entry.Owner = null;
+                entry.AvailableAt = availableAt;
+                if (IsHead(entry))
+                    AddTo(_waiting, entry, EntryIndex.Waiting);
             }
 
             Signal();
@@ -577,7 +657,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             lock (_entries)
             {
                 ThrowIfStale(delivery);
-                delivery.Entry.LeaseExpiresAt = leaseExpiresAt;
+                var entry = delivery.Entry;
+                Unindex(entry);
+                entry.LeaseExpiresAt = leaseExpiresAt;
+                if (LeaseExpiration)
+                    AddTo(_leased, entry, EntryIndex.Leased);
             }
         }
 
@@ -587,6 +671,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             {
                 _deleted = true;
                 _entries.Clear();
+                _ready.Clear();
+                _waiting.Clear();
+                _leased.Clear();
+                _groups.Clear();
+                _cursor = null;
             }
 
             Signal();
@@ -598,8 +687,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             {
                 foreach (var entry in _entries.Where(e => e.Owner == owner))
                 {
+                    Unindex(entry);
                     entry.Receipt = null;
                     entry.Owner = null;
+                    if (IsHead(entry))
+                        AddTo(_waiting, entry, EntryIndex.Waiting);
                 }
             }
 
@@ -616,6 +708,88 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             }
 
             previous.TrySetResult();
+        }
+
+        /// <summary>
+        /// Takes the available entry earliest in the source out of the indexes, looking at entries after the cursor as it
+        /// reaches them; null when none is available.
+        /// </summary>
+        private InMemoryEntry? NextAvailable(DateTimeOffset now)
+        {
+            while (true)
+            {
+                AdvanceCursor();
+                var ready = _ready.Min;
+                if (_cursor is null || ready is not null && ready.Position < _cursor.Value.Position)
+                {
+                    if (ready is not null)
+                        Unindex(ready);
+
+                    return ready;
+                }
+
+                var entry = _cursor.Value;
+                entry.Seen = true;
+                _cursor = _cursor.Next;
+                if (!IsHead(entry))
+                    continue;
+
+                if (entry.AvailableAt > now)
+                {
+                    AddTo(_waiting, entry, EntryIndex.Waiting);
+                    continue;
+                }
+
+                return entry;
+            }
+        }
+
+        /// <summary>Moves the cursor past entries a receive has already looked at, so it never rests on one that may be removed.</summary>
+        private void AdvanceCursor()
+        {
+            while (_cursor is { Value.Seen: true })
+                _cursor = _cursor.Next;
+        }
+
+        /// <summary>Indexes the earliest entry of a group once the one before it is gone.</summary>
+        private void TrackNewHead(InMemoryEntry entry)
+        {
+            // The cursor reaches entries no receive has looked at; a leased entry is indexed as leased, or stays leased
+            // until it is settled when leases do not expire.
+            if (!entry.Seen || entry.Index != EntryIndex.None || entry.Receipt is not null && !LeaseExpiration)
+                return;
+
+            AddTo(_waiting, entry, EntryIndex.Waiting);
+        }
+
+        private bool IsLeased(InMemoryEntry entry, DateTimeOffset now) => entry.Receipt is not null && (!LeaseExpiration || entry.LeaseExpiresAt > now);
+
+        private bool IsAvailable(InMemoryEntry entry, DateTimeOffset now) => !IsLeased(entry, now) && entry.AvailableAt <= now;
+
+        private static bool IsHead(InMemoryEntry entry) => entry.GroupNode?.Previous is null;
+
+        private static void AddTo(SortedSet<InMemoryEntry> index, InMemoryEntry entry, EntryIndex kind)
+        {
+            index.Add(entry);
+            entry.Index = kind;
+        }
+
+        private void Unindex(InMemoryEntry entry)
+        {
+            switch (entry.Index)
+            {
+                case EntryIndex.Ready:
+                    _ready.Remove(entry);
+                    break;
+                case EntryIndex.Waiting:
+                    _waiting.Remove(entry);
+                    break;
+                case EntryIndex.Leased:
+                    _leased.Remove(entry);
+                    break;
+            }
+
+            entry.Index = EntryIndex.None;
         }
 
         private void ThrowIfStale(InMemoryDelivery delivery)
