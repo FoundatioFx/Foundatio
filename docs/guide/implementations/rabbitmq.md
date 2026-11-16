@@ -60,7 +60,7 @@ For durable delayed delivery on newer brokers, use `RabbitMQMessageTransport` (b
 
 ## Messages and Events
 
-`RabbitMQMessageTransport` runs [Messages and Events](/guide/messages) on RabbitMQ 4 (tested on 4.2 and 4.3). Register it with `UseRabbitMQ`:
+`RabbitMQMessageTransport` runs [Messages and Events](/guide/messages) on RabbitMQ 4 (tested on 4.2, 4.3 and 4.4). Register it with `UseRabbitMQ`:
 
 ```csharp
 builder.Services.AddFoundatioMessaging(m => m
@@ -68,7 +68,7 @@ builder.Services.AddFoundatioMessaging(m => m
     .AddConsumer<SendReceiptHandler>());
 ```
 
-Queues and subscriptions are quorum queues, topics are fanout exchanges, and instance subscriptions are exclusive queues the broker removes with their connection. Delays wait in 28 shared levels of delay queues on the broker, so they need no plugin and survive restarts. Leases never expire: a delivery stays with its receiver's channel until it is settled, so raise the broker's `consumer_timeout` (30 minutes by default) for handlers that run longer. Groups are not ordered and messages are not deduplicated.
+Queues and subscriptions are quorum queues, topics are fanout exchanges, and instance subscriptions are exclusive queues the broker removes with their connection. Delays wait in 28 shared levels of delay queues on the broker, so they need no plugin and survive restarts; each queue, subscription or topic that gets a delayed message also gets a landing queue that delivers its due messages, so a target that refuses messages holds up only its own delays. Leases never expire: a delivery stays with its receiver's channel until it is settled, so raise the broker's `consumer_timeout` (30 minutes by default) for handlers that run longer. Groups are not ordered and messages are not deduplicated.
 
 See [Using RabbitMQ](/guide/messages#using-rabbitmq) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ#message-transport-preview) for options, names and limits.
 
