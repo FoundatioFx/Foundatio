@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -7,7 +6,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,9 +25,6 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
-    private readonly bool _usesBuiltInDynamicSizing;
-    private readonly bool _canShareListValues;
-    private readonly bool _shouldIsolateListSizing;
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
@@ -80,10 +75,6 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
-        _usesBuiltInDynamicSizing = _sizeCalculator?.Target is SizeCalculator calculator && _sizeCalculator == calculator.CalculateSize;
-        bool usesBuiltInFixedSizing = _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator fixedCalculator && _sizeCalculator == fixedCalculator.Calculate;
-        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _usesBuiltInDynamicSizing || usesBuiltInFixedSizing);
-        _shouldIsolateListSizing = _shouldClone && _hasSizeCalculator && !usesBuiltInFixedSizing;
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -577,600 +568,6 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             _logger.LogError(ex, "Unable to read cached value as {ValueType}: {Message}", typeof(T).Name, ex.Message);
             return null;
         }
-    }
-
-    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-        ArgumentNullException.ThrowIfNull(values);
-
-        if (expiresIn < CacheClientExtensions.MinimumExpiration)
-        {
-            await ListRemoveAsync(key, values).AnyContext();
-            return 0;
-        }
-
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
-
-        long added = values is string stringValue
-            ? ListAddPrepared<string>(key, new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { { stringValue, expiresAt } }, expiresAt)
-            : ListAdd(key, values, expiresAt);
-
-        if (added > 0)
-            await StartMaintenanceAsync().AnyContext();
-
-        return added;
-    }
-
-    private static HashSet<T> GetDistinctListValues<T>(IEnumerable<T> values) where T : notnull
-    {
-        bool canBeNull = default(T) is null;
-        if (values is HashSet<T> set && set.GetType() == typeof(HashSet<T>)
-            && ReferenceEquals(set.Comparer, EqualityComparer<T>.Default))
-        {
-            var copy = new HashSet<T>(set, set.Comparer);
-            if (canBeNull)
-                copy.Remove(default!);
-            return copy;
-        }
-
-        var items = new HashSet<T>();
-        if (values is T[] array)
-        {
-            foreach (var value in array)
-                if (!canBeNull || value is not null)
-                    items.Add(value);
-            return items;
-        }
-
-        foreach (var value in values)
-            if (!canBeNull || value is not null)
-                items.Add(value);
-        return items;
-    }
-
-    private long ListAdd<T>(string key, IEnumerable<T> values, DateTime? expiresAt) where T : notnull
-    {
-        if (!_canShareListValues && values is HashSet<T> set && set.GetType() == typeof(HashSet<T>)
-            && ReferenceEquals(set.Comparer, EqualityComparer<T>.Default)
-            && (typeof(T) == typeof(string) || typeof(T).IsPrimitive || typeof(T).IsEnum))
-        {
-            var dictionary = new Dictionary<T, DateTime?>(set.Count, set.Comparer);
-            bool canBeNull = default(T) is null;
-            foreach (var value in set)
-                if (!canBeNull || value is not null)
-                    dictionary.Add(value, expiresAt);
-
-            return dictionary.Count == 0 ? 0 : ListAddPrepared<T>(key, dictionary, expiresAt);
-        }
-
-        var items = GetDistinctListValues(values);
-        if (items.Count is 0)
-            return 0;
-
-        if (_canShareListValues)
-        {
-            long size = _hasSizeCalculator
-                ? CalculateEntrySize(new ListSizingValues<T>(items, expiresAt), typeof(Dictionary<T, DateTime?>))
-                : 0;
-            return size < 0 ? 0 : ListAddPrepared<T>(key, null, expiresAt, items, size);
-        }
-
-        return ListAddPrepared<T>(key, CreateListValues(items, expiresAt), expiresAt);
-    }
-
-    private ICollection CreateListValues<T>(HashSet<T> items, DateTime? expiresAt) where T : notnull
-    {
-        if (_canShareListValues && items.Count >= ListSnapshot<T>.BlockSize * ListSnapshot<T>.BlockSize)
-            return new ListSnapshot<T>(items, expiresAt, items.Comparer);
-
-        var values = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
-        foreach (var item in items)
-            values.Add(item, expiresAt);
-        return values;
-    }
-
-    private long ListAddPrepared<T>(string key, ICollection? values, DateTime? expiresAt, HashSet<T>? sharedItems = null, long inputSize = 0) where T : notnull
-    {
-        bool cloneAddedValues = _shouldClone && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
-        bool valueIsOwned = _shouldClone && !cloneAddedValues
-            && (!_shouldIsolateListSizing || _usesBuiltInDynamicSizing);
-        var entry = values is not null ? CreateEntry(values, expiresAt, valueIsOwned) : null;
-        if (values is not null && entry is null)
-            return 0;
-
-        Interlocked.Increment(ref _writes);
-
-        return UpdateEntry(key, current =>
-        {
-            if (IsInputExpired())
-                return (current, 0L);
-
-            if (current is null)
-            {
-                values ??= CreateListValues(sharedItems!, expiresAt);
-                entry ??= new CacheEntry(values, expiresAt, _timeProvider, shouldClone: false, size: inputSize);
-                // Callbacks can change member expirations, including between update attempts.
-                if (!_canShareListValues && !valueIsOwned)
-                    entry = entry.WithExpiration(GetListExpiration((Dictionary<T, DateTime?>)entry.StoredValue!));
-                var replacement = _canShareListValues && values is Dictionary<T, DateTime?> initial && initial.Count > ListSnapshot<T>.BlockSize
-                    ? entry.WithValue(new ListSnapshot<T>(initial), expiresAt, entry.Size)
-                    : entry;
-                return IsInputExpired() ? (current, 0L) : (replacement, (long)values.Count);
-            }
-
-            if (current.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
-            {
-                ICollection<T> keys = sharedItems is not null ? sharedItems : ((Dictionary<T, DateTime?>)entry!.StoredValue!).Keys;
-                var list = stored.Update(keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
-                long listSize = _usesBuiltInDynamicSizing ? CalculateEntrySize(list) : entry?.Size ?? inputSize;
-                if (listSize < 0)
-                    return (current, 0L);
-
-                var replacement = current.WithValue(list, list.ExpiresAt, listSize);
-                return IsInputExpired() ? (current, 0L) : (replacement, (long)(values?.Count ?? sharedItems!.Count));
-            }
-
-            if (CopyListValues<T>(current, out bool cloneAfterUpdate) is not { } dictionary)
-                throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
-
-            ExpireListValues(dictionary, key);
-            if (sharedItems is { } addedKeys)
-            {
-                EnsureListCapacity(dictionary, addedKeys, addedKeys.Comparer);
-                foreach (var item in addedKeys)
-                    dictionary[item] = expiresAt;
-            }
-            else
-            {
-                // Merge values after sizing and cloning, which can change the input dictionary.
-                var addedValues = (Dictionary<T, DateTime?>)(cloneAddedValues ? entry!.PeekValue() : entry!.StoredValue)!;
-                EnsureListCapacity(dictionary, addedValues.Keys, addedValues.Comparer);
-                foreach (var kvp in addedValues)
-                    dictionary[kvp.Key] = kvp.Value;
-            }
-
-            long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-            if (size < 0)
-                return (current, 0L);
-
-            var merged = WithListValues(current, dictionary, size, cloneAfterUpdate);
-            return IsInputExpired() ? (current, 0L) : (merged, (long)(values?.Count ?? sharedItems!.Count));
-        });
-
-        bool IsInputExpired() => expiresAt.HasValue && expiresAt < _timeProvider.GetUtcNow().UtcDateTime;
-    }
-
-    private CacheEntry WithListValues<T>(CacheEntry current, IDictionary<T, DateTime?> dictionary, long size, bool cloneAfterUpdate) where T : notnull
-    {
-        bool readExpirationAfterClone = cloneAfterUpdate && (dictionary switch
-        {
-            Dictionary<T, DateTime?> exact => exact.GetType() == typeof(Dictionary<T, DateTime?>),
-            SortedDictionary<T, DateTime?> exact => exact.GetType() == typeof(SortedDictionary<T, DateTime?>),
-            SortedList<T, DateTime?> exact => exact.GetType() == typeof(SortedList<T, DateTime?>),
-            ConcurrentDictionary<T, DateTime?> exact => exact.GetType() == typeof(ConcurrentDictionary<T, DateTime?>),
-#if NET9_0_OR_GREATER
-            OrderedDictionary<T, DateTime?> exact => exact.GetType() == typeof(OrderedDictionary<T, DateTime?>),
-#endif
-            _ => false
-        });
-        var expiresAt = readExpirationAfterClone ? null : GetListExpiration(dictionary);
-        if (cloneAfterUpdate)
-        {
-            object clone = ShouldCloneListComparer<T>(dictionary) || !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T))
-                ? CloneDictionaryWithComparer(dictionary)
-                : FastCloner.FastCloner.DeepCloneTo(dictionary, FastCloner.FastCloner.ShallowClone(dictionary))!;
-            if (readExpirationAfterClone)
-                expiresAt = GetListExpiration((IDictionary<T, DateTime?>)clone);
-            return current.WithValue(clone, expiresAt, size);
-        }
-
-        object value = _canShareListValues && dictionary is Dictionary<T, DateTime?> values
-            && values.GetType() == typeof(Dictionary<T, DateTime?>) && values.Count > ListSnapshot<T>.BlockSize
-            ? new ListSnapshot<T>(values)
-            : dictionary;
-        return _shouldIsolateListSizing && !_usesBuiltInDynamicSizing
-            ? current.WithClonedValue(value, expiresAt, size)
-            : current.WithValue(value, expiresAt, size);
-    }
-
-    private static void EnsureListCapacity<T>(IDictionary<T, DateTime?> dictionary, ICollection<T> items, IEqualityComparer<T> comparer) where T : notnull
-    {
-        if (dictionary is not Dictionary<T, DateTime?> values || items.Count <= values.EnsureCapacity(0) - values.Count)
-            return;
-
-        var distinctKeys = items.Count > 1 && !ReferenceEquals(values.Comparer, comparer)
-            ? new HashSet<T>(values.Comparer)
-            : null;
-        int capacity = values.Count;
-        foreach (var key in items)
-            if (!values.ContainsKey(key) && (distinctKeys is null || distinctKeys.Add(key)))
-                capacity = checked(capacity + 1);
-
-        values.EnsureCapacity(capacity);
-    }
-
-    private static bool UsesBuiltInListKeyEquality<T>(IEqualityComparer<T> comparer) =>
-        (typeof(T).IsPrimitive || typeof(T).IsEnum || typeof(T) == typeof(string))
-        && (ReferenceEquals(comparer, EqualityComparer<T>.Default)
-            || typeof(T) == typeof(string)
-            && (ReferenceEquals(comparer, StringComparer.Ordinal) || ReferenceEquals(comparer, StringComparer.OrdinalIgnoreCase)));
-
-    /// <summary>
-    /// Returns a private copy for the update attempt, or <c>null</c> if the entry does not hold a list.
-    /// Callback-capable graphs need another clone before publication because callbacks can retain the proposal.
-    /// </summary>
-    private IDictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry, out bool cloneAfterUpdate) where T : notnull
-    {
-        bool cloneRoot = _shouldClone && (entry.StoredValue switch
-        {
-            Dictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(Dictionary<T, DateTime?>),
-            SortedDictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(SortedDictionary<T, DateTime?>),
-            SortedList<T, DateTime?> dictionary => dictionary.GetType() != typeof(SortedList<T, DateTime?>),
-            ConcurrentDictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(ConcurrentDictionary<T, DateTime?>),
-#if NET9_0_OR_GREATER
-            OrderedDictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(OrderedDictionary<T, DateTime?>),
-#endif
-            _ => false
-        });
-        bool cloneComparer = ShouldCloneListComparer<T>(entry.StoredValue);
-        bool cloneKeys = _shouldClone && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
-        cloneAfterUpdate = cloneRoot || cloneComparer || cloneKeys;
-        object? value = cloneComparer || cloneRoot && cloneKeys ? CloneDictionaryWithComparer((IDictionary<T, DateTime?>)entry.StoredValue!)
-            : cloneRoot ? FastCloner.FastCloner.DeepCloneTo(entry.StoredValue, FastCloner.FastCloner.ShallowClone(entry.StoredValue))
-            : cloneKeys ? entry.PeekValue() : entry.StoredValue is IListSnapshot list ? list.GetSnapshot() : entry.StoredValue;
-        IDictionary<T, DateTime?>? copy = value switch
-        {
-            Dictionary<T, DateTime?> dictionary => cloneAfterUpdate ? dictionary : new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
-            SortedDictionary<T, DateTime?> dictionary => cloneAfterUpdate ? dictionary : new SortedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
-            SortedList<T, DateTime?> dictionary => cloneAfterUpdate ? dictionary : new SortedList<T, DateTime?>(dictionary, dictionary.Comparer),
-            ConcurrentDictionary<T, DateTime?> dictionary => cloneAfterUpdate ? dictionary : new ConcurrentDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
-#if NET9_0_OR_GREATER
-            OrderedDictionary<T, DateTime?> dictionary => cloneAfterUpdate ? dictionary : new OrderedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
-#endif
-            IDictionary<T, DateTime?> dictionary => throw new NotSupportedException($"List updates cannot preserve the comparer of {dictionary.GetType().FullName}."),
-            _ => null
-        };
-        return !_shouldClone && copy is not null && value is IDictionary<T, DateTime?> original && original.GetType() != copy.GetType()
-            ? FastCloner.FastCloner.ShallowCloneTo(copy, FastCloner.FastCloner.ShallowClone(original))
-            : copy;
-    }
-
-    private bool ShouldCloneListComparer<T>(object? value) where T : notnull
-    {
-        // Mutable comparers can reference the dictionary root or its views, even without a sizing callback.
-        if (!_shouldClone)
-            return false;
-
-        object? comparer = value switch
-        {
-            Dictionary<T, DateTime?> dictionary => dictionary.Comparer,
-            SortedDictionary<T, DateTime?> dictionary => dictionary.Comparer,
-            SortedList<T, DateTime?> dictionary => dictionary.Comparer,
-            ConcurrentDictionary<T, DateTime?> dictionary => dictionary.Comparer,
-#if NET9_0_OR_GREATER
-            OrderedDictionary<T, DateTime?> dictionary => dictionary.Comparer,
-#endif
-            _ => null
-        };
-        return comparer is not null && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(comparer.GetType());
-    }
-
-    private static IDictionary<TKey, TValue> CloneDictionaryWithComparer<TKey, TValue>(IDictionary<TKey, TValue> dictionary) where TKey : notnull
-    {
-        var clone = FastCloner.FastCloner.DeepCloneTo(dictionary, FastCloner.FastCloner.ShallowClone(dictionary))!;
-        RehashClonedDictionary(clone);
-        return clone;
-    }
-
-    private static void RehashClonedDictionary<TKey, TValue>(IDictionary<TKey, TValue> clone) where TKey : notnull
-    {
-        var entries = clone.ToArray();
-        // Rebuild under the cloned comparer while keeping dictionary, comparer and cached views in one graph.
-        clone.Clear();
-        if (clone is Dictionary<TKey, TValue> values && values.GetType() == typeof(Dictionary<TKey, TValue>)
-            && entries.Length <= values.EnsureCapacity(0) / 2)
-            values.TrimExcess(entries.Length);
-        foreach (var entry in entries)
-            clone.Add(entry.Key, entry.Value);
-    }
-
-    private int ExpireListValues<T>(IDictionary<T, DateTime?> dictionary, string existingKey) where T : notnull
-    {
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        int expiredValues;
-        if (dictionary is Dictionary<T, DateTime?> values && values.GetType() == typeof(Dictionary<T, DateTime?>)
-            && UsesBuiltInListKeyEquality(values.Comparer))
-        {
-            // Removing is safe during dictionary enumeration when comparisons cannot invoke user code.
-            expiredValues = 0;
-            foreach (var pair in values)
-                if (pair.Value < utcNow && values.Remove(pair.Key))
-                    expiredValues++;
-        }
-        else
-        {
-            expiredValues = RemoveExpiredValues(dictionary, utcNow);
-        }
-        if (expiredValues > 0 && _logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, existingKey);
-
-        return expiredValues;
-
-        static int RemoveExpiredValues(IDictionary<T, DateTime?> dictionary, DateTime utcNow)
-        {
-            var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
-            return expiredValueKeys.Count(dictionary.Remove);
-        }
-    }
-
-    private static DateTime? GetListExpiration<T>(IDictionary<T, DateTime?> dictionary) where T : notnull
-    {
-        if (dictionary is not Dictionary<T, DateTime?> values || values.GetType() != typeof(Dictionary<T, DateTime?>))
-            return dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-
-        DateTime? latest = null;
-        foreach (var pair in values)
-        {
-            if (pair.Value is not { } expiration)
-                return null;
-            if (!latest.HasValue || expiration > latest.Value)
-                latest = expiration;
-        }
-        return latest;
-    }
-
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-        ArgumentNullException.ThrowIfNull(values);
-
-        Interlocked.Increment(ref _writes);
-
-        if (values is string stringValue)
-            return Task.FromResult(ListRemove(key, new HashSet<string>([stringValue])));
-
-        var items = GetDistinctListValues(values);
-        if (items.Count is 0)
-            return Task.FromResult<long>(0);
-
-        return Task.FromResult(ListRemove(key, items));
-    }
-
-    private long ListRemove<T>(string key, HashSet<T> items) where T : notnull
-    {
-        long removed = UpdateEntry(key, current =>
-        {
-            if (current?.StoredValue is ListSnapshot<T> { Snapshot: null } list)
-            {
-                var replacement = list.Update(items, null, _timeProvider.GetUtcNow().UtcDateTime, remove: true, out long count);
-                if (ReferenceEquals(list, replacement))
-                    return (current, 0L);
-                if (replacement.Count == 0)
-                    return (null, count);
-
-                long listSize = _usesBuiltInDynamicSizing ? CalculateEntrySize(replacement) : current.Size;
-                return listSize < 0
-                    ? (current, 0L)
-                    : (current.WithValue(replacement, replacement.ExpiresAt, listSize), count);
-            }
-
-            object? value = current?.StoredValue is IListSnapshot snapshot ? snapshot.GetSnapshot() : current?.StoredValue;
-            if (current is null || value is not IDictionary<T, DateTime?> stored)
-                return (current, 0L);
-
-            IDictionary<T, DateTime?>? dictionary = null;
-            bool cloneAfterUpdate = false;
-            bool canInspectStored = !_shouldClone || stored.GetType() == typeof(Dictionary<T, DateTime?>)
-                && (typeof(T) == typeof(string) || !RuntimeHelpers.IsReferenceOrContainsReferences<T>())
-                && (ReferenceEquals(((Dictionary<T, DateTime?>)stored).Comparer, EqualityComparer<T>.Default)
-                    || typeof(T) == typeof(string)
-                    && (ReferenceEquals(((Dictionary<T, DateTime?>)stored).Comparer, StringComparer.Ordinal)
-                        || ReferenceEquals(((Dictionary<T, DateTime?>)stored).Comparer, StringComparer.OrdinalIgnoreCase)));
-            if (!canInspectStored)
-            {
-                if (stored is not Dictionary<T, DateTime?> and not SortedDictionary<T, DateTime?>
-                    and not SortedList<T, DateTime?> and not ConcurrentDictionary<T, DateTime?>
-#if NET9_0_OR_GREATER
-                    and not OrderedDictionary<T, DateTime?>
-#endif
-                    )
-                {
-                    var inspection = stored.GetType().IsValueType ? stored.DeepClone()
-                        : FastCloner.FastCloner.DeepCloneTo(stored, FastCloner.FastCloner.ShallowClone(stored))!;
-                    if (inspection.Count == 0)
-                        return (current, 0L);
-                    var inspectionTime = _timeProvider.GetUtcNow().UtcDateTime;
-                    if (!items.Any(inspection.ContainsKey) && !inspection.Any(kvp => kvp.Value < inspectionTime))
-                        return (current, 0L);
-                    throw new NotSupportedException($"List updates cannot preserve the comparer of {stored.GetType().FullName}.");
-                }
-
-                // Count, lookup and enumeration callbacks must run on the owned graph too.
-                dictionary = CopyListValues<T>(current, out cloneAfterUpdate)!;
-            }
-            else
-            {
-                if (stored.Count == 0)
-                    return (current, 0L);
-                var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-                if (!items.Any(stored.ContainsKey) && !stored.Any(kvp => kvp.Value < utcNow))
-                    return (current, 0L);
-            }
-
-            dictionary ??= CopyListValues<T>(current, out cloneAfterUpdate)!;
-            if (dictionary.Count == 0)
-                return (current, 0L);
-            int expired = ExpireListValues(dictionary, key);
-            long removedCount = items.Count(dictionary.Remove);
-            if (expired is 0 && removedCount is 0)
-                return (current, 0L);
-
-            if (dictionary.Count is 0)
-                return (null, removedCount);
-
-            long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-            return size < 0
-                ? (current, 0L)
-                : (WithListValues(current, dictionary, size, cloneAfterUpdate), removedCount);
-        });
-
-        if (removed > 0 && _logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Removed value from set with cache key: {Key}", key);
-
-        return removed;
-    }
-
-    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (page is < 1)
-            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
-
-        if (_memory.TryGetValue(key, out var entry) && !entry.IsExpired)
-        {
-            var list = entry.StoredValue as ListSnapshot<T>;
-            var dictionary = entry.StoredValue as Dictionary<T, DateTime?>;
-            bool readKeysDirectly = _shouldClone && dictionary?.GetType() == typeof(Dictionary<T, DateTime?>)
-                && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
-            if (list is { Snapshot: null } || readKeysDirectly)
-            {
-                Interlocked.Increment(ref _hits);
-                entry.RecordAccess();
-                var now = _timeProvider.GetUtcNow().UtcDateTime;
-                if (page.HasValue)
-                    return list is not null
-                        ? list.ReadPage(now, page.Value, pageSize)
-                        : ReadListPage(dictionary!, now, page.Value, pageSize);
-
-                var values = list is not null ? list.Read(now) : ReadListValues(dictionary!, now);
-                if (values.Length == 0)
-                    return new CacheValue<ICollection<T>>([], false);
-
-                return new CacheValue<ICollection<T>>(values, true);
-            }
-        }
-
-        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime?>>(key);
-        if (!dictionaryCacheValue.HasValue)
-            return new CacheValue<ICollection<T>>([], false);
-
-        // Filter out expired keys instead of mutating them via ExpireListValues.
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        if (page.HasValue && dictionaryCacheValue.Value is Dictionary<T, DateTime?> pagedDictionary && pagedDictionary.GetType() == typeof(Dictionary<T, DateTime?>))
-            return ReadListPage(pagedDictionary, utcNow, page.Value, pageSize);
-
-        var nonExpiredKeys = dictionaryCacheValue.Value.Where(kvp => kvp.Value is null || kvp.Value >= utcNow).Select(kvp => kvp.Key).ToArray();
-        if (nonExpiredKeys.Length is 0)
-            return new CacheValue<ICollection<T>>([], false);
-
-        if (!page.HasValue)
-            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
-
-        int skip = (page.Value - 1) * pageSize;
-        var pagedItems = nonExpiredKeys.Skip(skip).Take(pageSize).ToArray();
-        return new CacheValue<ICollection<T>>(pagedItems, true);
-    }
-
-    private static CacheValue<ICollection<T>> ReadListPage<T>(Dictionary<T, DateTime?> dictionary, DateTime utcNow, int page, int pageSize, bool checkExpiration = true) where T : notnull
-    {
-        var result = new ListPage<T>(dictionary.Count, page, pageSize);
-        if (checkExpiration)
-        {
-            foreach (var pair in dictionary)
-            {
-                if (pair.Value < utcNow)
-                    continue;
-                if (result.TrySkip())
-                    continue;
-                result.Add(pair.Key);
-                if (result.IsFull)
-                    break;
-            }
-        }
-        else
-        {
-            foreach (var pair in dictionary)
-            {
-                if (result.TrySkip())
-                    continue;
-                result.Add(pair.Key);
-                if (result.IsFull)
-                    break;
-            }
-        }
-        return result.ToCacheValue();
-    }
-
-    private struct ListPage<T> where T : notnull
-    {
-        private int _skip;
-        private readonly int _initialSkip;
-        private readonly int _capacity;
-        private T[]? _values;
-        private int _count;
-        private bool _hasValue;
-
-        public ListPage(int count, int page, int pageSize)
-        {
-            _skip = Math.Max(0, unchecked((page - 1) * pageSize));
-            _initialSkip = _skip;
-            _capacity = Math.Min(Math.Max(0, pageSize), Math.Max(0, count - _skip));
-        }
-
-        public bool IsFull => _hasValue && _count == _capacity;
-        public bool CanSkip(int count) => _capacity > 0 && _skip >= count;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySkip(int count = 1)
-        {
-            if (!CanSkip(count))
-                return false;
-
-            _skip -= count;
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Add(T value)
-        {
-            _hasValue = true;
-            if (_capacity == 0)
-                return;
-
-            _values ??= new T[_capacity];
-            _values[_count++] = value;
-        }
-
-        public CacheValue<ICollection<T>> ToCacheValue()
-        {
-            var values = _values ?? [];
-            if (_count != values.Length)
-                Array.Resize(ref values, _count);
-            return new CacheValue<ICollection<T>>(values, _hasValue || _skip < _initialSkip);
-        }
-    }
-
-    private static T[] ReadListValues<T>(Dictionary<T, DateTime?> dictionary, DateTime utcNow, bool checkExpiration = true) where T : notnull
-    {
-        var result = new T[dictionary.Count];
-        int count = 0;
-        if (checkExpiration)
-        {
-            foreach (var pair in dictionary)
-                if (pair.Value is null || pair.Value >= utcNow)
-                    result[count++] = pair.Key;
-        }
-        else
-        {
-            foreach (var pair in dictionary)
-                result[count++] = pair.Key;
-        }
-        if (count != result.Length)
-            Array.Resize(ref result, count);
-        return result;
     }
 
     private async Task<bool> SetInternalAsync(string key, CacheEntry entry, WriteMode mode)
@@ -1748,25 +1145,23 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         return new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, size, valueIsOwned);
     }
 
-    private interface IListSnapshot
+    private static IDictionary<TKey, TValue> CloneDictionaryWithComparer<TKey, TValue>(IDictionary<TKey, TValue> dictionary) where TKey : notnull
     {
-        object GetSnapshot();
-        string ValueTypeName { get; }
+        var clone = FastCloner.FastCloner.DeepCloneTo(dictionary, FastCloner.FastCloner.ShallowClone(dictionary))!;
+        RehashClonedDictionary(clone);
+        return clone;
     }
 
-    private sealed class ListSizingValues<T>(HashSet<T> items, DateTime? expiresAt) : ICollection where T : notnull
+    private static void RehashClonedDictionary<TKey, TValue>(IDictionary<TKey, TValue> clone) where TKey : notnull
     {
-        public int Count => items.Count;
-        bool ICollection.IsSynchronized => false;
-        object ICollection.SyncRoot => this;
-        void ICollection.CopyTo(Array array, int index) => Enumerate().ToArray().CopyTo(array, index);
-        IEnumerator IEnumerable.GetEnumerator() => Enumerate().GetEnumerator();
-
-        private IEnumerable<KeyValuePair<T, DateTime?>> Enumerate()
-        {
-            foreach (var item in items)
-                yield return new KeyValuePair<T, DateTime?>(item, expiresAt);
-        }
+        var entries = clone.ToArray();
+        // Rebuild under the cloned comparer while keeping dictionary, comparer and cached views in one graph.
+        clone.Clear();
+        if (clone is Dictionary<TKey, TValue> values && values.GetType() == typeof(Dictionary<TKey, TValue>)
+            && entries.Length <= values.EnsureCapacity(0) / 2)
+            values.TrimExcess(entries.Length);
+        foreach (var entry in entries)
+            clone.Add(entry.Key, entry.Value);
     }
 
     /// <summary>
@@ -1800,7 +1195,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
-            _cloneDictionaryKeys = _shouldClone && RequiresDictionaryKeyCloning(value?.GetType());
+            _cloneDictionaryKeys = _shouldClone && RequiresDictionaryKeyCloning(GetPayloadType(value));
             _cacheValue = _shouldClone && !valueIsOwned ? CloneValue(value, _cloneDictionaryKeys) : value;
             var utcNow = _timeProvider.GetUtcNow();
             LastAccessTicks = utcNow.Ticks;
@@ -1816,7 +1211,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             _shouldClone = source._shouldClone;
             _cloneDictionaryKeys = _shouldClone && (cacheValue?.GetType() == source._cacheValue?.GetType()
                 ? source._cloneDictionaryKeys
-                : RequiresDictionaryKeyCloning(cacheValue?.GetType()));
+                : RequiresDictionaryKeyCloning(GetPayloadType(cacheValue)));
             _cacheValue = cacheValue;
             LastAccessTicks = source.LastAccessTicks;
             LastModifiedTicks = lastModifiedTicks;
@@ -1862,11 +1257,16 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         /// </summary>
         internal object? PeekValue()
         {
-            object? value = _cacheValue is IListSnapshot list ? list.GetSnapshot() : _cacheValue;
-            return _shouldClone ? CloneValue(value, _cloneDictionaryKeys) : value;
+            if (_cacheValue is ICacheList list)
+                return _shouldClone ? list.Clone(_cloneDictionaryKeys) : list.Expose();
+
+            return _shouldClone ? CloneValue(_cacheValue, _cloneDictionaryKeys) : _cacheValue;
         }
 
-        private static bool RequiresDictionaryKeyCloning(Type? type)
+        /// <summary>Lists are read as dictionaries, so they clone like the dictionary type they return.</summary>
+        private static Type? GetPayloadType(object? value) => value is ICacheList list ? list.DictionaryType : value?.GetType();
+
+        internal static bool RequiresDictionaryKeyCloning(Type? type)
         {
             if (type is null || !type.IsGenericType || type.GetGenericTypeDefinition() != typeof(Dictionary<,>))
                 return false;
@@ -1875,7 +1275,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             return !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(keyType);
         }
 
-        private static object? CloneValue(object? value, bool forceDictionaryRebuild)
+        internal static object? CloneValue(object? value, bool forceDictionaryRebuild)
         {
             if (value is null)
                 return null;
@@ -1976,11 +1376,6 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             return new CacheEntry(this, value, expiresAt, size, utcNowTicks) { LastAccessTicks = utcNowTicks };
         }
 
-        internal CacheEntry WithClonedValue(object? value, DateTime? expiresAt, long size)
-        {
-            return WithValue(CloneValue(value, RequiresDictionaryKeyCloning(value?.GetType())), expiresAt, size);
-        }
-
         [return: MaybeNull]
         public T GetValue<T>()
         {
@@ -2063,7 +1458,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         return size;
     }
 
-    private static string GetEntryTypeName(object? value) => value is IListSnapshot list ? list.ValueTypeName : value?.GetType().Name ?? "null";
+    private static string GetEntryTypeName(object? value) => value is ICacheList list ? list.DictionaryType.Name : value?.GetType().Name ?? "null";
 
     private static bool TypeRequiresCloning(Type? t)
     {
