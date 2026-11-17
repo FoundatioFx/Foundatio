@@ -409,8 +409,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             _logger.LogWarning("Memory size counter would overflow. Clamping to {MaxValue}. Current={Current}, Delta={Delta}",
                 Int64.MaxValue, before, delta);
 
-        _logger.LogTrace("UpdateMemorySize: Delta={Delta}, Before={Before}, After={After}, Max={Max}",
-            delta, before, after, _maxMemorySize);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("UpdateMemorySize: Delta={Delta}, Before={Before}, After={After}, Max={Max}",
+                delta, before, after, _maxMemorySize);
         return true;
     }
 
