@@ -6506,9 +6506,11 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RemoveIfEqualAsync_WithExpiredIncompatibleValue_ReturnsFalseWithoutComparisonAsync(bool throwingEquality)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ConditionalMutation_WithExpiredIncompatibleValue_ReturnsFalseWithoutComparisonAsync(bool replace, bool throwingEquality)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -6523,7 +6525,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         timeProvider.Advance(TimeSpan.FromMinutes(2));
 
         // Act
-        bool changed = await cache.RemoveIfEqualAsync("key", value);
+        bool changed = replace
+            ? await cache.ReplaceIfEqualAsync("key", value, value)
+            : await cache.RemoveIfEqualAsync("key", value);
 
         // Assert
         Assert.False(changed);
@@ -6706,32 +6710,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         Assert.False(replaced);
         Assert.False(await cache.ExistsAsync("lease"));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ReplaceIfEqualAsync_WithExpiredIncompatibleValue_ReturnsFalseWithoutComparisonAsync(bool throwingEquality)
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
-        int comparisons = 0;
-        var value = new ComparedValue("owner", () =>
-        {
-            comparisons++;
-            throw new InvalidOperationException("Comparison failed");
-        });
-        Publish(cache, "key", CreateEntry(throwingEquality ? value : new object(), timeProvider, TimeSpan.FromMinutes(1)));
-        timeProvider.Advance(TimeSpan.FromMinutes(2));
-
-        // Act
-        bool changed = await cache.ReplaceIfEqualAsync("key", value, value);
-
-        // Assert
-        Assert.False(changed);
-        Assert.Equal(0, comparisons);
-        Assert.False(await cache.ExistsAsync("key"));
     }
 
     [Fact]
