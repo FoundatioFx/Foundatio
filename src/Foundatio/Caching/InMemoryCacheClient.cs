@@ -311,26 +311,27 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </param>
     internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
-        bool reclaimedExpired = false;
-        var result = UpdateStoredEntry(key, stored =>
+        while (true)
         {
-            reclaimedExpired = stored is { IsExpired: true };
-            var decision = update(reclaimedExpired ? null : stored);
+            _memory.TryGetValue(key, out var stored);
+            bool reclaimedExpired = stored is { IsExpired: true };
+            var (desired, result) = update(reclaimedExpired ? null : stored);
             if (!reclaimedExpired && stored is { IsExpired: true })
             {
                 // Sizing, cloning or conversion can outlive the observed entry. Recompute from a missing key
                 // instead of publishing a decision that would revive its expired value.
                 reclaimedExpired = true;
-                return update(null);
+                (desired, result) = update(null);
             }
 
-            return decision;
-        });
+            if (!ReferenceEquals(desired, stored) && !TryPublish(key, stored, desired))
+                continue;
 
-        if (reclaimedExpired)
-            OnItemExpired(key);
+            if (reclaimedExpired)
+                OnItemExpired(key);
 
-        return result;
+            return result;
+        }
     }
 
     /// <summary>
