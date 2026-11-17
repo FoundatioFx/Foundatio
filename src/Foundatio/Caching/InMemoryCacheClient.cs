@@ -206,7 +206,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
-        var removed = UpdateStoredEntry<CacheEntry?>(key, current => (null, current));
+        var removed = RemoveEntry(key);
 
         // Return false if the entry was expired (consistent with Redis behavior)
         return Task.FromResult(removed is { IsExpired: false });
@@ -242,7 +242,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             if (_logger.IsEnabled(LogLevel.Trace))
                 _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
-            if (UpdateStoredEntry<bool>(key, current => (null, current is not null)))
+            if (RemoveEntry(key) is not null)
                 removed++;
         }
 
@@ -294,7 +294,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("Removing expired key: {Key}", key);
-        if (!UpdateStoredEntry<bool>(key, current => (null, current is not null)))
+        if (RemoveEntry(key) is null)
             return 0;
 
         OnItemExpired(key, sendNotification);
@@ -340,20 +340,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Like <see cref="UpdateEntry{TResult}"/>, but the callback sees the stored entry even when it has expired, and
-    /// no event is raised. Only maintenance, compaction and explicit removal need this view.
+    /// Removes and returns the stored entry, including an expired entry, without raising an expiration event.
     /// </summary>
-    private TResult UpdateStoredEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
+    private CacheEntry? RemoveEntry(string key)
     {
-        // Retries only when another writer changed the key first, so some writer always makes progress; Dispose clears
-        // the store, which lets in-flight updates finish on the next attempt.
-        while (true)
+        while (_memory.TryGetValue(key, out var current))
         {
-            _memory.TryGetValue(key, out var current);
-            var (desired, result) = update(current);
-            if (ReferenceEquals(desired, current) || TryPublish(key, current, desired))
-                return result;
+            if (TryPublish(key, current, null))
+                return current;
         }
+
+        return null;
     }
 
     /// <summary>
@@ -437,7 +434,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </summary>
     internal bool TryRemoveEntry(string key, CacheEntry observed)
     {
-        return UpdateStoredEntry(key, current => ReferenceEquals(current, observed) ? (null, true) : (current, false));
+        return _memory.TryGetValue(key, out var current)
+            && ReferenceEquals(current, observed)
+            && TryPublish(key, current, null);
     }
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
