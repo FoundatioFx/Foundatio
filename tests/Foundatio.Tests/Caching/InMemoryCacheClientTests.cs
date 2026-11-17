@@ -6275,6 +6275,49 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CacheWrites_WithTraceLogging_PreserveMessages(bool traceEnabled)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
+        using var logger = new TestLogger(o => o.DefaultLogLevel = traceEnabled ? LogLevel.Trace : LogLevel.Information);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).CloneValues(false).LoggerFactory(logger));
+
+        Assert.True(await cache.SetAsync("scalar", 1));
+        Assert.True(await cache.ReplaceIfEqualAsync("scalar", 2, 1));
+        Assert.True(await cache.RemoveIfEqualAsync("scalar", 2));
+        Assert.True(await cache.SetAsync("other", 3));
+        Assert.True(await cache.RemoveAsync("other"));
+        await cache.ListAddAsync("list", new[] { 1 }, TimeSpan.FromMilliseconds(10));
+        await cache.ListAddAsync("list", new[] { 2 });
+        clock.Advance(TimeSpan.FromMilliseconds(20));
+        await cache.ListAddAsync("list", new[] { 3 });
+        Assert.Equal(1, await cache.ListRemoveAsync("list", new[] { 2 }));
+        Assert.Equal(1, await cache.RemoveAllAsync(new[] { "list" }));
+        Assert.False(await cache.SetAsync("expired", 0, TimeSpan.Zero));
+
+        string[] expected =
+        [
+            "Set cache key: scalar",
+            "ReplaceIfEqualAsync Key: scalar Expected: 1",
+            "ReplaceIfEqualAsync Key: scalar Expected: 1 Success: True",
+            "RemoveIfEqualAsync Key: scalar Expected: 2",
+            "RemoveIfEqualAsync Key: scalar Expected: 2 Success: True",
+            "Set cache key: other",
+            "RemoveAsync: Removing key: other",
+            "Removed 1 expired values for key: list",
+            "Removed value from set with cache key: list",
+            "RemoveAllAsync: Removing key: list",
+            "Removing expired key: expired"
+        ];
+        var messages = logger.LogEntries
+            .Where(entry => entry.LogLevel == LogLevel.Trace && !entry.Message.StartsWith("StartMaintenanceAsync called", StringComparison.Ordinal))
+            .Select(entry => entry.Message);
+        Assert.Equal(traceEnabled ? expected : [], messages);
+        Assert.Empty(cache.Items);
+    }
+
     [Fact]
     public async Task MemorySize_WithLoggerCallback_AllowsConcurrentClear()
     {

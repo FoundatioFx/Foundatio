@@ -204,7 +204,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
         var removed = UpdateStoredEntry<CacheEntry?>(key, current => (null, current));
 
         // Return false if the entry was expired (consistent with Redis behavior)
@@ -215,7 +216,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         bool success = UpdateLease<bool>(key, current => EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected)
             ? (null, true)
@@ -223,7 +225,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         await StartMaintenanceAsync().AnyContext();
 
-        _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
         return success;
     }
 
@@ -237,7 +240,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
 
-            _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
             if (UpdateStoredEntry<bool>(key, current => (null, current is not null)))
                 removed++;
         }
@@ -288,7 +292,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         // Consideration: We could reduce the amount of calls to this by updating ExpiresAt and only having maintenance remove keys.
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        _logger.LogTrace("Removing expired key: {Key}", key);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Removing expired key: {Key}", key);
         if (!UpdateStoredEntry<bool>(key, current => (null, current is not null)))
             return 0;
 
@@ -900,7 +905,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             expiredValues = RemoveExpiredValues(dictionary, utcNow);
         }
-        if (expiredValues > 0)
+        if (expiredValues > 0 && _logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, existingKey);
 
         return expiredValues;
@@ -1023,7 +1028,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 : (WithListValues(current, dictionary, size, cloneAfterUpdate), removedCount);
         });
 
-        if (removed > 0)
+        if (removed > 0 && _logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("Removed value from set with cache key: {Key}", key);
 
         return removed;
@@ -1196,7 +1201,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             _ => (entry, true)
         });
 
-        if (wasUpdated)
+        if (wasUpdated && _logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("Set cache key: {Key}", key);
 
         // Check if compaction is needed AFTER memory size update
@@ -1263,7 +1268,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return false;
         }
 
-        _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         Interlocked.Increment(ref _writes);
 
@@ -1284,7 +1290,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         await StartMaintenanceAsync().AnyContext();
 
-        _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
 
         return success;
     }
