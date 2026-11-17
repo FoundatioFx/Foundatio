@@ -219,9 +219,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
-        bool success = UpdateLease<bool>(key, current => EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected)
+        bool success = UpdateEntry<bool>(key, current => current is not null && EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected)
             ? (null, true)
-            : null, missResult: false);
+            : (current, false));
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -351,37 +351,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Reclaims a lease whose entry expired while the caller was comparing it, raising <see cref="ItemExpired"/>
-    /// only when the reclaiming attempt is the one that was published.
-    /// </summary>
-    private TResult UpdateLease<TResult>(string key, Func<CacheEntry, (CacheEntry? Entry, TResult Result)?> update, TResult missResult)
-    {
-        bool reclaimed = false;
-        var result = UpdateEntry(key, current =>
-        {
-            reclaimed = false;
-            if (current is null)
-                return (current, missResult);
-
-            var decision = update(current);
-
-            // A lease that expired while it was being compared no longer belongs to the caller: reclaim it
-            if (current.IsExpired)
-            {
-                reclaimed = true;
-                return (null, missResult);
-            }
-
-            return decision ?? (current, missResult);
-        });
-
-        if (reclaimed)
-            OnItemExpired(key);
-
-        return result;
     }
 
     /// <summary>
@@ -1277,15 +1246,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         // Build the replacement only once the expected value matches, so a mismatch never pays for (or throws
         // from) sizing and cloning the new value. It is built at most once, even when the update retries.
         CacheEntry? replacement = null;
-        bool success = UpdateLease<bool>(key, current =>
+        bool success = UpdateEntry<bool>(key, current =>
         {
-            if (!EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
-                return null;
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return (current, false);
 
             // A lease that expires while it is being sized is reclaimed too, so it is never revived
             replacement ??= CreateEntry(value, expiresAt);
-            return replacement is null || replacement.IsExpired ? null : (replacement, true);
-        }, missResult: false);
+            return replacement is null || replacement.IsExpired ? (current, false) : (replacement, true);
+        });
 
         await StartMaintenanceAsync().AnyContext();
 
