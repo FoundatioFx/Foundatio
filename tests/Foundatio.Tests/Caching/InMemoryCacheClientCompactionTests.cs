@@ -53,6 +53,18 @@ public class InMemoryCacheClientCompactionTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task SetAsync_WithEntryFarAboveMemoryLimit_CompactsImmediately()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.MinValue);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).WithFixedSizing(1, 250_000_000));
+
+        Assert.True(await cache.SetAsync("large", 1));
+
+        Assert.False(await cache.ExistsAsync("large"));
+        Assert.Equal(0, cache.CurrentMemorySize);
+    }
+
+    [Fact]
     public async Task DoMaintenanceAsync_WhenEvictionCandidateIsReplaced_DoesNotSpendRemovalBudget()
     {
         // Arrange: 10 entries over the limit, so the pass's budget is 20 removals. The oldest entry is replaced

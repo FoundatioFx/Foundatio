@@ -2692,7 +2692,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true, 0)]
     [InlineData(true, 1)]
     [InlineData(true, 2)]
-    [InlineData(true, 3, Skip = "FastCloner 3.5.2 can overflow cloning ConcurrentDictionary internal cycles: https://github.com/lofcz/FastCloner/pull/58")]
+    [InlineData(true, 3)]
     [InlineData(true, 4)]
     public async Task ListAddAsync_WithCustomComparer_PreservesComparerAcrossUpdates(bool cloneValues, int dictionaryType)
     {
@@ -6371,6 +6371,21 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         Assert.Empty(cache.Items);
         Assert.Equal(0, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public async Task MemorySize_AfterSaturation_RecoversRemainingEntrySizes()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.MinValue);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).MaxMemorySize(Int64.MaxValue)
+            .SizeCalculator(value => (long)value));
+        await cache.SetAsync("large", Int64.MaxValue);
+        await cache.SetAsync("small", 42L);
+        Assert.Equal(Int64.MaxValue, cache.RecalculateMemorySize());
+
+        Assert.True(await cache.RemoveAsync("large"));
+        Assert.Equal(42, cache.CurrentMemorySize);
+        Assert.Equal(cache.CurrentMemorySize, cache.RecalculateMemorySize());
     }
 
     [Fact]
