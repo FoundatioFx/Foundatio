@@ -131,12 +131,14 @@ Queues that do not use the value for delivery log a single debug message the fir
 | InMemory | Re-added after a timer | At-least-once | Pending retries are lost if the process exits |
 | Redis | Wait list | At-least-once | Moved back by queue maintenance |
 | Azure Storage Queue | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
-| Azure Service Bus | Scheduled copy of the message; immediate abandon on session-enabled queues or when duplicate detection is enabled | At-least-once | The copy is sent before the original is completed, so the original can be redelivered alongside the retry if completion fails. It keeps `MessageId`, `CorrelationId`, `Subject`, `ContentType` and properties. Session-enabled queues ignore `RetryDelay` so the retry stays at the head of its group |
+| Azure Service Bus | Scheduled copy on non-session queues. With duplicate detection, support depends on the provider version (see below) | At-least-once | The provider sends the copy before completing the original. If completion fails, both can be delivered. The copy retains `CorrelationId`, `Subject`, `ContentType`, and application metadata. Session-enabled queues abandon immediately so the retry stays at the head of its group |
 | SQS | Visibility timeout on the same message | At-least-once | Message ID is unchanged. On FIFO queues, later messages in the group wait for the retry |
 
 Handlers should be idempotent with every provider; see [message loss and duplicates](https://learn.microsoft.com/azure/service-bus-messaging/service-bus-message-loss-and-duplicates) for the Service Bus guidance.
 
-Service Bus delayed retries reuse the original `MessageId`, so on a queue with [duplicate detection](https://learn.microsoft.com/azure/service-bus-messaging/duplicate-detection) enabled (`RequiresDuplicateDetection`) the copy would be discarded as a duplicate. The queue therefore abandons immediately instead and does not apply `RetryDelay` when duplicate detection is enabled.
+On non-session queues without [duplicate detection](https://learn.microsoft.com/azure/service-bus-messaging/duplicate-detection), scheduled retries keep the original broker `MessageId`. With duplicate detection enabled, Foundatio.AzureServiceBus 13.0.5 abandons immediately because the broker would discard a copy with the same ID.
+
+When the provider schedules a retry on a queue with duplicate detection, the copy gets a new broker `MessageId`, which the consumer sees as `entry.Id`. For idempotency across retries, use a stable business operation ID from the payload or application properties, such as a payment request ID. Azure supplies the queue's duplicate-detection setting. When using the emulator, set `RequiresDuplicateDetection` to match the queue configuration.
 
 ---
 
