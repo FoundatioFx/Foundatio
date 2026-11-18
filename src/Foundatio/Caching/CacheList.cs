@@ -381,6 +381,12 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
             return new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer);
         }
 
+        if (type == typeof(OrderedDictionary<T, DateTime?>))
+        {
+            var ordered = (OrderedDictionary<T, DateTime?>)values;
+            return new OrderedDictionary<T, DateTime?>(ordered, ordered.Comparer);
+        }
+
         if (type == typeof(SortedDictionary<T, DateTime?>))
         {
             var sorted = (SortedDictionary<T, DateTime?>)values;
