@@ -190,7 +190,7 @@ long newValue = await distributedCache.IncrementAsync(key, amount, null);
 await localCache.SetAsync(key, newValue, null);  // Both caches: no expiration
 ```
 
-**List updates** apply the changed members to a warm local list. On a local miss, `ListAddAsync` checks whether the distributed key exists before writing. It can seed a new list locally. An existing distributed list stays cold until an unpaged read fetches all members. A partial write count evicts the local list. An overlapping local add or a peer invalidation for the key keeps the entry cold when the pending add finishes.
+**List updates** apply the changed members to a warm local list. On a local miss, `ListAddAsync` checks whether the distributed key exists before writing. It can seed a new list locally. An existing distributed list stays cold until an unpaged read fetches all members. A partial write count evicts the local list. If another write, expiration change, or invalidation affects the same key while the add is pending, the next read reloads the list from the distributed cache.
 
 **Remove to invalidate** - Used for conditional operations where we don't know the actual value:
 

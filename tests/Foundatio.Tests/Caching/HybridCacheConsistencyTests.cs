@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Messaging;
@@ -41,20 +42,13 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         using var peer = CreateCache(distributedCache: distributed);
         var secondWriter = useSecondClient ? peer : cache;
 
+        distributed.AfterNextWrite(async () => Assert.Equal(1, await secondWriter.ListAddAsync(key, [2])));
+
         // Act
-        var first = cache.ListAddAsync(key, [1]);
-        try
-        {
-            await distributed.FirstWriteCommitted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
-            Assert.Equal(1, await secondWriter.ListAddAsync(key, [2]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
-        }
-        finally
-        {
-            distributed.ReleaseResponse.TrySetResult();
-        }
-        Assert.Equal(1, await first);
+        long added = await cache.ListAddAsync(key, [1]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
 
         // Assert
+        Assert.Equal(1, added);
         Assert.Equal([1, 2], (await cache.GetListAsync<int>(key)).Value.Order());
     }
 
@@ -93,35 +87,64 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
 
-        // Act
         var remover = useSecondClient ? peer : cache;
-        var write = cache.ListAddAsync(key, [1]);
-        try
+        distributed.AfterNextWrite(() => removal switch
         {
-            await distributed.FirstWriteCommitted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
-            switch (removal)
-            {
-                case "key":
-                    await remover.RemoveAsync(key);
-                    break;
-                case "member":
-                    await remover.ListRemoveAsync(key, [1]);
-                    break;
-                case "prefix":
-                    await remover.RemoveByPrefixAsync("pending:");
-                    break;
-                case "all":
-                    await remover.RemoveAllAsync();
-                    break;
-            }
-        }
-        finally
-        {
-            distributed.ReleaseResponse.TrySetResult();
-            await write.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
-        }
+            "key" => remover.RemoveAsync(key),
+            "member" => remover.ListRemoveAsync(key, [1]),
+            "prefix" => remover.RemoveByPrefixAsync("pending:"),
+            "all" => remover.RemoveAllAsync(),
+            _ => throw new ArgumentOutOfRangeException(nameof(removal))
+        });
+
+        // Act
+        await cache.ListAddAsync(key, [1]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
 
         // Assert
+        Assert.False((await cache.GetListAsync<int>(key)).HasValue);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WhenReplacedBeforeResponse_PreservesReplacement(bool setMultiple)
+    {
+        // Arrange
+        const string key = "pending:replacement";
+        using var distributed = new DelayedListCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        distributed.AfterNextWrite(() => setMultiple
+            ? cache.SetAllAsync(new Dictionary<string, string> { [key] = "replacement" })
+            : cache.SetAsync(key, "replacement"));
+
+        // Act
+        await cache.ListAddAsync(key, [1]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        // Assert
+        Assert.Equal("replacement", (await cache.GetAsync<string>(key)).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WhenTtlChangesBeforeResponse_PreservesNewExpiration(bool setMultiple)
+    {
+        // Arrange
+        const string key = "pending:expiration";
+        var clock = new FakeTimeProvider();
+        using var distributed = new DelayedListCache(Log, clock);
+        using var cache = CreateCache(new InMemoryCacheClientOptions { TimeProvider = clock, LoggerFactory = Log }, distributed);
+        var ttl = TimeSpan.FromSeconds(5);
+        distributed.AfterNextWrite(() => setMultiple
+            ? cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?> { [key] = ttl })
+            : cache.SetExpirationAsync(key, ttl));
+
+        // Act
+        await cache.ListAddAsync(key, [1]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        clock.Advance(ttl + TimeSpan.FromSeconds(1));
+
+        // Assert
+        Assert.False(await distributed.ExistsAsync(key));
         Assert.False((await cache.GetListAsync<int>(key)).HasValue);
     }
 
@@ -322,16 +345,18 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         return new HybridCacheClient(distributedCache ?? _distributedCache, messageBus ?? _messageBus, options, Log);
     }
 
-    private sealed class DelayedListCache(ILoggerFactory loggerFactory) : InMemoryCacheClient(o => o.LoggerFactory(loggerFactory)), ICacheClient
+    private sealed class DelayedListCache(ILoggerFactory loggerFactory, TimeProvider? clock = null) : InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).TimeProvider(clock ?? TimeProvider.System)), ICacheClient
     {
-        public TaskCompletionSource FirstWriteCommitted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource ReleaseResponse { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Func<Task>? _afterNextWrite;
+
+        public void AfterNextWrite(Func<Task> action) => _afterNextWrite = action;
 
         async Task<long> ICacheClient.ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn)
         {
             long added = await ListAddAsync(key, values, expiresIn);
-            if (FirstWriteCommitted.TrySetResult())
-                await ReleaseResponse.Task;
+            var afterWrite = Interlocked.Exchange(ref _afterNextWrite, null);
+            if (afterWrite is not null)
+                await afterWrite();
 
             return added;
         }
