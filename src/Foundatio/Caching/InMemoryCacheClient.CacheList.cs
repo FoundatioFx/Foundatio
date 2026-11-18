@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Foundatio.Caching;
 
@@ -43,12 +44,49 @@ public partial class InMemoryCacheClient
         private Bounds _journaledBounds;
         private bool _journaledExpired;
         private volatile IDictionary<T, DateTime?>? _exposedValues;
+        private readonly bool _hasCallbackFreeComparer;
+        private bool _applying;
 
         private CacheList(IDictionary<T, DateTime?> values, bool exposed)
         {
             _values = values;
             _exposedValues = exposed ? values : null;
             _bounds = Bounds.Calculate(values);
+            _hasCallbackFreeComparer = values.GetType() == typeof(Dictionary<T, DateTime?>)
+                && ReferenceEquals(((Dictionary<T, DateTime?>)values).Comparer, EqualityComparer<T>.Default)
+                && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
+        }
+
+        /// <summary>
+        /// Whether an update can change the members in place and undo itself from the journal. That needs a comparer
+        /// that runs no caller code, which could throw partway through or treat distinct keys as equal, and no other
+        /// update in progress: a size calculator can call back into the cache from inside an update.
+        /// </summary>
+        public bool CanUpdateInPlace => _hasCallbackFreeComparer && !_applying;
+
+        /// <summary>
+        /// Returns a private list holding the committed members, for an update that cannot run in place. A change
+        /// still in progress on this list is left out, so a nested update never publishes or undoes it.
+        /// </summary>
+        public CacheList<T> CreateCandidate()
+        {
+            if (!_applying)
+                return new CacheList<T>(CopyDictionary(_values), exposed: false);
+
+            if (_journaledValues is not null)
+                return new CacheList<T>(CopyDictionary(_journaledValues), exposed: false);
+
+            var values = CopyDictionary(_values);
+            for (int index = _journal.Count - 1; index >= 0; index--)
+            {
+                var (key, existed, expiration) = _journal[index];
+                if (existed)
+                    values[key] = expiration;
+                else
+                    values.Remove(key);
+            }
+
+            return new CacheList<T>(values, exposed: false);
         }
 
         public System.Threading.Lock SyncRoot { get; } = new();
@@ -125,6 +163,7 @@ public partial class InMemoryCacheClient
         /// </summary>
         public long Apply(HashSet<T> items, DateTime? expiration, DateTime utcNow, bool remove, out bool changed, out int expired)
         {
+            _applying = true;
             _journaledBounds = _bounds;
             expired = IsExposed || _bounds.Earliest < utcNow ? RemoveExpired(utcNow) : 0;
             _journaledExpired = expired > 0;
@@ -169,6 +208,7 @@ public partial class InMemoryCacheClient
 
         public void Commit()
         {
+            _applying = false;
             _journaledValues = null;
             _journal.Clear();
             if (_journal.Capacity > 1024)
@@ -226,13 +266,35 @@ public partial class InMemoryCacheClient
             {
                 // Expose may have handed this dictionary to a caller who changes it; only trust bounds when private.
                 bool checkExpiration = IsExposed || _bounds.Earliest < utcNow;
-                var values = _values as Dictionary<T, DateTime?> ?? new Dictionary<T, DateTime?>(_values);
+                if (_values is not Dictionary<T, DateTime?> values)
+                    return ReadOther(utcNow, page, pageSize);
+
                 if (page.HasValue)
                     return ReadListPage(values, utcNow, page.Value, pageSize, checkExpiration);
 
                 var keys = ReadListValues(values, utcNow, checkExpiration);
                 return new CacheValue<ICollection<T>>(keys, keys.Length > 0);
             }
+        }
+
+        /// <summary>
+        /// Reads an adopted dictionary of another type directly, since copying it into a <see cref="Dictionary{TKey,TValue}"/>
+        /// would apply default equality, which its own comparer may disagree with.
+        /// </summary>
+        private CacheValue<ICollection<T>> ReadOther(DateTime utcNow, int? page, int pageSize)
+        {
+            var keys = new List<T>(_values.Count);
+            foreach (var pair in _values)
+            {
+                if (pair.Value is null || pair.Value >= utcNow)
+                    keys.Add(pair.Key);
+            }
+
+            if (!page.HasValue)
+                return new CacheValue<ICollection<T>>(keys.ToArray(), keys.Count > 0);
+
+            int skip = Math.Max(0, unchecked((page.Value - 1) * pageSize));
+            return new CacheValue<ICollection<T>>(keys.Skip(skip).Take(Math.Max(0, pageSize)).ToArray(), keys.Count > 0);
         }
 
         /// <summary>Moves to a private copy before the first change to a dictionary that a caller may hold.</summary>

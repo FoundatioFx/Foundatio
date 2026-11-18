@@ -491,7 +491,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(1, true)]
     [InlineData(2, false)]
     [InlineData(2, true)]
-    public async Task ListAddAsync_WithOwnedSafeKeys_AvoidsCloningThePrivateInput(int sizing, bool stringKeys)
+    public async Task ListAddAsync_WithOwnedSafeKeys_ClonesOnlyWhenTheCalculatorSawTheInput(int sizing, bool stringKeys)
     {
         if (stringKeys)
             await VerifyAsync(Enumerable.Range(0, 10_000).Select(value => value.ToString()).ToArray());
@@ -502,8 +502,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         {
             long sharedAllocation = await MeasureAsync(false);
             long clonedAllocation = await MeasureAsync(true);
-            Assert.True(clonedAllocation <= sharedAllocation + 32_768,
-                $"Safe input dictionaries are already private: shared={sharedAllocation}, cloned={clonedAllocation} bytes.");
+            // A size calculator may keep the dictionary it sized, so with CloneValues the stored list is built separately.
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            GC.KeepAlive(values.ToDictionary(value => value, _ => (DateTime?)null));
+            long dictionarySize = sizing is 0 ? 0 : GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.True(clonedAllocation <= sharedAllocation + dictionarySize + 32_768,
+                $"Safe input dictionaries should be copied at most once: shared={sharedAllocation}, cloned={clonedAllocation}, dictionary={dictionarySize} bytes.");
 
             async Task<long> MeasureAsync(bool cloneValues)
             {
@@ -1425,7 +1429,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task ListUpdate_WithCollidingHeadMiddleAndTail_ReusesSlotsWithoutLosingMembers()
+    public async Task ListUpdate_WithCollidingHeadMiddleAndTail_PreservesMembersAndComparer()
     {
         var comparer = new ListIndexComparer(true);
         using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
@@ -1451,10 +1455,10 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
 
         Assert.Equal(Enumerable.Range(0, 128).Append(-1), previous);
-        Assert.Equal(expected.Keys, (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(expected.Keys.Order(), (await cache.GetListAsync<int>("list")).Value.Order());
         var dictionary = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value;
         Assert.Same(comparer, dictionary.Comparer);
-        Assert.Equal(expected.Keys, dictionary.Keys);
+        Assert.Equal(expected.Keys.Order(), dictionary.Keys.Order());
     }
 
     [Fact]
@@ -1956,7 +1960,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ListUpdate_WithConcentratedHashes_BoundsIndexAllocation(bool growIntoCollisions)
+    public async Task ListUpdate_WithConcentratedHashes_CopiesAtMostOncePerUpdate(bool growIntoCollisions)
     {
         int initialCount = growIntoCollisions ? 1000 : 10_000;
         int finalCount = growIntoCollisions ? 1800 : initialCount;
@@ -1977,12 +1981,16 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             Assert.Equal(1, await cache.ListAddAsync("list", [i]));
         await UpdateAsync();
 
+        // A comparer that runs caller code is updated through a private copy, so each update copies the list once.
         long before = GC.GetAllocatedBytesForCurrentThread();
+        GC.KeepAlive(new Dictionary<int, DateTime?>((await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value, comparer));
+        long copySize = GC.GetAllocatedBytesForCurrentThread() - before;
+        before = GC.GetAllocatedBytesForCurrentThread();
         await UpdateAsync();
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         _logger.LogInformation("Colliding list updates allocated {Allocated} bytes (growth={Growth})", allocated, growIntoCollisions);
-        Assert.True(allocated < 32_768, $"Small updates should not copy a large collision bucket: {allocated} bytes.");
+        Assert.True(allocated <= 2 * copySize + 32_768, $"Two updates should copy the list at most twice: {allocated} bytes, copy {copySize} bytes.");
         Assert.Equal(1, await cache.ListRemoveAsync("list", [0]));
         Assert.Equal(1, await cache.ListAddAsync("list", [0]));
         Assert.Equal(Enumerable.Range(0, initialCount), previous);
@@ -6850,6 +6858,140 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     private static InMemoryCacheClient.CacheEntry GetEntry(InMemoryCacheClient cache, string key)
     {
         return cache.UpdateEntry(key, current => (current, current)) ?? throw new InvalidOperationException($"Missing cache key: {key}");
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WhenSizerAddsToTheSameListAndRejectsTheOuterUpdate_KeepsOnlyTheNestedWrite()
+    {
+        InMemoryCacheClient? cache = null;
+        bool reenter = false;
+        cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log).MaxMemorySize(1_000).SizeCalculator(value =>
+        {
+            if (value is IDictionary<int, DateTime?> members && members.ContainsKey(1) && members.ContainsKey(2) && reenter)
+            {
+                reenter = false;
+                Assert.Equal(1, cache!.ListAddAsync("list", [3]).GetAwaiter().GetResult());
+                return -1;
+            }
+
+            return value is ICollection<KeyValuePair<int, DateTime?>> pairs ? pairs.Count : 1;
+        }));
+        using (cache)
+        {
+            await cache.ListAddAsync("list", [1]);
+            reenter = true;
+
+            Assert.Equal(0, await cache.ListAddAsync("list", [2]));
+
+            Assert.Equal([1, 3], (await cache.GetListAsync<int>("list")).Value.Order());
+            Assert.Equal(2, cache.CurrentMemorySize);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WhenComparerThrowsPartwayThroughABatch_LeavesTheListUnchanged(bool cloneValues)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        await cache.SetAsync("list", new Dictionary<int, DateTime?>(new ThrowingComparer(3)) { [0] = null });
+        Assert.Equal(1, await cache.ListAddAsync("list", [1]));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => cache.ListAddAsync("list", new[] { 2, 3 }));
+
+        Assert.Equal([0, 1], (await cache.GetListAsync<int>("list")).Value.Order());
+        Assert.Equal(1, await cache.ListAddAsync("list", [2]));
+        Assert.Equal([0, 1, 2], (await cache.GetListAsync<int>("list")).Value.Order());
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithCloneValuesAndARetainedSizerArgument_StoresAPrivateList()
+    {
+        IDictionary<int, DateTime?>? retained = null;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log).MaxMemorySize(1_000).SizeCalculator(value =>
+        {
+            retained ??= value as IDictionary<int, DateTime?>;
+            return value is ICollection<KeyValuePair<int, DateTime?>> pairs ? pairs.Count : 1;
+        }));
+
+        Assert.Equal(2, await cache.ListAddAsync("list", [1, 2]));
+        Assert.NotNull(retained);
+        retained.Clear();
+
+        Assert.Equal([1, 2], (await cache.GetListAsync<int>("list")).Value.Order());
+        Assert.Equal(2, cache.CurrentMemorySize);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListRemoveAsync_WhenRejectedWithACaseInsensitiveComparer_KeepsTheStoredSpelling(bool cloneValues)
+    {
+        bool reject = false;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log).MaxMemorySize(1_000)
+            .SizeCalculator(_ => reject ? -1 : 1));
+        await cache.SetAsync("list", new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { ["first"] = null, ["second"] = null });
+        Assert.Equal(1, await cache.ListAddAsync("list", ["third"]));
+        reject = true;
+
+        Assert.Equal(0, await cache.ListRemoveAsync("list", ["FIRST"]));
+
+        Assert.Equal(["first", "second", "third"], (await cache.GetListAsync<string>("list")).Value.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WhenEntryAndInputExpireDuringSizing_ReclaimsTheExpiredList()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        bool advance = false;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log).MaxMemorySize(1_000)
+            .SizeCalculator(value =>
+            {
+                if (advance && value is IDictionary<int, DateTime?> members && members.ContainsKey(1))
+                {
+                    advance = false;
+                    clock.Advance(TimeSpan.FromMinutes(2));
+                }
+
+                return value is ICollection<KeyValuePair<int, DateTime?>> pairs ? pairs.Count : 1;
+            }));
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        await cache.ListAddAsync("list", [1], TimeSpan.FromMinutes(1));
+        advance = true;
+
+        Assert.Equal(0, await cache.ListAddAsync("list", [2], TimeSpan.FromMinutes(1)));
+
+        Assert.Equal("list", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.Equal(0, cache.CurrentMemorySize);
+        Assert.False((await cache.GetListAsync<int>("list")).HasValue);
+    }
+
+    [Fact]
+    public async Task GetListAsync_WithAdoptedReferenceEqualityDictionary_ReadsItsOwnMembers()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
+        string first = new('a', 3);
+        string second = new('a', 3);
+        var source = new ConcurrentDictionary<string, DateTime?>(ReferenceEqualityComparer.Instance);
+        source[first] = null;
+        source[second] = null;
+        await cache.SetAsync("list", source);
+
+        Assert.Equal(1, await cache.ListAddAsync("list", ["b"]));
+
+        var members = (await cache.GetListAsync<string>("list")).Value;
+        Assert.Equal(["aaa", "aaa", "b"], members.Order(StringComparer.Ordinal));
+        var firstPage = (await cache.GetListAsync<string>("list", 1, 2)).Value;
+        var secondPage = (await cache.GetListAsync<string>("list", 2, 2)).Value;
+        Assert.Equal(2, firstPage.Count);
+        Assert.Equal(members.Order(StringComparer.Ordinal), firstPage.Concat(secondPage).Order(StringComparer.Ordinal));
+    }
+
+    private sealed class ThrowingComparer(int throwOn) : IEqualityComparer<int>
+    {
+        public bool Equals(int x, int y) => x == y;
+        public int GetHashCode(int obj) => obj == throwOn ? throw new InvalidOperationException("Comparer failed.") : obj;
     }
 
     private static void Publish(InMemoryCacheClient cache, string key, InMemoryCacheClient.CacheEntry entry)

@@ -153,7 +153,9 @@ public partial class InMemoryCacheClient
                 lock (list.SyncRoot)
                 {
                     if (_memory.TryGetValue(key, out var latest) && ReferenceEquals(latest, current) && !current.IsExpired
-                        && TryUpdateList(key, current, list, items, expiresAt, remove, out long count))
+                        && (list.CanUpdateInPlace
+                            ? TryUpdateList(key, current, list, items, expiresAt, remove, out long count)
+                            : TryReplaceList(key, current, list, items, expiresAt, remove, out count)))
                         return count;
                 }
 
@@ -198,7 +200,8 @@ public partial class InMemoryCacheClient
         long size;
         if (current is null)
         {
-            list = input is not null ? CacheList<T>.Create(input) : CacheList<T>.Create(items, expiresAt);
+            // With CloneValues the size calculator may keep the dictionary it was given, so it is never stored.
+            list = input is not null && !_shouldClone ? CacheList<T>.Create(input) : CacheList<T>.Create(items, expiresAt);
             count = items.Count;
             size = inputSize;
         }
@@ -239,7 +242,18 @@ public partial class InMemoryCacheClient
     /// </summary>
     private bool TryUpdateList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count) where T : notnull
     {
-        count = list.Apply(items, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove, out bool changed, out int expired);
+        bool changed;
+        int expired;
+        try
+        {
+            count = list.Apply(items, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove, out changed, out expired);
+        }
+        catch
+        {
+            list.Rollback();
+            throw;
+        }
+
         if (!changed)
         {
             list.Commit();
@@ -262,18 +276,18 @@ public partial class InMemoryCacheClient
                 throw;
             }
 
+            // Sizing can outlive the entry; start over from a missing key so it is reclaimed rather than revived.
+            if (current.IsExpired)
+            {
+                list.Rollback();
+                return false;
+            }
+
             if (size < 0 || !remove && IsInputExpired(expiresAt))
             {
                 list.Rollback();
                 count = 0;
                 return true;
-            }
-
-            // Sizing can outlive the entry; start over from a missing key rather than revive it.
-            if (current.IsExpired)
-            {
-                list.Rollback();
-                return false;
             }
 
             desired = current.WithValue(list, list.ExpiresAt, size);
@@ -286,6 +300,42 @@ public partial class InMemoryCacheClient
         }
 
         list.Commit();
+        LogExpiredListValues(key, expired);
+        return true;
+    }
+
+    /// <summary>
+    /// Updates a published list through a private candidate, for comparers that run caller code and for updates
+    /// nested inside another update of the same list. Nothing changes until the candidate is published, so a
+    /// throwing comparer or a rejected update leaves the list exactly as it was. Returns <c>false</c> when the entry
+    /// was replaced or expired first.
+    /// </summary>
+    private bool TryReplaceList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count) where T : notnull
+    {
+        var candidate = list.CreateCandidate();
+        count = candidate.Apply(items, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove, out bool changed, out int expired);
+        candidate.Commit();
+        if (!changed)
+        {
+            if (remove)
+                count = 0;
+            return true;
+        }
+
+        long size = candidate.Count > 0 ? CalculateListSize(candidate) : 0;
+        if (current.IsExpired)
+            return false;
+
+        if (size < 0 || !remove && IsInputExpired(expiresAt))
+        {
+            count = 0;
+            return true;
+        }
+
+        var desired = candidate.Count is 0 ? null : current.WithValue(candidate, candidate.ExpiresAt, size);
+        if (!TryPublish(key, current, desired))
+            return false;
+
         LogExpiredListValues(key, expired);
         return true;
     }
