@@ -228,7 +228,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
-        bool success = UpdateEntry<bool>(key, current => current is not null && EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected)
+        bool success = UpdateEntry<bool>(key, current => current is not null && EqualityComparer<T>.Default.Equals(current.PeekValue<T>(), expected)
             ? (null, true)
             : (current, false));
 
@@ -672,7 +672,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         CacheEntry? replacement = null;
         bool success = UpdateEntry<bool>(key, current =>
         {
-            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.PeekValue<T>(), expected))
                 return (current, false);
 
             // A lease that expires while it is being sized is reclaimed too, so it is never revived
@@ -1386,7 +1386,18 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         [return: MaybeNull]
         public T GetValue<T>()
         {
-            object? val = Value;
+            RecordAccess();
+            return PeekValue<T>();
+        }
+
+        /// <summary>
+        /// Converts the value like <see cref="GetValue{T}"/> without recording an access, so comparisons made while
+        /// deciding a conditional write do not change eviction order.
+        /// </summary>
+        [return: MaybeNull]
+        internal T PeekValue<T>()
+        {
+            object? val = PeekValue();
             var t = typeof(T);
 
             if (val is null)

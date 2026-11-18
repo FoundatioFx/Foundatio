@@ -4625,6 +4625,37 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ConditionalWrite_WhenComparingValue_DoesNotRecordAccess(bool replace, bool matches)
+    {
+        // Arrange
+        // Comparing the current value is part of deciding the write, not a read, so it must not change eviction order.
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(true).LoggerFactory(Log));
+        await cache.SetAsync("lease", "owner");
+        long lastAccess = GetEntry(cache, "lease").LastAccessTicks;
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        string expected = matches ? "owner" : "other";
+
+        // Act
+        bool changed = replace
+            ? await cache.ReplaceIfEqualAsync("lease", "renewed", expected)
+            : await cache.RemoveIfEqualAsync("lease", expected);
+
+        // Assert
+        Assert.Equal(matches, changed);
+        if (!matches)
+            Assert.Equal(lastAccess, GetEntry(cache, "lease").LastAccessTicks);
+        else if (replace)
+            Assert.Equal("renewed", (await cache.GetAsync<string>("lease")).Value);
+        else
+            Assert.False(await cache.ExistsAsync("lease"));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RemoveIfEqualAsync_WhenEntryExpiresDuringComparison_ReturnsFalse(bool replace)
