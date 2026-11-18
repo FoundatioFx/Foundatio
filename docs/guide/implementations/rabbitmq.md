@@ -1,6 +1,6 @@
 # Foundatio.RabbitMQ
 
-Foundatio provides RabbitMQ messaging for pub/sub with durable delivery. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.RabbitMQ)
+Foundatio provides RabbitMQ messaging for pub/sub with durable delivery. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ)
 
 ## Overview
 
@@ -43,7 +43,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `AcknowledgementStrategy` | `AcknowledgementStrategy` | | `FireAndForget` | Ack strategy |
 | `PrefetchCount` | `ushort` | | `0` | Consumer prefetch count |
 
-For additional options, see [RabbitMQMessageBusOptions source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs).
+For additional options, see [RabbitMQMessageBusOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs).
 
 ## Delayed message delivery
 
@@ -55,7 +55,15 @@ You can schedule delivery using `DeliveryDelay` on publish options (see the [mes
 2. **RabbitMQ before 4.3 without the plugin** — Delayed sends fall back to the in-memory scheduler in `MessageBusBase`. **Not durable** across process restarts.
 3. **RabbitMQ 4.3 and later** — The delayed-exchange probe is skipped (the plugin is incompatible). The same in-memory fallback applies automatically.
 
-For durable delayed delivery on newer brokers, plan a migration (for example TTL + dead-letter exchanges or an external scheduler). See the [Foundatio.RabbitMQ README](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/README.md) for the full note.
+For durable delayed delivery on newer brokers, plan a migration (for example TTL + dead-letter exchanges or an external scheduler). See the [Foundatio.RabbitMQ README](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.RabbitMQ/README.md) for the full note.
+
+## Running the Tests
+
+The RabbitMQ provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.RabbitMQ`, with its tests in `tests/Foundatio.RabbitMQ.Tests`. The tests don't use `docker-compose.yml`: the Aspire AppHost in `tests/Foundatio.RabbitMQ.AppHost` starts their brokers (a RabbitMQ broker, one with the delayed-message plugin built from `build/rabbitmq-delayed`, and a three-node cluster), so they only need Docker running:
+
+```bash
+dotnet test --project tests/Foundatio.RabbitMQ.Tests/Foundatio.RabbitMQ.Tests.csproj
+```
 
 ## Next Steps
 

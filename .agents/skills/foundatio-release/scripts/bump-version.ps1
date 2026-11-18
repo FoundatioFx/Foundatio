@@ -10,8 +10,8 @@
   non-Foundatio packages, differently versioned Foundatio refs such as TestHarness 13.0.2) are listed
   as "SKIPPED OCCURRENCES" so nothing is silently missed.
 .EXAMPLE
-  ./bump-version.ps1 -From 13.0.5-preview.0.16 -To 13.0.5 -Repos Foundatio.Redis
-  ./bump-version.ps1 -From 13.0.5-preview.0.16 -To 13.0.5 -Repos Foundatio.Redis -Apply
+  ./bump-version.ps1 -From 13.0.5-preview.0.16 -To 13.0.5 -Repos Foundatio.AzureStorage
+  ./bump-version.ps1 -From 13.0.5-preview.0.16 -To 13.0.5 -Repos Foundatio.AzureStorage -Apply
 #>
 param(
   [Parameter(Mandatory)][string]$From,

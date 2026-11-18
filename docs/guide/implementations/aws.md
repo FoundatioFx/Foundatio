@@ -1,6 +1,6 @@
 # Foundatio.AWS
 
-Foundatio provides AWS implementations for file storage, queuing, and messaging using Amazon S3, Amazon SQS, and Amazon SNS. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.AWS)
+Foundatio provides AWS implementations for file storage, queuing, and messaging using Amazon S3, Amazon SQS, and Amazon SNS. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS)
 
 ## Overview
 
@@ -42,7 +42,7 @@ await storage.SaveFileAsync("documents/report.pdf", pdfStream);
 | `Credentials` | `AWSCredentials` | | AWS credentials |
 | `ServiceUrl` | `string` | | Custom endpoint (e.g. Floci) |
 
-For additional options, see [S3FileStorageOptions source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Storage/S3FileStorageOptions.cs).
+For additional options, see [S3FileStorageOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AWS/Storage/S3FileStorageOptions.cs).
 
 ## SQSMessageBus
 
@@ -87,7 +87,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `KmsDataKeyReusePeriodSeconds` | `int` | | 300 | KMS key reuse period |
 | `TopicResolver` | `Func<Type, string>` | | | Route message types to different topics |
 
-For additional options, see [SQSMessageBusOptions source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Messaging/SQSMessageBusOptions.cs).
+For additional options, see [SQSMessageBusOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AWS/Messaging/SQSMessageBusOptions.cs).
 
 ### Architecture
 
@@ -143,7 +143,7 @@ var entry = await queue.DequeueAsync();
 | `KmsMasterKeyId` | `string` | | | KMS key ID for encryption (SSE-KMS) |
 | `KmsDataKeyReusePeriodSeconds` | `int` | | | KMS data key reuse period, in seconds |
 
-For additional options, see [SQSQueueOptions source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Queues/SQSQueueOptions.cs).
+For additional options, see [SQSQueueOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AWS/Queues/SQSQueueOptions.cs).
 
 ### Fair Queues and Message Groups
 
@@ -177,6 +177,17 @@ Things to know:
 `SQSQueue` creates a `<name>-deadletter` queue with a native SQS redrive policy, and moves a message there itself once `Retries` is exceeded. FIFO queues use `<name>-deadletter.fifo`, because AWS requires the dead-letter queue of a FIFO queue to be a FIFO queue ([CreateQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_CreateQueue.html)). Without a dead-letter queue, the message is deleted once `Retries` is exceeded. If the dead-letter queue can't be resolved, the error is logged and the message stays on the source queue to be retried. `GetDeadletterItemsAsync` is not supported for SQS; read the dead-letter queue directly. The dead-letter queue uses the same encryption settings as the source queue, and its name must fit the 80-character SQS limit, so a source queue name can be at most 69 characters (including `.fifo`). Moving a message is at-least-once: the copy is sent before the original is deleted, so a failed delete can leave the message in both queues. `RetryDelay` is applied as the visibility timeout and capped at the SQS maximum of 12 hours.
 
 Deleting a queue takes up to 60 seconds in SQS, and a send during that window can succeed and then be lost with the queue ([DeleteQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteQueue.html)). Stop producers and workers before `DeleteQueueAsync` and wait at least 60 seconds before reusing the name. After a `QueueDoesNotExistException`, the cached queue url is cleared so the next call recreates the queue.
+
+## Running the Tests
+
+The AWS provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.AWS`, with its tests in `tests/Foundatio.AWS.Tests`. The tests run against [Floci](https://github.com/floci-io/floci), a local AWS emulator, at `http://localhost:4566`. Start it from the repository root and run them:
+
+```bash
+docker compose up -d floci
+dotnet test --project tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj
+```
+
+The SQS message bus tests read their connection string from `ConnectionStrings:SQSMessageBus` (environment variable `ConnectionStrings__SQSMessageBus`); the SQS queue and S3 tests always use `localhost:4566`.
 
 ## Next Steps
 

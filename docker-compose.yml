@@ -1,0 +1,194 @@
+services:
+  redis-node-0:
+    image: bitnamilegacy/redis-cluster:8.2.1
+    ports:
+      - "7000:7000"        # client
+      - "17000:17000"      # cluster bus
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7000
+      - REDIS_CLUSTER_ANNOUNCE_IP=${HOST_IP-172.17.0.1}
+      - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7000", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis-node-1:
+    image: bitnamilegacy/redis-cluster:8.2.1
+    ports:
+      - "7001:7001"
+      - "17001:17001"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7001
+      - REDIS_CLUSTER_ANNOUNCE_IP=${HOST_IP-172.17.0.1}
+      - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7001", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis-node-2:
+    image: bitnamilegacy/redis-cluster:8.2.1
+    ports:
+      - "7002:7002"
+      - "17002:17002"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7002
+      - REDIS_CLUSTER_ANNOUNCE_IP=${HOST_IP-172.17.0.1}
+      - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7002", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis-node-3:
+    image: bitnamilegacy/redis-cluster:8.2.1
+    ports:
+      - "7003:7003"
+      - "17003:17003"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7003
+      - REDIS_CLUSTER_ANNOUNCE_IP=${HOST_IP-172.17.0.1}
+      - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7003", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis-node-4:
+    image: bitnamilegacy/redis-cluster:8.2.1
+    ports:
+      - "7004:7004"
+      - "17004:17004"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7004
+      - REDIS_CLUSTER_ANNOUNCE_IP=${HOST_IP-172.17.0.1}
+      - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7004", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis-node-5:
+    image: bitnamilegacy/redis-cluster:8.2.1
+    ports:
+      - "7005:7005"
+      - "17005:17005"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7005
+      - REDIS_CLUSTER_ANNOUNCE_IP=${HOST_IP-172.17.0.1}
+      - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
+      - REDIS_CLUSTER_REPLICAS=1
+      - REDIS_CLUSTER_CREATOR=yes
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -p 7005 cluster info | grep cluster_state:ok && redis-cli -p 7005 cluster info | grep cluster_slots_assigned:16384"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+  kafka:
+    hostname: kafka
+    container_name: kafka
+    image: apache/kafka:4.3.1
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_BROKER_ID=1
+      - KAFKA_PROCESS_ROLES=controller,broker
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@127.0.0.1:9094
+      - KAFKA_NODE_ID=1
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_LISTENERS=CONTROLLER://:9094,PLAINTEXT://:29092,PLAINTEXT_HOST://:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=10
+      - KAFKA_MAX_POLL_INTERVAL_MS=100
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+    volumes:
+      - "kafkadata:/var/lib/kafka/data"
+
+  floci:
+    image: floci/floci:2.1.0
+    ports:
+      - 4566:4566
+
+  servicebus-emulator:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    pull_policy: always
+    volumes:
+      - ./build/servicebus-emulator/Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
+    ports:
+      - "5672:5672"
+    environment:
+      SQL_SERVER: sqledge
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}
+      ACCEPT_EULA: ${ACCEPT_EULA:-Y}
+    depends_on:
+      - sqledge
+
+  sqledge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    pull_policy: always
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}
+      ACCEPT_EULA: ${ACCEPT_EULA:-Y}
+
+  ready:
+    image: andrewlock/wait-for-dependencies
+    depends_on:
+      redis-node-0:
+        condition: service_healthy
+      redis-node-1:
+        condition: service_healthy
+      redis-node-2:
+        condition: service_healthy
+      redis-node-3:
+        condition: service_healthy
+      redis-node-4:
+        condition: service_healthy
+      redis-node-5:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      floci:
+        condition: service_started
+      servicebus-emulator:
+        condition: service_started
+    command: >
+      redis-node-0:7000
+      redis-node-1:7001
+      redis-node-2:7002
+      redis-node-3:7003
+      redis-node-4:7004
+      redis-node-5:7005
+      kafka:9092
+      floci:4566
+      servicebus-emulator:5672
+
+volumes:
+  kafkadata:
+    driver: local

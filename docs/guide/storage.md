@@ -100,7 +100,7 @@ var storage = new AzureFileStorage(o => {
 
 AWS S3 Storage (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Storage/S3FileStorage.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AWS/Storage/S3FileStorage.cs)
 
 ```csharp
 // dotnet add package Foundatio.AWS
@@ -117,7 +117,7 @@ var storage = new S3FileStorage(o => {
 
 Redis-backed storage (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Storage/RedisFileStorage.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Redis/Storage/RedisFileStorage.cs)
 
 ```csharp
 // dotnet add package Foundatio.Redis

@@ -1,6 +1,6 @@
 # Foundatio.AzureStorage / Foundatio.AzureServiceBus
 
-Foundatio provides Azure implementations for storage, queuing, and messaging using Azure Blob Storage, Azure Storage Queues, and Azure Service Bus. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.AzureStorage) | [AzureServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus)
+Foundatio provides Azure implementations for storage, queuing, and messaging using Azure Blob Storage, Azure Storage Queues, and Azure Service Bus. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.AzureStorage) | [AzureServiceBus](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus)
 
 ## Overview
 
@@ -96,7 +96,7 @@ await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 | `RequiresDuplicateDetection` | `bool?` | | Enable duplicate detection |
 | `EnableDeadLetteringOnMessageExpiration` | `bool?` | | DLQ on expiration |
 
-For additional options, see [AzureServiceBusQueueOptions source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueueOptions.cs).
+For additional options, see [AzureServiceBusQueueOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueueOptions.cs).
 
 ## AzureServiceBusMessageBus
 
@@ -128,7 +128,18 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `SubscriptionName` | `string` | | Subscription name (unique per consumer) |
 | `PrefetchCount` | `int?` | | Message prefetch count |
 
-For additional options, see [AzureServiceBusMessageBusOptions source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBusOptions.cs).
+For additional options, see [AzureServiceBusMessageBusOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBusOptions.cs).
+
+## Running the Tests
+
+The Azure Service Bus provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.AzureServiceBus`, with its tests in `tests/Foundatio.AzureServiceBus.Tests`. The tests run against the [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) at `localhost:5672`, with the queues and topics defined in `build/servicebus-emulator/Config.json`. Start it from the repository root and run them:
+
+```bash
+docker compose up -d servicebus-emulator
+dotnet test --project tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj
+```
+
+The tests read their connection string from `ConnectionStrings:AzureServiceBusConnectionString` (environment variable `ConnectionStrings__AzureServiceBusConnectionString`). Azure Storage and its tests live in the [Foundatio.AzureStorage](https://github.com/FoundatioFx/Foundatio.AzureStorage) repository.
 
 ## Next Steps
 

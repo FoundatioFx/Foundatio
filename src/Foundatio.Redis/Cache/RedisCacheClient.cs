@@ -1,0 +1,1015 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.AsyncEx;
+using Foundatio.Extensions;
+using Foundatio.Redis;
+using Foundatio.Redis.Extensions;
+using Foundatio.Redis.Utility;
+using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using StackExchange.Redis;
+
+namespace Foundatio.Caching;
+
+public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
+{
+    private readonly RedisCacheClientOptions _options;
+    private readonly IConnectionMultiplexer _connectionMultiplexer;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
+    private readonly bool _isCluster;
+
+    private readonly AsyncLock _lock = new();
+    private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
+    private bool _isDisposed;
+    private volatile bool _scriptsLoaded;
+    private readonly RedisCapabilities _capabilities;
+
+    private LoadedLuaScript? _incrementWithExpire;
+    private LoadedLuaScript? _removeIfEqual;
+    private LoadedLuaScript? _replaceIfEqual;
+    private LoadedLuaScript? _setIfHigher;
+    private LoadedLuaScript? _setIfLower;
+    private LoadedLuaScript? _getAllExpiration;
+    private LoadedLuaScript? _setAllExpiration;
+
+    public RedisCacheClient(RedisCacheClientOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.ConnectionMultiplexer);
+
+        _options = options;
+        _connectionMultiplexer = options.ConnectionMultiplexer;
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
+        options.Serializer ??= DefaultSerializer.Instance;
+        _logger = options.LoggerFactory?.CreateLogger(typeof(RedisCacheClient)) ?? NullLogger.Instance;
+        _capabilities = new RedisCapabilities(_connectionMultiplexer, _logger);
+
+        _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
+        _connectionMultiplexer.ConnectionFailed += ConnectionMultiplexerOnConnectionFailed;
+        _isCluster = _connectionMultiplexer.IsCluster();
+    }
+
+    public RedisCacheClient(Builder<RedisCacheClientOptionsBuilder, RedisCacheClientOptions> config)
+        : this(config(new RedisCacheClientOptionsBuilder()).Build())
+    {
+    }
+
+    public IDatabase Database => _connectionMultiplexer.GetDatabase(_options.Database);
+
+    public Task<bool> RemoveAsync(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
+        return Database.KeyDeleteAsync(key);
+    }
+
+    public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        var expectedValue = expected.ToRedisValue(_options.Serializer);
+
+        // DELEX ... IFEQ (via ValueCondition) is an exact semantic match for this Lua script - delete only if
+        // the current value equals expected. See RedisCapabilities.SupportsCompareAndDelete for availability.
+        if (_capabilities.SupportsCompareAndDelete)
+            return await Database.StringDeleteAsync(key, ValueCondition.Equal(expectedValue)).AnyContext();
+
+        await LoadScriptsAsync().AnyContext();
+
+        var redisResult = await Database.ScriptEvaluateAsync(GetScript(_removeIfEqual), new { key = (RedisKey)key, expected = expectedValue }).AnyContext();
+        int result = (int)redisResult;
+
+        return result > 0;
+    }
+
+    public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
+    {
+        // NOTE: Batch size matches default page size (RedisBase.CursorUtils.DefaultLibraryPageSize)
+        int batchSize = 250;
+
+        long deleted = 0;
+        if (keys is null)
+        {
+            var endpoints = _connectionMultiplexer.GetEndPoints();
+            if (endpoints.Length is 0)
+                return 0;
+
+            foreach (var endpoint in endpoints)
+            {
+                var server = _connectionMultiplexer.GetServer(endpoint);
+                if (server.IsReplica)
+                    continue;
+
+                try
+                {
+                    long dbSize = await server.DatabaseSizeAsync(_options.Database).AnyContext();
+                    await server.FlushDatabaseAsync(_options.Database).AnyContext();
+                    Interlocked.Add(ref deleted, dbSize);
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Unable to flush database on {Endpoint}: {Message}", server.EndPoint, ex.Message);
+                }
+
+                try
+                {
+                    // NOTE: We need to use a HashSet to avoid duplicate counts due to SCAN is non-deterministic.
+                    // A Performance win could be had if we are sure dbSize didn't fail and we know nothing was changing
+                    // keys while we were deleting.
+                    var seen = new HashSet<RedisKey>();
+                    await foreach (var key in server.KeysAsync(_options.Database).ConfigureAwait(false))
+                        seen.Add(key);
+
+                    foreach (var batch in seen.Chunk(batchSize))
+                        deleted += await Database.KeyDeleteAsync(batch.ToArray()).AnyContext();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error deleting all keys on {Endpoint}: {Message}", server.EndPoint, ex.Message);
+                }
+            }
+        }
+        else if (_isCluster)
+        {
+            var redisKeys = keys is ICollection<string> collection ? new List<RedisKey>(collection.Count) : [];
+            foreach (string key in keys.Distinct())
+            {
+                ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
+                redisKeys.Add(key);
+            }
+
+            if (redisKeys.Count is 0)
+                return 0;
+
+            foreach (var batch in redisKeys.Chunk(batchSize))
+            {
+                // NOTE: Consider parallel processing per hash slot for performance optimization
+                foreach (var hashSlotGroup in batch.GroupBy(k => Database.Multiplexer.HashSlot(k)))
+                {
+                    var hashSlotKeys = hashSlotGroup.ToArray();
+                    try
+                    {
+                        long count = await Database.KeyDeleteAsync(hashSlotKeys).AnyContext();
+                        Interlocked.Add(ref deleted, count);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Unable to delete {HashSlot} keys ({Keys}): {Message}", hashSlotGroup.Key, hashSlotKeys, ex.Message);
+                    }
+                }
+            }
+        }
+        else
+        {
+            var redisKeys = keys is ICollection<string> collection ? new List<RedisKey>(collection.Count) : [];
+            foreach (string key in keys.Distinct())
+            {
+                ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
+                redisKeys.Add(key);
+            }
+
+            if (redisKeys.Count is 0)
+                return 0;
+
+            // NOTE: Consider parallel processing of batches for performance optimization
+            foreach (var batch in redisKeys.Chunk(batchSize))
+            {
+                try
+                {
+                    long count = await Database.KeyDeleteAsync(batch).AnyContext();
+                    Interlocked.Add(ref deleted, count);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Unable to delete keys ({Keys}): {Message}", batch, ex.Message);
+                }
+            }
+        }
+
+        return (int)deleted;
+    }
+
+    public async Task<int> RemoveByPrefixAsync(string prefix)
+    {
+        if (String.IsNullOrEmpty(prefix))
+            return await RemoveAllAsync().AnyContext();
+
+        var endpoints = _connectionMultiplexer.GetEndPoints();
+        if (endpoints.Length == 0)
+            return 0;
+
+        const int batchSize = 250;
+        bool isCluster = _isCluster;
+
+        long deleted = 0;
+        foreach (var endpoint in endpoints)
+        {
+            var server = _connectionMultiplexer.GetServer(endpoint);
+            if (server.IsReplica)
+                continue;
+
+            await foreach (var keys in server.KeysAsync(
+                               database: Database.Database,
+                               pattern: $"{RedisPattern.Escape(prefix)}*",
+                               pageSize: batchSize
+                           ).BatchAsync(batchSize).ConfigureAwait(false))
+            {
+                if (isCluster)
+                {
+                    // NOTE: Consider parallel processing per hash slot for performance optimization
+                    foreach (var slotGroup in keys.GroupBy(k => _connectionMultiplexer.HashSlot(k)))
+                    {
+                        long count = await Database.KeyDeleteAsync(slotGroup.ToArray()).AnyContext();
+                        Interlocked.Add(ref deleted, count);
+                    }
+                }
+                else
+                {
+                    deleted += await Database.KeyDeleteAsync(keys).AnyContext();
+                }
+            }
+        }
+
+        return (int)deleted;
+    }
+
+    private static readonly RedisValue _nullValue = "@@NULL";
+
+    public async Task<CacheValue<T>> GetAsync<T>(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        var redisValue = await Database.StringGetAsync(key, _options.ReadMode).AnyContext();
+        return RedisValueToCacheValue<T>(redisValue);
+    }
+
+    private CacheValue<ICollection<T>> RedisValuesToCacheValue<T>(RedisValue[] redisValues)
+    {
+        var result = new List<T>();
+        foreach (var redisValue in redisValues)
+        {
+            if (!redisValue.HasValue)
+                continue;
+            if (redisValue == _nullValue)
+                continue;
+
+            try
+            {
+                var value = redisValue.ToValueOfType<T>(_options.Serializer);
+                result.Add(value!);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}: {Message}", redisValue, typeof(T).FullName, ex.Message);
+                if (_options.ShouldThrowOnSerializationError)
+                    throw;
+            }
+        }
+
+        return new CacheValue<ICollection<T>>(result, result.Count > 0);
+    }
+
+    private CacheValue<T> RedisValueToCacheValue<T>(RedisValue redisValue)
+    {
+        if (!redisValue.HasValue)
+            return CacheValue<T>.NoValue;
+
+        if (redisValue == _nullValue)
+            return CacheValue<T>.Null;
+
+        try
+        {
+            var value = redisValue.ToValueOfType<T>(_options.Serializer);
+            return new CacheValue<T>(value, true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}: {Message}", redisValue, typeof(T).FullName, ex.Message);
+            if (_options.ShouldThrowOnSerializationError)
+                throw;
+
+            return CacheValue<T>.NoValue;
+        }
+    }
+
+    public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        var redisKeys = keys is ICollection<string> collection ? new List<RedisKey>(collection.Count) : [];
+        foreach (string key in keys.Distinct())
+        {
+            ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
+            redisKeys.Add(key);
+        }
+
+        if (redisKeys.Count is 0)
+            return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
+
+        if (_isCluster)
+        {
+            var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count);
+            // NOTE: Consider parallel processing per hash slot for performance optimization
+            foreach (var hashSlotGroup in redisKeys.GroupBy(k => _connectionMultiplexer.HashSlot(k)))
+            {
+                var hashSlotKeys = hashSlotGroup.ToArray();
+                var values = await Database.StringGetAsync(hashSlotKeys, _options.ReadMode).AnyContext();
+
+                // Redis MGET guarantees that values are returned in the same order as keys.
+                // Non-existent keys return nil/empty values in their respective positions.
+                // https://redis.io/commands/mget
+                for (int i = 0; i < hashSlotKeys.Length; i++)
+                    result[hashSlotKeys[i].ToString()] = RedisValueToCacheValue<T>(values[i]);
+            }
+
+            return result.AsReadOnly();
+        }
+        else
+        {
+            var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count);
+            var values = await Database.StringGetAsync(redisKeys.ToArray(), _options.ReadMode).AnyContext();
+
+            // Redis MGET guarantees that values are returned in the same order as keys
+            for (int i = 0; i < redisKeys.Count; i++)
+                result[redisKeys[i].ToString()] = RedisValueToCacheValue<T>(values[i]);
+
+            return result.AsReadOnly();
+        }
+    }
+
+    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (page is < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
+        try
+        {
+            if (!page.HasValue)
+            {
+                var set = await Database.SortedSetRangeByScoreAsync(key, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(), Double.PositiveInfinity, Exclude.Start, flags: _options.ReadMode).AnyContext();
+                return RedisValuesToCacheValue<T>(set);
+            }
+            else
+            {
+                long skip = (page.Value - 1) * pageSize;
+                var set = await Database.SortedSetRangeByScoreAsync(key, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(), Double.PositiveInfinity, Exclude.Start, skip: skip, take: pageSize, flags: _options.ReadMode).AnyContext();
+                return RedisValuesToCacheValue<T>(set);
+            }
+        }
+        catch (RedisServerException ex) when (ex.Message.StartsWith("WRONGTYPE"))
+        {
+            _logger.LogInformation(ex, "Migrating legacy set to sorted set for key: {Key}", key);
+            await MigrateLegacySetToSortedSetForKeyAsync<T>(key, typeof(T) == typeof(string)).AnyContext();
+            return await GetListAsync<T>(key, page, pageSize).AnyContext();
+        }
+    }
+
+    public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        return InternalSetAsync(key, value, expiresIn, When.NotExists);
+    }
+
+    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            await ListRemoveAsync(key, values).AnyContext();
+            return 0;
+        }
+
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+
+        var redisValues = new List<SortedSetEntry>();
+        long expiresAtMilliseconds = expiresAt.ToUnixTimeMilliseconds();
+
+        if (values is string stringValue)
+            redisValues.Add(new SortedSetEntry(stringValue.ToRedisValue(_options.Serializer), expiresAtMilliseconds));
+        else
+            redisValues.AddRange(values.Where(v => v is not null).Select(value => new SortedSetEntry(value.ToRedisValue(_options.Serializer), expiresAtMilliseconds)));
+
+        await RemoveExpiredListValuesAsync<T>(key, values is string).AnyContext();
+
+        if (redisValues.Count == 0)
+            return 0;
+
+        long added = await Database.SortedSetAddAsync(key, redisValues.ToArray()).AnyContext();
+        if (added > 0)
+            await SetListExpirationAsync(key).AnyContext();
+
+        return added;
+    }
+
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
+
+        var redisValues = new List<RedisValue>();
+        if (values is string stringValue)
+            redisValues.Add(stringValue.ToRedisValue(_options.Serializer));
+        else
+            redisValues.AddRange(values.Where(v => v is not null).Select(value => value.ToRedisValue(_options.Serializer)));
+
+        await RemoveExpiredListValuesAsync<T>(key, values is string).AnyContext();
+
+        if (redisValues.Count == 0)
+            return 0;
+
+        long removed = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
+        if (removed > 0)
+            await SetListExpirationAsync(key).AnyContext();
+
+        return removed;
+    }
+
+    private const long MaxUnixEpochMilliseconds = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
+
+    private async Task SetListExpirationAsync(string key)
+    {
+        // Always read from master: this value drives a subsequent KeyExpireAsync write and must be consistent.
+        var items = await Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending, flags: CommandFlags.None).AnyContext();
+        if (items.Length == 0)
+        {
+            _logger.LogTrace("Sorted set is empty for key: {Key}, expiration will not be set", key);
+            return;
+        }
+
+        long highestExpirationInMs = (long)items.Single().Score;
+        if (highestExpirationInMs >= MaxUnixEpochMilliseconds)
+        {
+            // Items have max expiration, remove any existing TTL (persist the key)
+            await Database.KeyPersistAsync(key).AnyContext();
+            return;
+        }
+
+        var furthestExpirationUtc = highestExpirationInMs.FromUnixTimeMilliseconds();
+        var expiresIn = furthestExpirationUtc - _timeProvider.GetUtcNow();
+        await SetExpirationAsync(key, expiresIn).AnyContext();
+    }
+
+    private async Task RemoveExpiredListValuesAsync<T>(string key, bool isStringValues) where T : notnull
+    {
+        try
+        {
+            long expiredValues = await Database
+                .SortedSetRemoveRangeByScoreAsync(key, 0, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
+                .AnyContext();
+
+            if (expiredValues > 0)
+                _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, key);
+        }
+        catch (RedisServerException ex) when (ex.Message.StartsWith("WRONGTYPE"))
+        {
+            _logger.LogInformation(ex, "Migrating legacy set to sorted set for key: {Key}", key);
+            await MigrateLegacySetToSortedSetForKeyAsync<T>(key, isStringValues).AnyContext();
+        }
+    }
+
+    private async Task MigrateLegacySetToSortedSetForKeyAsync<T>(string key, bool isStringValues) where T : notnull
+    {
+        // convert legacy set to sorted set
+        var oldItems = await Database.SetMembersAsync(key).AnyContext();
+        var currentKeyExpiresIn = await GetExpirationAsync(key).AnyContext();
+        await Database.KeyDeleteAsync(key).AnyContext();
+        if (isStringValues)
+        {
+            var oldItemValues = new List<string>(oldItems.Length);
+            foreach (string oldItem in RedisValuesToCacheValue<string>(oldItems).Value)
+                oldItemValues.Add(oldItem);
+
+            await ListAddAsync(key, oldItemValues, currentKeyExpiresIn).AnyContext();
+        }
+        else
+        {
+            var oldItemValues = new List<T>(oldItems.Length);
+            foreach (var oldItem in RedisValuesToCacheValue<T>(oldItems).Value)
+                oldItemValues.Add(oldItem);
+
+            await ListAddAsync(key, oldItemValues, currentKeyExpiresIn).AnyContext();
+        }
+    }
+
+    public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        return InternalSetAsync(key, value, expiresIn);
+    }
+
+    public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
+        await LoadScriptsAsync().AnyContext();
+
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(GetScript(_setIfHigher), new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (double)result;
+    }
+
+    public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
+        await LoadScriptsAsync().AnyContext();
+
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(GetScript(_setIfHigher), new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (long)result;
+    }
+
+    public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
+        await LoadScriptsAsync().AnyContext();
+
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(GetScript(_setIfLower), new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (double)result;
+    }
+
+    public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
+        await LoadScriptsAsync().AnyContext();
+
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(GetScript(_setIfLower), new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (long)result;
+    }
+
+    private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None)
+    {
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            _logger.LogTrace("Removing expired key: {Key}", key);
+            await RemoveAsync(key).AnyContext();
+            return false;
+        }
+
+        expiresIn = NormalizeExpiration(expiresIn);
+
+        var redisValue = value.ToRedisValue(_options.Serializer);
+        return await Database.StringSetAsync(key, redisValue, expiresIn, when, flags).AnyContext();
+    }
+
+    public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+
+        if (values.Count is 0)
+            return 0;
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            _logger.LogTrace("Removing expired keys: {Keys}", values.Keys);
+            await RemoveAllAsync(values.Keys).AnyContext();
+            return 0;
+        }
+
+        expiresIn = NormalizeExpiration(expiresIn);
+
+        // Validate keys and serialize values upfront
+        var pairs = new KeyValuePair<RedisKey, RedisValue>[values.Count];
+        int index = 0;
+        foreach (var kvp in values)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(kvp.Key, nameof(values));
+            pairs[index++] = new KeyValuePair<RedisKey, RedisValue>(kvp.Key, kvp.Value.ToRedisValue(_options.Serializer));
+        }
+
+        if (_isCluster)
+        {
+            // For cluster/sentinel, group keys by hash slot since batch operations
+            // require all keys to be in the same slot
+            // NOTE: Consider parallel processing per hash slot for performance optimization
+            int successCount = 0;
+            foreach (var slotGroup in pairs.GroupBy(p => _connectionMultiplexer.HashSlot(p.Key)))
+            {
+                int count = await SetAllInternalAsync(slotGroup.ToArray(), expiresIn).AnyContext();
+                Interlocked.Add(ref successCount, count);
+            }
+            return successCount;
+        }
+
+        return await SetAllInternalAsync(pairs, expiresIn).AnyContext();
+    }
+
+    /// <summary>
+    /// Internal method that performs the actual batch set operation.
+    /// All keys in <paramref name="pairs"/> must be in the same hash slot for cluster mode.
+    /// </summary>
+    private async Task<int> SetAllInternalAsync(KeyValuePair<RedisKey, RedisValue>[] pairs, TimeSpan? expiresIn)
+    {
+        if (expiresIn.HasValue)
+        {
+            // With expiration: use MSETEX if available, otherwise fall back to pipelined SETs
+            if (_capabilities.SupportsMsetex)
+            {
+                bool success = await Database.StringSetAsync(pairs, When.Always, new Expiration(expiresIn.Value)).AnyContext();
+                return success ? pairs.Length : 0;
+            }
+
+            // Fallback for Redis < 8.4: pipelined individual SET commands with expiration
+            var tasks = new List<Task<bool>>(pairs.Length);
+            foreach (var pair in pairs)
+            {
+                tasks.Add(Database.StringSetAsync(pair.Key, pair.Value, expiresIn, When.Always));
+            }
+
+            bool[] results = await Task.WhenAll(tasks).AnyContext();
+            return results.Count(r => r);
+        }
+
+        // No expiration: use MSET (available since Redis 1.0.1) - single atomic batch operation
+        bool msetSuccess = await Database.StringSetAsync(pairs).AnyContext();
+        return msetSuccess ? pairs.Length : 0;
+    }
+
+    public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        return InternalSetAsync(key, value, expiresIn, When.Exists);
+    }
+
+    public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            _logger.LogTrace("Removing expired key: {Key}", key);
+            await RemoveAsync(key).AnyContext();
+            return false;
+        }
+
+        var redisValue = value.ToRedisValue(_options.Serializer);
+        var expectedValue = expected.ToRedisValue(_options.Serializer);
+
+        // SET key value IFEQ expected (via ValueCondition) is an exact semantic match for this Lua script -
+        // replace only if the current value equals expected. See RedisCapabilities.SupportsCompareAndSwap.
+        if (_capabilities.SupportsCompareAndSwap)
+        {
+            var normalizedExpiry = NormalizeExpiration(expiresIn);
+            var expiration = normalizedExpiry.HasValue ? new Expiration(normalizedExpiry.Value) : Expiration.Default;
+            return await Database.StringSetAsync(key, redisValue, expiration, ValueCondition.Equal(expectedValue)).AnyContext();
+        }
+
+        await LoadScriptsAsync().AnyContext();
+
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var redisResult = await Database.ScriptEvaluateAsync(GetScript(_replaceIfEqual), new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = expiresArg }).AnyContext();
+
+        var result = (int)redisResult;
+
+        return result > 0;
+    }
+
+    public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            _logger.LogTrace("Removing expired key: {Key}", key);
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+
+        // Always use Lua script - handles both expiration and TTL removal (null expiration removes TTL)
+        await LoadScriptsAsync().AnyContext();
+        var result = await Database.ScriptEvaluateAsync(GetScript(_incrementWithExpire), new { key = (RedisKey)key, value = amount, expires = expiresArg }).AnyContext();
+        return (double)result;
+    }
+
+    public async Task<long> IncrementAsync(string key, long amount = 1, TimeSpan? expiresIn = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            _logger.LogTrace("Removing expired key: {Key}", key);
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+
+        // Always use Lua script - handles both expiration and TTL removal (null expiration removes TTL)
+        await LoadScriptsAsync().AnyContext();
+        var result = await Database.ScriptEvaluateAsync(GetScript(_incrementWithExpire), new { key = (RedisKey)key, value = amount, expires = expiresArg }).AnyContext();
+        return (long)result;
+    }
+
+    public Task<bool> ExistsAsync(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        return Database.KeyExistsAsync(key, _options.ReadMode);
+    }
+
+    public Task<TimeSpan?> GetExpirationAsync(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        return Database.KeyTimeToLiveAsync(key, _options.ReadMode);
+    }
+
+    public Task SetExpirationAsync(string key, TimeSpan expiresIn)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        // TimeSpan.MaxValue means "no expiration" - persist the key to remove any existing TTL
+        if (expiresIn == TimeSpan.MaxValue)
+            return Database.KeyPersistAsync(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+            return Database.KeyDeleteAsync(key);
+
+        return Database.KeyExpireAsync(key, expiresIn);
+    }
+
+    public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        var keyList = keys is ICollection<string> collection ? new List<RedisKey>(collection.Count) : [];
+        foreach (string key in keys.Distinct())
+        {
+            ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
+            keyList.Add(key);
+        }
+
+        if (keyList.Count is 0)
+            return ReadOnlyDictionary<string, TimeSpan?>.Empty;
+
+        await LoadScriptsAsync().AnyContext();
+
+        if (_isCluster)
+        {
+            var result = new Dictionary<string, TimeSpan?>(keyList.Count);
+            // NOTE: Consider parallel processing per hash slot for performance optimization
+            foreach (var hashSlotGroup in keyList.GroupBy(k => _connectionMultiplexer.HashSlot(k)))
+            {
+                var hashSlotKeys = hashSlotGroup.ToArray();
+                var redisResult = await Database.ScriptEvaluateAsync(GetScript(_getAllExpiration).Hash, hashSlotKeys).AnyContext();
+                if (redisResult.IsNull)
+                    continue;
+
+                // Lua script uses Redis PTTL command which returns TTL in milliseconds.
+                // PTTL return values (https://redis.io/docs/latest/commands/pttl/):
+                //   -2 = Key does not exist
+                //   -1 = Key exists but has no associated expiration
+                //   Positive integer = Remaining TTL in milliseconds
+                long[]? ttls = (long[]?)redisResult;
+                if (ttls is null || ttls.Length != hashSlotKeys.Length)
+                    throw new InvalidOperationException($"Script returned {ttls?.Length ?? 0} results for {hashSlotKeys.Length} keys");
+
+                for (int hashSlotIndex = 0; hashSlotIndex < hashSlotKeys.Length; hashSlotIndex++)
+                {
+                    string key = hashSlotKeys[hashSlotIndex].ToString();
+                    long ttl = ttls[hashSlotIndex];
+                    if (ttl == -2) // Key doesn't exist - omit from result
+                        continue;
+                    if (ttl == -1) // Key exists but no expiration - include with null value
+                        result[key] = null;
+                    else // Key has TTL - include with TimeSpan value
+                        result[key] = TimeSpan.FromMilliseconds(ttl);
+                }
+            }
+
+            return result.AsReadOnly();
+        }
+        else
+        {
+            var redisKeys = keyList.ToArray();
+            var redisResult = await Database.ScriptEvaluateAsync(GetScript(_getAllExpiration).Hash, redisKeys).AnyContext();
+
+            if (redisResult.IsNull)
+                return ReadOnlyDictionary<string, TimeSpan?>.Empty;
+
+            // Lua script uses Redis PTTL command which returns TTL in milliseconds.
+            // PTTL return values (https://redis.io/docs/latest/commands/pttl/):
+            //   -2 = Key does not exist
+            //   -1 = Key exists but has no associated expiration
+            //   Positive integer = Remaining TTL in milliseconds
+            long[]? ttls = (long[]?)redisResult;
+            if (ttls is null || ttls.Length != redisKeys.Length)
+                throw new InvalidOperationException($"Script returned {ttls?.Length ?? 0} results for {redisKeys.Length} keys");
+
+            var result = new Dictionary<string, TimeSpan?>();
+            for (int keyIndex = 0; keyIndex < redisKeys.Length; keyIndex++)
+            {
+                string key = redisKeys[keyIndex].ToString();
+                long ttl = ttls[keyIndex];
+                if (ttl == -2) // Key doesn't exist - omit from result
+                    continue;
+                if (ttl == -1) // Key exists but no expiration - include with null value
+                    result[key] = null;
+                else // Key has TTL - include with TimeSpan value
+                    result[key] = TimeSpan.FromMilliseconds(ttl);
+            }
+
+            return result.AsReadOnly();
+        }
+    }
+
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        ArgumentNullException.ThrowIfNull(expirations);
+        if (expirations.Count == 0)
+            return;
+
+        if (expirations.ContainsKey(String.Empty))
+            throw new ArgumentException("Keys cannot be empty", nameof(expirations));
+
+        await LoadScriptsAsync().AnyContext();
+
+        if (_isCluster)
+        {
+            // NOTE: Consider parallel processing per hash slot for performance optimization
+            foreach (var hashSlotGroup in expirations.GroupBy(kvp => _connectionMultiplexer.HashSlot(kvp.Key)))
+            {
+                var hashSlotExpirations = hashSlotGroup.ToList();
+                var keys = hashSlotExpirations.Select(kvp => (RedisKey)kvp.Key).ToArray();
+                var values = hashSlotExpirations
+                    .Select(kvp => (RedisValue)(GetExpirationMilliseconds(kvp.Value) ?? -1))
+                    .ToArray();
+
+                await Database.ScriptEvaluateAsync(GetScript(_setAllExpiration).Hash, keys, values).AnyContext();
+            }
+        }
+        else
+        {
+            var keys = expirations.Select(kvp => (RedisKey)kvp.Key).ToArray();
+            var values = expirations
+                .Select(kvp => (RedisValue)(GetExpirationMilliseconds(kvp.Value) ?? -1))
+                .ToArray();
+
+            await Database.ScriptEvaluateAsync(GetScript(_setAllExpiration).Hash, keys, values).AnyContext();
+        }
+    }
+
+    private async Task LoadScriptsAsync()
+    {
+        if (_scriptsLoaded)
+            return;
+
+        using (await _lock.LockAsync(_disposedCancellationTokenSource.Token).AnyContext())
+        {
+            if (_scriptsLoaded)
+                return;
+
+            var incrementWithExpire = LuaScript.Prepare(IncrementWithScript);
+            var removeIfEqual = LuaScript.Prepare(RemoveIfEqualScript);
+            var replaceIfEqual = LuaScript.Prepare(ReplaceIfEqualScript);
+            var setIfHigher = LuaScript.Prepare(SetIfHigherScript);
+            var setIfLower = LuaScript.Prepare(SetIfLowerScript);
+            var getAllExpiration = LuaScript.Prepare(GetAllExpirationScript);
+            var setAllExpiration = LuaScript.Prepare(SetAllExpirationScript);
+
+            foreach (var endpoint in _connectionMultiplexer.GetEndPoints())
+            {
+                var server = _connectionMultiplexer.GetServer(endpoint);
+                if (server.IsReplica)
+                    continue;
+
+                _incrementWithExpire = await incrementWithExpire.LoadAsync(server).AnyContext();
+                _removeIfEqual = await removeIfEqual.LoadAsync(server).AnyContext();
+                _replaceIfEqual = await replaceIfEqual.LoadAsync(server).AnyContext();
+                _setIfHigher = await setIfHigher.LoadAsync(server).AnyContext();
+                _setIfLower = await setIfLower.LoadAsync(server).AnyContext();
+                _getAllExpiration = await getAllExpiration.LoadAsync(server).AnyContext();
+                _setAllExpiration = await setAllExpiration.LoadAsync(server).AnyContext();
+            }
+
+            if (_incrementWithExpire is null || _removeIfEqual is null || _replaceIfEqual is null ||
+                _setIfHigher is null || _setIfLower is null || _getAllExpiration is null || _setAllExpiration is null)
+                throw new CacheException("Lua scripts could not be loaded: no connected primary Redis server found.");
+
+            _scriptsLoaded = true;
+        }
+    }
+
+    private LoadedLuaScript GetScript(LoadedLuaScript? script)
+    {
+        return script ?? throw new CacheException("Lua scripts not loaded. Call LoadScriptsAsync first.");
+    }
+
+    private void ConnectionMultiplexerOnConnectionRestored(object? sender, ConnectionFailedEventArgs connectionFailedEventArgs)
+    {
+        _logger.LogInformation("Redis connection restored");
+        _scriptsLoaded = false;
+        _capabilities.Invalidate();
+    }
+
+    private void ConnectionMultiplexerOnConnectionFailed(object? sender, ConnectionFailedEventArgs connectionFailedEventArgs)
+    {
+        _logger.LogWarning("Redis connection failed: {FailureType}", connectionFailedEventArgs.FailureType);
+    }
+
+    // NOTE: Implement IAsyncDisposable when Foundatio's ICacheClient interface adds support for it.
+    // IConnectionMultiplexer supports IAsyncDisposable since SE.Redis 2.6.66.
+    public void Dispose()
+    {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        _disposedCancellationTokenSource.Cancel();
+        _disposedCancellationTokenSource.Dispose();
+        _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
+        _connectionMultiplexer.ConnectionFailed -= ConnectionMultiplexerOnConnectionFailed;
+    }
+
+    /// <summary>
+    /// Normalizes expiration: TimeSpan.MaxValue or overflow to DateTime.MaxValue means "no expiration".
+    /// </summary>
+    private TimeSpan? NormalizeExpiration(TimeSpan? expiresIn)
+    {
+        if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
+            return null;
+
+        var expiresAt = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value);
+        return expiresAt == DateTime.MaxValue ? null : expiresIn;
+    }
+
+    /// <summary>
+    /// Gets the expiration in milliseconds for use in Lua scripts.
+    /// Returns null if no expiration should be set (null, TimeSpan.MaxValue, or overflow to DateTime.MaxValue).
+    /// </summary>
+    private long? GetExpirationMilliseconds(TimeSpan? expiresIn)
+    {
+        if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
+            return null;
+
+        // Check if adding expiresIn to now would overflow to DateTime.MaxValue
+        var expiresAt = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value);
+        if (expiresAt == DateTime.MaxValue)
+            return null;
+
+        return (long)expiresIn.Value.TotalMilliseconds;
+    }
+
+    ISerializer IHaveSerializer.Serializer => _options.Serializer;
+
+    private static readonly string IncrementWithScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.IncrementWithExpire.lua");
+    private static readonly string RemoveIfEqualScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.RemoveIfEqual.lua");
+    private static readonly string ReplaceIfEqualScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.ReplaceIfEqual.lua");
+    private static readonly string SetIfHigherScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.SetIfHigher.lua");
+    private static readonly string SetIfLowerScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.SetIfLower.lua");
+    private static readonly string GetAllExpirationScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.GetAllExpiration.lua");
+    private static readonly string SetAllExpirationScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.SetAllExpiration.lua");
+}
+

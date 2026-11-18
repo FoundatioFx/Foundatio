@@ -1,6 +1,6 @@
 # Foundatio.Kafka
 
-Foundatio provides Apache Kafka messaging for high-throughput event streaming. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.Kafka)
+Foundatio provides Apache Kafka messaging for high-throughput event streaming. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka)
 
 ## Overview
 
@@ -45,7 +45,16 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `SaslUsername` | `string` | | SASL username |
 | `SaslPassword` | `string` | | SASL password |
 
-For additional options, see [KafkaMessageBusOptions source](https://github.com/FoundatioFx/Foundatio.Kafka/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBusOptions.cs).
+For additional options, see [KafkaMessageBusOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBusOptions.cs).
+
+## Running the Tests
+
+The Kafka provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.Kafka`, with its tests in `tests/Foundatio.Kafka.Tests`. The tests connect to a broker at `127.0.0.1:9092`. Start one from the repository root and run them:
+
+```bash
+docker compose up -d kafka
+dotnet test --project tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj
+```
 
 ## Next Steps
 

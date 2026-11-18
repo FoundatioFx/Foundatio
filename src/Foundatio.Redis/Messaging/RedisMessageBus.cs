@@ -1,0 +1,204 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.AsyncEx;
+using Foundatio.Extensions;
+using Foundatio.Redis;
+using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
+
+namespace Foundatio.Messaging;
+
+public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
+{
+    private readonly AsyncLock _lock = new();
+    private readonly ISubscriber _subscriber;
+    private volatile bool _isSubscribed;
+    private ChannelMessageQueue? _channelMessageQueue;
+    private readonly RedisChannel _channel;
+
+    public RedisMessageBus(RedisMessageBusOptions options) : base(options)
+    {
+        ArgumentNullException.ThrowIfNull(options.Subscriber);
+        ArgumentException.ThrowIfNullOrEmpty(options.Topic);
+
+        _subscriber = options.Subscriber;
+
+        // In Redis Cluster mode, use sharded pub/sub (SPUBLISH/SSUBSCRIBE) to avoid duplicate
+        // message delivery caused by cluster-wide broadcast. Regular PUBLISH in a cluster
+        // broadcasts to all nodes, and StackExchange.Redis spreads Literal subscriptions across
+        // nodes, which can cause subscribers to receive the same message multiple times from
+        // different primaries. Sharded pub/sub routes all operations for a given channel through
+        // a single shard, preventing per-primary duplicate delivery while preserving full fanout
+        // to all subscribers on that shard. This does not provide end-to-end exactly-once
+        // semantics; callers must remain tolerant of lost or duplicated messages across
+        // disconnects and retries.
+        // Falls back to standard PUBLISH/SUBSCRIBE for standalone, sentinel, and proxy deployments.
+        // See: https://redis.io/docs/latest/commands/spublish/
+        // See: https://redis.io/docs/latest/commands/ssubscribe/
+        _channel = _subscriber.Multiplexer.IsCluster()
+            ? RedisChannel.Sharded(options.Topic)
+            : RedisChannel.Literal(options.Topic);
+    }
+
+    public RedisMessageBus(Builder<RedisMessageBusOptionsBuilder, RedisMessageBusOptions> config)
+        : this(config(new RedisMessageBusOptionsBuilder()).Build())
+    {
+    }
+
+    protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
+    {
+        if (_isSubscribed)
+            return;
+
+        using (await _lock.LockAsync(cancellationToken).AnyContext())
+        {
+            if (_isSubscribed)
+                return;
+
+            _logger.LogTrace("Subscribing to topic: {Topic}", _options.Topic);
+            _channelMessageQueue = await _subscriber.SubscribeAsync(_channel).AnyContext();
+            _channelMessageQueue.OnMessage(OnMessage);
+            _isSubscribed = true;
+            _logger.LogTrace("Subscribed to topic: {Topic}", _options.Topic);
+        }
+    }
+
+    private async Task OnMessage(ChannelMessage channelMessage)
+    {
+        using var _ = _logger.BeginScope(s => s
+            .Property("Channel", channelMessage.Channel.ToString()));
+
+        _logger.LogTrace("OnMessage({Channel})", channelMessage.Channel);
+        if (_subscribers.IsEmpty || !channelMessage.Message.HasValue)
+        {
+            _logger.LogTrace("No subscribers ({Channel})", channelMessage.Channel);
+            return;
+        }
+
+        IMessage message;
+        try
+        {
+            byte[] messageBytes = (byte[]?)channelMessage.Message ?? [];
+            var envelope = _serializer.Deserialize<RedisMessageEnvelope>(messageBytes);
+            if (envelope is null)
+            {
+                _logger.LogError("OnMessage({Channel}) Deserialized envelope was null", channelMessage.Channel);
+                return;
+            }
+
+            if (envelope.Data is null || envelope.Type is null)
+                _logger.LogWarning("OnMessage({Channel}) Envelope has null {Field}, treating as empty", channelMessage.Channel, envelope.Data is null ? "Data" : "Type");
+
+            message = new Message(envelope.Data ?? [], DeserializeMessageBody)
+            {
+                Type = envelope.Type,
+                ClrType = GetMappedMessageType(envelope.Type),
+                CorrelationId = envelope.CorrelationId,
+                UniqueId = envelope.UniqueId
+            };
+
+            if (envelope.Properties is not null)
+            {
+                foreach (var property in envelope.Properties)
+                    message.Properties.Add(property.Key, property.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "OnMessage({Channel}) Error deserializing message: {Message}", channelMessage.Channel, ex.Message);
+            return;
+        }
+
+        try
+        {
+            await SendMessageToSubscribersAsync(message).AnyContext();
+        }
+        catch (OperationCanceledException) when (IsDisposed)
+        {
+            // Bus is disposing — Redis pub/sub is fire-and-forget, message is lost
+        }
+        catch (MessageBusException)
+        {
+            // SendMessageToSubscribersAsync already logged the error
+            // Redis pub/sub has no acknowledgment mechanism - message is lost
+        }
+        catch (Exception ex)
+        {
+            // Catch any other unexpected exceptions for defensive purposes
+            _logger.LogError(ex, "OnMessage({Channel}) Error in subscriber: {Message}", channelMessage.Channel, ex.Message);
+        }
+    }
+
+    protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
+    {
+        if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+        {
+            var mappedType = GetMappedMessageType(messageType);
+            if (mappedType is null)
+                throw new MessageBusException($"Unable to resolve CLR type for delayed message: {messageType}");
+
+            _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            SendDelayedMessage(mappedType, message, options);
+            return;
+        }
+
+        _logger.LogTrace("Message Publish: {MessageType}", messageType);
+        byte[] bodyData = SerializeMessageBody(messageType, message);
+        byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope
+        {
+            Type = messageType,
+            Data = bodyData,
+            CorrelationId = options.CorrelationId,
+            UniqueId = options.UniqueId,
+            Properties = options.Properties.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+        });
+
+        // TODO: Use ILockProvider to lock on UniqueId to ensure it doesn't get duplicated
+        // Wrap only the transport call in resilience policy
+        await _resiliencePolicy.ExecuteAsync(async _ =>
+            await _subscriber.PublishAsync(_channel, data, CommandFlags.FireAndForget),
+            cancellationToken).AnyContext();
+    }
+
+    protected override async Task CleanupAsync()
+    {
+        if (!_isSubscribed)
+            return;
+
+        using (await _lock.LockAsync().AnyContext())
+        {
+            if (!_isSubscribed)
+                return;
+
+            if (_channelMessageQueue is not null)
+            {
+                _logger.LogTrace("Unsubscribing from topic {Topic}", _options.Topic);
+                try
+                {
+                    _channelMessageQueue.Unsubscribe(CommandFlags.FireAndForget);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error unsubscribing from topic {Topic}: {Message}", _options.Topic, ex.Message);
+                }
+                _channelMessageQueue = null;
+            }
+
+            _isSubscribed = false;
+            _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
+        }
+    }
+}
+
+public class RedisMessageEnvelope
+{
+    public string? UniqueId { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? Type { get; set; }
+    public byte[]? Data { get; set; }
+    public Dictionary<string, string>? Properties { get; set; } = new Dictionary<string, string>();
+}

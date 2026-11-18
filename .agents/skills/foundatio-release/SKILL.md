@@ -1,6 +1,6 @@
 ---
 name: foundatio-release
-description: Orchestrates a coordinated, staggered release of the Foundatio core library and its dependent repos (Redis, RabbitMQ, AzureStorage, AzureServiceBus, AWS, Aliyun, Storage.SshNet, Kafka, plus Parsers/Repositories when they need a tag). Verifies every step (CI on exact commits, API/binary compat, nuget.org restorability, version pins) before promoting. Use when cutting a Foundatio release, bumping repos from a preview/nightly to a stable Foundatio version, tagging provider repos, checking release readiness, or when the user says "cut 13.x.y", "release foundatio", or "check CI for all repos".
+description: Orchestrates a coordinated, staggered release of the Foundatio core library (whose tag also releases Foundatio.Redis, Foundatio.AWS, Foundatio.Kafka, Foundatio.AzureServiceBus and Foundatio.RabbitMQ) and its dependent repos (AzureStorage, Aliyun, Storage.SshNet, plus Parsers/Repositories when they need a tag). Verifies every step (CI on exact commits, API/binary compat, nuget.org restorability, version pins) before promoting. Use when cutting a Foundatio release, bumping repos from a preview/nightly to a stable Foundatio version, tagging provider repos, checking release readiness, or when the user says "cut 13.x.y", "release foundatio", or "check CI for all repos".
 ---
 
 # Foundatio Release
@@ -13,8 +13,8 @@ Scripts live in [scripts/](scripts/) (PowerShell 7, run from any directory). Det
 
 | Role | Repos | Rule |
 |---|---|---|
-| **Core** | `Foundatio` | Tag first. Its tag build publishes stable to nuget.org. |
-| **Providers (tag with core version)** | Redis, RabbitMQ, AzureStorage, AzureServiceBus, AWS, Aliyun, Storage.SshNet, Kafka | Tag `v<core version>` after bumping to the stable core version. All depend only on core. |
+| **Core** | `Foundatio` | Tag first. Its tag build publishes stable to nuget.org, including `Foundatio.Redis`, `Foundatio.AWS`, `Foundatio.Kafka`, `Foundatio.AzureServiceBus` and `Foundatio.RabbitMQ`, which live in this repo and need no bump or tag of their own. |
+| **Providers (tag with core version)** | AzureStorage, Aliyun, Storage.SshNet | Tag `v<core version>` after bumping to the stable core version. All depend only on core. |
 | **Dependents with their own version scheme** | Parsers (`v8.x`), Repositories (`v8.x`) | Bump pins and keep CI green on every core release. Tag **only** when the user says they need a release. If tagged, they go in their own stage (see Staggering). |
 | **Never tagged here** | Mediator, CommandQuery, Lucene | No core Foundatio dependency (Mediator only uses it in tests/samples). Always skip tagging. Still bump Mediator's pins. Still report their CI; ask the user whether red CI blocks (it did not for 13.0.5; they were red from unrelated NU1902/NU1903 advisories). |
 

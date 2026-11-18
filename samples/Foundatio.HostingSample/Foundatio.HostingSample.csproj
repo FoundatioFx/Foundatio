@@ -10,7 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Extensions.Hosting\Foundatio.Extensions.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
-    <ProjectReference Include="..\..\..\Foundatio.Redis\src\Foundatio.Redis\Foundatio.Redis.csproj" Condition="'$(EnableRedis)' == 'true'" />
+    <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" Condition="'$(EnableRedis)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup>

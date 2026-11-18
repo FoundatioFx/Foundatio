@@ -1,0 +1,55 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Exceptionless;
+using Foundatio.Caching;
+using Foundatio.Extensions;
+using Foundatio.Jobs;
+using Foundatio.Lock;
+using Foundatio.Messaging;
+using Foundatio.Queues;
+using Foundatio.Resilience;
+using Microsoft.Extensions.Logging;
+
+namespace Foundatio.SampleJob;
+
+public class PingQueueJob : QueueJobBase<PingRequest>
+{
+    private readonly ILockProvider _locker;
+    private int _runCount;
+
+    public PingQueueJob(IQueue<PingRequest> queue, ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
+    {
+        AutoComplete = true;
+        _locker = new CacheLockProvider(cacheClient, messageBus, timeProvider, resiliencePolicyProvider, loggerFactory);
+    }
+
+    public int RunCount => _runCount;
+
+    protected override Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<PingRequest> queueEntry, CancellationToken cancellationToken = new CancellationToken())
+    {
+        return _locker.TryAcquireAsync(String.Concat("pull:", queueEntry.Value.Id),
+            TimeSpan.FromMinutes(30),
+            TimeSpan.FromSeconds(1));
+    }
+
+    protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<PingRequest> context)
+    {
+        Interlocked.Increment(ref _runCount);
+
+        _logger.LogInformation("Got {RunCount} ping. Sending pong!", RunCount.ToOrdinal());
+        await Task.Delay(TimeSpan.FromMilliseconds(1)).AnyContext();
+
+        if (RandomData.GetBool(context.QueueEntry.Value!.PercentChanceOfException))
+            throw new ApplicationException("Boom!");
+
+        return JobResult.Success;
+    }
+}
+
+public record PingRequest
+{
+    public required string Data { get; set; }
+    public required string Id { get; set; }
+    public int PercentChanceOfException { get; set; }
+}
