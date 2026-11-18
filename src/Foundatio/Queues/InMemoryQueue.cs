@@ -126,6 +126,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(handler);
+
         _workers.Add(StartWorker(handler, autoComplete, cancellationToken));
     }
 

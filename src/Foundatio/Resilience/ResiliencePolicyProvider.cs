@@ -13,11 +13,11 @@ namespace Foundatio.Resilience;
 public class ResiliencePolicyProvider : IResiliencePolicyProvider
 {
     private readonly ConcurrentDictionary<string, IResiliencePolicy> _policies = new(StringComparer.OrdinalIgnoreCase);
-    private IResiliencePolicy _defaultPolicy;
+    private readonly IResiliencePolicy _defaultPolicy;
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
 
-    internal bool HasConfiguredDefaultPolicy { get; private set; }
+    internal IResiliencePolicy? ConfiguredDefaultPolicy { get; private set; }
 
     public ResiliencePolicyProvider(TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
@@ -35,8 +35,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     {
         ArgumentNullException.ThrowIfNull(policy);
 
-        _defaultPolicy = policy;
-        HasConfiguredDefaultPolicy = true;
+        ConfiguredDefaultPolicy = policy;
         return this;
     }
 
@@ -146,14 +145,14 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         if (String.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));
 
-        return _policies.TryGetValue(name, out var policy) ? policy : useDefault ? _defaultPolicy : null;
+        return _policies.TryGetValue(name, out var policy) ? policy : useDefault ? GetDefaultPolicy() : null;
     }
 
     /// <summary>
     /// Gets the default resilience policy.
     /// </summary>
     /// <returns>The default <see cref="IResiliencePolicy"/> instance.</returns>
-    public IResiliencePolicy GetDefaultPolicy() => _defaultPolicy;
+    public IResiliencePolicy GetDefaultPolicy() => ConfiguredDefaultPolicy ?? _defaultPolicy;
 }
 
 public static class DefaultResiliencePolicyProvider

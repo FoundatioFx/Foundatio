@@ -138,23 +138,16 @@ public static class ResiliencePolicyExtensions
                 if (policy != null)
                     return policy;
             }
-        }
 
-        return GetDefaultPolicy(provider, fallbackBuilder, logger, timeProvider);
-    }
-
-    private static IResiliencePolicy GetDefaultPolicy(IResiliencePolicyProvider? provider, Action<ResiliencePolicyBuilder>? fallbackBuilder = null, ILogger? logger = null, TimeProvider? timeProvider = null)
-    {
-        if (provider is ResiliencePolicyProvider { HasConfiguredDefaultPolicy: true } ||
-            (provider is not null && provider.GetType() != typeof(ResiliencePolicyProvider)))
-        {
-            var defaultPolicy = provider.GetDefaultPolicy();
+            var defaultPolicy = provider.GetType() == typeof(ResiliencePolicyProvider)
+                ? ((ResiliencePolicyProvider)provider).ConfiguredDefaultPolicy
+                : provider.GetDefaultPolicy();
             if (defaultPolicy != null)
                 return defaultPolicy;
         }
 
-        var policy = new ResiliencePolicy(logger, timeProvider);
-        fallbackBuilder?.Invoke(new ResiliencePolicyBuilder(policy));
-        return policy;
+        var fallback = new ResiliencePolicy(logger, timeProvider);
+        fallbackBuilder?.Invoke(new ResiliencePolicyBuilder(fallback));
+        return fallback;
     }
 }
