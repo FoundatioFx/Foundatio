@@ -170,7 +170,7 @@ Different operations use different strategies to keep L1 in sync with L2:
 | Strategy | When Used | Operations |
 |----------|-----------|------------|
 | **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` |
-| **Set on full success** | When all items in a batch succeed | `ListAddAsync`, `ListRemoveAsync` (when count matches) |
+| **Apply a list update** | When the distributed count matches and the local cache can represent the full list | `ListAddAsync`, `ListRemoveAsync` |
 | **Remove to invalidate** | When the final value is uncertain or partial success | `SetIfHigherAsync`, `SetIfLowerAsync`, partial `ListAddAsync`/`ListRemoveAsync` |
 | **Remove on failure** | When the operation fails (e.g., past expiration) | `SetAsync`, `SetAllAsync`, `ReplaceAsync`, `ReplaceIfEqualAsync` |
 
@@ -190,16 +190,7 @@ long newValue = await distributedCache.IncrementAsync(key, amount, null);
 await localCache.SetAsync(key, newValue, null);  // Both caches: no expiration
 ```
 
-**Set on full success** - Used for batch operations when all items succeed:
-
-```csharp
-// ListAddAsync: if all items were added, update local cache
-long added = await distributedCache.ListAddAsync(key, items, expiresIn);
-if (added == items.Length)
-    await localCache.ListAddAsync(key, items, expiresIn);  // Full success
-else
-    await localCache.RemoveAsync(key);  // Partial success - force re-fetch
-```
+**List updates** apply the changed members to a warm local list. On a local miss, `ListAddAsync` checks whether the distributed key exists before writing. It can seed a new list locally. An existing distributed list stays cold until an unpaged read fetches all members. A partial write count evicts the local list. An overlapping local add or a peer invalidation for the key keeps the entry cold when the pending add finishes.
 
 **Remove to invalidate** - Used for conditional operations where we don't know the actual value:
 
