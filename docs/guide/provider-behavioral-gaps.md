@@ -138,7 +138,7 @@ Handlers should be idempotent with every provider; see [message loss and duplica
 
 On non-session queues without [duplicate detection](https://learn.microsoft.com/azure/service-bus-messaging/duplicate-detection), scheduled retries keep the original broker `MessageId`. With duplicate detection enabled, Foundatio.AzureServiceBus 13.0.5 abandons immediately because the broker would discard a copy with the same ID.
 
-With [Foundatio.AzureServiceBus #106](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/pull/106), a consumer can schedule a delayed retry on a non-session queue with duplicate detection. Each scheduled copy gets a new broker `MessageId`, which the consumer sees as `entry.Id`. For idempotency across retries, use a stable business operation ID from the payload or application properties, such as a payment request ID. Azure supplies the queue's duplicate-detection setting. When using the emulator, set `RequiresDuplicateDetection` to match the queue configuration.
+When the provider schedules a retry on a queue with duplicate detection, the copy gets a new broker `MessageId`, which the consumer sees as `entry.Id`. For idempotency across retries, use a stable business operation ID from the payload or application properties, such as a payment request ID. Azure supplies the queue's duplicate-detection setting. When using the emulator, set `RequiresDuplicateDetection` to match the queue configuration.
 
 ---
 
