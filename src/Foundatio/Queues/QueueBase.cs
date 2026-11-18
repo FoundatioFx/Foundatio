@@ -56,8 +56,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _serializer = options.Serializer;
         options.Behaviors.ForEach(AttachBehavior);
 
-        IHaveResiliencePolicyProvider policyOptions = options;
-        _resiliencePolicy = policyOptions.ResiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
+        _resiliencePolicy = ((IHaveResiliencePolicyProvider)options).ResiliencePolicyProvider
+            .GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
         _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");
