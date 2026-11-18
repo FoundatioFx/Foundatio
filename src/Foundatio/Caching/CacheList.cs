@@ -384,7 +384,9 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
         if (type == typeof(OrderedDictionary<T, DateTime?>))
         {
             var ordered = (OrderedDictionary<T, DateTime?>)values;
-            return new OrderedDictionary<T, DateTime?>(ordered, ordered.Comparer);
+            // A bulk clone is safe for reference-free keys and the default comparer.
+            if (RuntimeHelpers.IsReferenceOrContainsReferences<T>() || !ReferenceEquals(ordered.Comparer, EqualityComparer<T>.Default))
+                return new OrderedDictionary<T, DateTime?>(ordered, ordered.Comparer);
         }
 
         if (type == typeof(SortedDictionary<T, DateTime?>))
