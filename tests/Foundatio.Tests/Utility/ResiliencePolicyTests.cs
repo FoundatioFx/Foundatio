@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Queues;
 using Foundatio.Resilience;
 using Foundatio.Utility;
 using Foundatio.Xunit;
@@ -240,6 +241,22 @@ public class ResiliencePolicyTests : TestWithLoggingBase
                 await Task.Delay(500, ct);
             }, TestCancellationToken);
         });
+    }
+
+    [Fact]
+    public void GetPolicy_WithConfiguredDefault_PrefersQueuePolicyThenDefaultThenFallback()
+    {
+        var provider = new ResiliencePolicyProvider();
+        IResiliencePolicy Resolve() => provider.GetPolicy<IQueue<string>, IQueue>(b => b.WithMaxAttempts(7));
+
+        Assert.Equal(7, Assert.IsType<ResiliencePolicy>(Resolve()).MaxAttempts);
+
+        provider.WithDefaultPolicy(b => b.WithMaxAttempts(1));
+        Assert.Same(provider.GetDefaultPolicy(), Resolve());
+
+        var queuePolicy = new ResiliencePolicy { MaxAttempts = 2 };
+        provider.WithPolicy<IQueue>(queuePolicy);
+        Assert.Same(queuePolicy, Resolve());
     }
 
     [Fact]

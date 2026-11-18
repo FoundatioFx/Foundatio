@@ -17,6 +17,8 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
 
+    internal bool HasConfiguredDefaultPolicy { get; private set; }
+
     public ResiliencePolicyProvider(TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -34,6 +36,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         ArgumentNullException.ThrowIfNull(policy);
 
         _defaultPolicy = policy;
+        HasConfiguredDefaultPolicy = true;
         return this;
     }
 
@@ -48,8 +51,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         var policyBuilder = new ResiliencePolicyBuilder(policy);
         builder?.Invoke(policyBuilder);
 
-        _defaultPolicy = policy;
-        return this;
+        return WithDefaultPolicy(policy);
     }
 
     /// <summary>

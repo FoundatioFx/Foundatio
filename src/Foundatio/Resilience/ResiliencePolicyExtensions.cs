@@ -145,7 +145,8 @@ public static class ResiliencePolicyExtensions
 
     private static IResiliencePolicy GetDefaultPolicy(IResiliencePolicyProvider? provider, Action<ResiliencePolicyBuilder>? fallbackBuilder = null, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
-        if (provider != null && provider.GetType() != typeof(ResiliencePolicyProvider))
+        if (provider is ResiliencePolicyProvider { HasConfiguredDefaultPolicy: true } ||
+            (provider is not null && provider.GetType() != typeof(ResiliencePolicyProvider)))
         {
             var defaultPolicy = provider.GetDefaultPolicy();
             if (defaultPolicy != null)
