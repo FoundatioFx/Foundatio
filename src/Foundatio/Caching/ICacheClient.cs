@@ -316,7 +316,7 @@ public interface ICacheClient : IDisposable
     /// <param name="key">The unique identifier for the cache entry. Cannot be null or empty.</param>
     /// <param name="value">The value to compare and potentially set. Supports fractional values.</param>
     /// <param name="expiresIn">
-    /// Optional expiration time for the cache entry.
+    /// Optional expiration time, applied only when the value is set. When the condition is not met, the existing value and expiration are left unchanged.
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
@@ -340,7 +340,7 @@ public interface ICacheClient : IDisposable
     /// <param name="key">The unique identifier for the cache entry. Cannot be null or empty.</param>
     /// <param name="value">The value to compare and potentially set.</param>
     /// <param name="expiresIn">
-    /// Optional expiration time for the cache entry.
+    /// Optional expiration time, applied only when the value is set. When the condition is not met, the existing value and expiration are left unchanged.
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
@@ -364,7 +364,7 @@ public interface ICacheClient : IDisposable
     /// <param name="key">The unique identifier for the cache entry. Cannot be null or empty.</param>
     /// <param name="value">The value to compare and potentially set. Supports fractional values.</param>
     /// <param name="expiresIn">
-    /// Optional expiration time for the cache entry.
+    /// Optional expiration time, applied only when the value is set. When the condition is not met, the existing value and expiration are left unchanged.
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
@@ -388,7 +388,7 @@ public interface ICacheClient : IDisposable
     /// <param name="key">The unique identifier for the cache entry. Cannot be null or empty.</param>
     /// <param name="value">The value to compare and potentially set.</param>
     /// <param name="expiresIn">
-    /// Optional expiration time for the cache entry.
+    /// Optional expiration time, applied only when the value is set. When the condition is not met, the existing value and expiration are left unchanged.
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>

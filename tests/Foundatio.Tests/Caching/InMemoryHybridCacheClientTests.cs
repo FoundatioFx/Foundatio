@@ -707,9 +707,15 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue()
+    public override Task SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged()
     {
-        return base.SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue();
+        return base.SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        return base.SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged();
     }
 
     [Fact(Skip = "Skip because HybridCacheClient can cache a stale local value under concurrent writes: https://github.com/FoundatioFx/Foundatio/issues/572")]

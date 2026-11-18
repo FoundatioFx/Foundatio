@@ -555,8 +555,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
                 return replacement.IsExpired ? (current, T.Zero) : (replacement, higher ? value - currentValue : currentValue - value);
             }
 
-            var unchanged = current.WithExpiration(expiresAt);
-            return (unchanged.IsExpired ? current : unchanged, T.Zero);
+            return (current, T.Zero);
         });
 
         await StartMaintenanceAsync().AnyContext();

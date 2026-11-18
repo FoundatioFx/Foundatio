@@ -3277,7 +3277,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue()
+    public virtual async Task SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged()
     {
         // Arrange
         var cache = GetCacheClient();
@@ -3287,14 +3287,45 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            await cache.SetAsync("set-if-higher-lower", 10L);
+            await cache.SetAsync("set-if-higher-lower", 10L, TimeSpan.FromHours(1));
 
             // Act
-            long difference = await cache.SetIfHigherAsync("set-if-higher-lower", 5L, TimeSpan.FromMinutes(5));
+            long lowerDifference = await cache.SetIfHigherAsync("set-if-higher-lower", 5L, TimeSpan.FromMinutes(5));
+            long equalDifference = await cache.SetIfHigherAsync("set-if-higher-lower", 10L);
 
             // Assert
-            Assert.Equal(0, difference);
+            Assert.Equal(0, lowerDifference);
+            Assert.Equal(0, equalDifference);
             Assert.Equal(10, (await cache.GetAsync<long>("set-if-higher-lower")).Value);
+            var expiration = await cache.GetExpirationAsync("set-if-higher-lower");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+        }
+    }
+
+    public virtual async Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            await cache.SetAsync("set-if-lower-higher", 10L, TimeSpan.FromHours(1));
+
+            // Act
+            long higherDifference = await cache.SetIfLowerAsync("set-if-lower-higher", 15L, TimeSpan.FromMinutes(5));
+            long equalDifference = await cache.SetIfLowerAsync("set-if-lower-higher", 10L);
+
+            // Assert
+            Assert.Equal(0, higherDifference);
+            Assert.Equal(0, equalDifference);
+            Assert.Equal(10, (await cache.GetAsync<long>("set-if-lower-higher")).Value);
+            var expiration = await cache.GetExpirationAsync("set-if-lower-higher");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
         }
     }
 

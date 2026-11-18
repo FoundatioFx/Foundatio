@@ -119,7 +119,7 @@ The table describes expiration when the operation is applied. For example, `AddA
 | `SetIfLowerAsync` | No TTL (removes existing)* | Sets TTL* | Removes key | `0` |
 | `ListAddAsync` | Supplied values do not expire | Sets per-value TTL | Removes supplied values | `0` |
 
-\* **In-memory numeric conditions**: `InMemoryCacheClient` applies the requested expiration even when `SetIfHigherAsync` or `SetIfLowerAsync` leaves the numeric value unchanged. A return value of `0` does not imply that the TTL was preserved. Passing `null` clears the TTL. Updates rejected by size validation leave the existing entry unchanged. See [Conditional Expiration Behavior](#conditional-expiration-behavior) for an example.
+\* **Conditional operations**: `SetIfHigherAsync` and `SetIfLowerAsync` only update the TTL when the condition is met. If the value is not higher/lower, the entire operation is a no-op, including the expiration. Updates rejected by size validation also leave the existing entry unchanged. See [Conditional Expiration Behavior](#conditional-expiration-behavior).
 
 ::: tip ListRemoveAsync
 `ListRemoveAsync` does not accept an `expiresIn` parameter. In-memory list removal recomputes the key's expiration from the remaining values: any non-expiring value keeps the key non-expiring; otherwise the latest remaining expiration is used. Removing the last value removes the key.
@@ -276,6 +276,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - `Items` returns the cached values rather than the internal entry objects.
 - `IncrementAsync` recalculates the entry's tracked size after each increment.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
+- `SetIfHigherAsync` and `SetIfLowerAsync` leave the TTL unchanged when the condition is not met, as documented and as Redis does. Earlier in-memory versions applied, or with `null` cleared, the TTL anyway. Call `SetExpirationAsync` to extend a TTL unconditionally.
 - Key writes, numeric updates, and list additions reject a replacement whose valid TTL elapses during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size. This includes time spent sizing or cloning a value. Expirations supplied below 5ms retain the removal behavior described in [Minimum Expiration](#minimum-expiration).
 - Size-changing writes, clears, and recounts coordinate their memory accounting to prevent lasting drift from publication order. Disposal clears the tracked size together with the stored entries. Sizing and logging callbacks run outside the accounting lock.
 :::
@@ -707,23 +708,20 @@ var currentMax = (await cache.GetAsync<double>("max-users")).Value;
 
 #### Conditional Expiration Behavior
 
-For `InMemoryCacheClient`, `SetIfHigherAsync` and `SetIfLowerAsync` apply `expiresIn` even when the numeric condition is not met. This differs from a rejected `ReplaceIfEqualAsync`, which leaves the entry unchanged. Do not infer expiration behavior solely from a numeric return value of `0`.
+`SetIfHigherAsync` and `SetIfLowerAsync` only update the expiration **when the condition is met**. If the value is not higher (or lower), the operation is a complete no-op, including the expiration. This matches a rejected `ReplaceIfEqualAsync` and Redis's conditional `SET`.
 
 ```csharp
-using var cache = new InMemoryCacheClient();
-
 // Set with a 1-hour TTL
 await cache.SetIfHigherAsync("max-users", 100L, TimeSpan.FromHours(1));
 
-// Numeric value stays 100, but the TTL is reset to 2 hours.
-long difference = await cache.SetIfHigherAsync("max-users", 50L, TimeSpan.FromHours(2));
-// difference == 0
+// Lower value with a 2-hour TTL: returns 0, and the TTL is still 1 hour
+await cache.SetIfHigherAsync("max-users", 50L, TimeSpan.FromHours(2));
 
-// Numeric value still stays 100; passing null removes the TTL.
-await cache.SetIfHigherAsync("max-users", 50L, null);
+// Higher value with a 2-hour TTL: the TTL is now 2 hours
+await cache.SetIfHigherAsync("max-users", 200L, TimeSpan.FromHours(2));
 ```
 
-An in-memory update rejected by size validation does not apply its new expiration. Check the behavior of the cache provider you use rather than assuming every provider treats an unmet numeric condition identically.
+To extend the TTL whether or not the value changes, call `SetExpirationAsync` separately.
 
 ### List Operations
 

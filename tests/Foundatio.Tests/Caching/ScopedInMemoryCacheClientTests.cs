@@ -599,9 +599,15 @@ public class ScopedInMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue()
+    public override Task SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged()
     {
-        return base.SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue();
+        return base.SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        return base.SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged();
     }
 
     [Fact]

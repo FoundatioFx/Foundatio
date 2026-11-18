@@ -101,7 +101,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true, false, 2)]
     [InlineData(true, true, null)]
     [InlineData(true, true, 2)]
-    public async Task ConditionalNumericUpdate_WithUnchangedValue_UpdatesExpiration(bool lower, bool useDouble, int? expirationMinutes)
+    public async Task ConditionalNumericUpdate_WithUnchangedValue_KeepsExpirationAndSize(bool lower, bool useDouble, int? expirationMinutes)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -121,7 +121,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         Assert.Equal(0, difference);
         Assert.Equal(10L, (await cache.GetAsync<long>("key")).Value);
-        Assert.Equal(expiresIn, await cache.GetExpirationAsync("key"));
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
         Assert.Equal(50, cache.CurrentMemorySize);
     }
 
@@ -6101,9 +6101,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue()
+    public override Task SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged()
     {
-        return base.SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue();
+        return base.SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        return base.SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged();
     }
 
     [Fact]
