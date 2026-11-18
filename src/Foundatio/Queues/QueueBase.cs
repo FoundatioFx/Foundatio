@@ -40,6 +40,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private QueueStats? _queueStats;
     private DateTimeOffset _nextQueueStatsUpdate = DateTimeOffset.MinValue;
     private int _groupIdUnsupportedLogged;
+    private long _workerErrorCount;
 
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
@@ -272,6 +273,153 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         // StartWorkingImpl creates its own linked token for the long-running worker loop.
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
         StartWorkingImpl(handler, autoComplete, cancellationToken);
+    }
+
+    /// <summary>
+    /// The number of worker errors since the queue stats were last reset. Providers report this as <see cref="QueueStats.Errors"/>.
+    /// </summary>
+    protected long WorkerErrorCount => Interlocked.Read(ref _workerErrorCount);
+
+    /// <summary>
+    /// Records an error from a provider-specific worker in the queue's worker error count.
+    /// </summary>
+    protected void IncrementWorkerErrorCount() => Interlocked.Increment(ref _workerErrorCount);
+
+    /// <summary>
+    /// Resets <see cref="WorkerErrorCount"/> to zero. Call this when resetting queue stats.
+    /// </summary>
+    protected void ResetWorkerErrorCount() => Interlocked.Exchange(ref _workerErrorCount, 0);
+
+    /// <summary>
+    /// Starts a background worker that rechecks queue setup after failed receives and dequeues entries with <see cref="DequeueImplAsync"/> and runs <paramref name="handler"/>
+    /// for each one until <paramref name="cancellationToken"/> is cancelled or the queue is disposed.
+    /// Providers call this from <see cref="StartWorkingImpl"/> so every implementation handles worker errors the same way.
+    /// </summary>
+    /// <remarks>
+    /// <list type="bullet">
+    /// <item>Cancellation stops the worker and is not counted as an error.</item>
+    /// <item>A setup or dequeue failure is logged, counted in <see cref="WorkerErrorCount"/> and followed by an exponential backoff with jitter
+    /// (about 1 second, doubling up to 30 seconds). The backoff resets after the next dequeue that doesn't throw.</item>
+    /// <item>A handler failure is logged and counted, and the entry is abandoned unless the handler already completed or abandoned it.
+    /// A handler that throws <see cref="OperationCanceledException"/> because the worker was cancelled isn't counted.</item>
+    /// <item>Abandon and auto-complete run through the queue's resilience policy. If they still fail, the error is logged
+    /// (auto-complete failures are also counted) and the worker keeps running; unsettled entries can be redelivered after their locks expire.</item>
+    /// <item>An entry dequeued after cancellation was requested isn't processed; it becomes available again when its lock expires.</item>
+    /// </list>
+    /// </remarks>
+    /// <returns>A task that completes when the worker stops.</returns>
+    protected Task StartWorker(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+
+        _logger.LogTrace("Queue {QueueName} start working", _options.Name);
+
+        var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+        return Task.Run(async () =>
+        {
+            using (linkedCancellationTokenSource)
+                await RunWorkerAsync(handler, autoComplete, linkedCancellationTokenSource.Token).AnyContext();
+        });
+    }
+
+    private async Task RunWorkerAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)
+    {
+        _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
+
+        int backoffSeconds = 0;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
+
+            IQueueEntry<T>? entry;
+            try
+            {
+                if (backoffSeconds > 0)
+                {
+                    await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
+                    if (cancellationToken.IsCancellationRequested)
+                        break;
+                }
+
+                entry = await DequeueImplAsync(cancellationToken).AnyContext();
+                backoffSeconds = 0;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                IncrementWorkerErrorCount();
+                backoffSeconds = Math.Clamp(backoffSeconds * 2, 1, 30);
+                var delay = TimeSpan.FromSeconds(backoffSeconds * (1 - 0.25 * Random.Shared.NextDouble()));
+                _logger.LogError(ex, "Error dequeuing from {QueueName}, retrying in {Delay:g}: {Message}", _options.Name, delay, ex.Message);
+                await _timeProvider.SafeDelay(delay, cancellationToken).AnyContext();
+                continue;
+            }
+
+            if (entry is null || cancellationToken.IsCancellationRequested)
+                continue;
+
+            try
+            {
+                await handler(entry, cancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug("Worker cancelled while processing queue entry {QueueEntryId}", entry.Id);
+                await AbandonWorkerEntryAsync(entry).AnyContext();
+                continue;
+            }
+            catch (Exception ex)
+            {
+                IncrementWorkerErrorCount();
+                _logger.LogError(ex, "Worker error: {Message}", ex.Message);
+                await AbandonWorkerEntryAsync(entry).AnyContext();
+                continue;
+            }
+
+            if (!autoComplete || entry.IsAbandoned || entry.IsCompleted)
+                continue;
+
+            try
+            {
+                await _resiliencePolicy.ExecuteAsync(entry, static (e, _) =>
+                    e.IsAbandoned || e.IsCompleted ? ValueTask.CompletedTask : new ValueTask(e.CompleteAsync()), DisposedCancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) when (DisposedCancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug("Queue disposed before entry {QueueEntryId} could be auto completed", entry.Id);
+            }
+            catch (Exception ex)
+            {
+                IncrementWorkerErrorCount();
+                _logger.LogError(ex, "Worker error attempting to auto complete entry {QueueEntryId}: {Message}", entry.Id, ex.Message);
+            }
+        }
+
+        _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, cancellationToken.IsCancellationRequested);
+    }
+
+    private async Task AbandonWorkerEntryAsync(IQueueEntry<T> entry)
+    {
+        if (entry.IsAbandoned || entry.IsCompleted)
+            return;
+
+        try
+        {
+            await _resiliencePolicy.ExecuteAsync(entry, static (e, _) =>
+                e.IsAbandoned || e.IsCompleted ? ValueTask.CompletedTask : new ValueTask(e.AbandonAsync()), DisposedCancellationToken).AnyContext();
+        }
+        catch (OperationCanceledException) when (DisposedCancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug("Queue disposed before entry {QueueEntryId} could be abandoned", entry.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Worker error abandoning queue entry {QueueEntryId}: {Message}", entry.Id, ex.Message);
+        }
     }
 
     public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;

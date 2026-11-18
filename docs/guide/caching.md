@@ -290,7 +290,9 @@ A dictionary returned by `GetAsync<Dictionary<T, DateTime?>>` with cloning disab
 With cloning enabled, added list values are cloned when stored and `GetListAsync` clones the values it returns; the rest of the list is not copied. Raw dictionary reads return a deep copy. Cloned dictionary keys retain valid lookups, including when their hash depends on a cloned reference, and dictionary subclasses retain their runtime type.
 
 ::: tip Large list updates
-Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Size calculators receive the whole list dictionary on every update that changes it, so custom and dynamic sizing cost grows with the list size; with cloning enabled, the calculator receives a copy. `CurrentMemorySize` is the configured calculator's estimate, not a measurement of the live managed heap or bytes allocated per operation. Measure those separately when evaluating a memory budget.
+Treat the size calculator's argument as read-only. List sizing can run under the list lock. Use the supplied dictionary to compute the estimate and avoid waiting on another cache operation from the calculator. After a successful list update, the cache finishes the change and releases the list lock before it logs the memory adjustment or expired-member count.
+
+Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Custom and dynamic size calculators receive the whole list dictionary on every update that changes it. With cloning enabled, they receive a copy. `WithFixedSizing` uses the configured byte count without copying list members for sizing. `CurrentMemorySize` is the configured calculator's estimate, not a measurement of the live managed heap or bytes allocated per operation. Measure those separately when evaluating a memory budget.
 :::
 
 ### HybridCacheClient

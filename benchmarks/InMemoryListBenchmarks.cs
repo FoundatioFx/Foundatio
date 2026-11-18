@@ -15,7 +15,7 @@ public class InMemoryListBenchmarks
     [Params(false, true)]
     public bool CloneValues { get; set; }
 
-    [Params(10, 1000)]
+    [Params(10, 1_000, 10_000)]
     public int Count { get; set; }
 
     [Params(SizingMode.None, SizingMode.Fixed, SizingMode.Custom, SizingMode.Dynamic)]
@@ -36,11 +36,12 @@ public class InMemoryListBenchmarks
             return Sizing switch
             {
                 SizingMode.Fixed => o.WithFixedSizing(100000000, 100),
-                SizingMode.Custom => o.MaxMemorySize(100000000).SizeCalculator(_ => 100),
+                SizingMode.Custom => o.MaxMemorySize(100000000).SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count),
                 SizingMode.Dynamic => o.WithDynamicSizing(100000000),
                 _ => o
             };
         });
+
         _initial = Enumerable.Range(0, Count).ToArray();
         _batch = Enumerable.Range(0, Count / 2).ToArray();
         await _cache.ListAddAsync("set", _initial);

@@ -29,6 +29,7 @@ csharp_new_line_before_finally = true
 csharp_new_line_before_members_in_object_initializers = true
 csharp_new_line_before_members_in_anonymous_types = true
 csharp_new_line_between_query_expression_clauses = true
+dotnet_style_allow_statement_immediately_after_block_experimental = false:suggestion
 
 # Indentation preferences
 csharp_indent_block_contents = true
@@ -62,29 +63,19 @@ dotnet_naming_symbols.constant_fields.applicable_kinds   = field
 dotnet_naming_symbols.constant_fields.required_modifiers = const
 dotnet_naming_style.pascal_case_style.capitalization = pascal_case
 
-# static fields should have s_ prefix
-dotnet_naming_rule.static_fields_should_have_prefix.severity = false:none
-dotnet_naming_rule.static_fields_should_have_prefix.symbols  = static_fields
-dotnet_naming_rule.static_fields_should_have_prefix.style    = static_prefix_style
-dotnet_naming_symbols.static_fields.applicable_kinds   = field
-dotnet_naming_symbols.static_fields.required_modifiers = static
-dotnet_naming_symbols.static_fields.applicable_accessibilities = private, internal, private_protected
-dotnet_naming_style.static_prefix_style.required_prefix = s_
-dotnet_naming_style.static_prefix_style.capitalization = camel_case
-
-# internal and private fields should be _camelCase
+# instance and static fields share the _camelCase style
 dotnet_naming_rule.camel_case_for_private_internal_fields.severity = suggestion
 dotnet_naming_rule.camel_case_for_private_internal_fields.symbols  = private_internal_fields
 dotnet_naming_rule.camel_case_for_private_internal_fields.style    = camel_case_underscore_style
 dotnet_naming_symbols.private_internal_fields.applicable_kinds = field
-dotnet_naming_symbols.private_internal_fields.applicable_accessibilities = private, internal
+dotnet_naming_symbols.private_internal_fields.applicable_accessibilities = private, internal, private_protected
 dotnet_naming_style.camel_case_underscore_style.required_prefix = _
 dotnet_naming_style.camel_case_underscore_style.capitalization = camel_case
 
 # Code style defaults
 csharp_using_directive_placement = outside_namespace:suggestion
 dotnet_sort_system_directives_first = true
-csharp_prefer_braces = true:silent
+csharp_prefer_braces = when_multiline:suggestion
 csharp_preserve_single_line_blocks = true:none
 csharp_preserve_single_line_statements = false:none
 csharp_prefer_static_local_function = true:suggestion

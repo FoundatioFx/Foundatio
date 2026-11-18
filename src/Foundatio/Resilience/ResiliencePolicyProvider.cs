@@ -13,9 +13,12 @@ namespace Foundatio.Resilience;
 public class ResiliencePolicyProvider : IResiliencePolicyProvider
 {
     private readonly ConcurrentDictionary<string, IResiliencePolicy> _policies = new(StringComparer.OrdinalIgnoreCase);
-    private IResiliencePolicy _defaultPolicy;
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
+    private volatile IResiliencePolicy _defaultPolicy;
+    private volatile bool _hasConfiguredDefaultPolicy;
+
+    internal IResiliencePolicy? ConfiguredDefaultPolicy => _hasConfiguredDefaultPolicy ? GetDefaultPolicy() : null;
 
     public ResiliencePolicyProvider(TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
@@ -34,6 +37,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         ArgumentNullException.ThrowIfNull(policy);
 
         _defaultPolicy = policy;
+        _hasConfiguredDefaultPolicy = true;
         return this;
     }
 
@@ -48,8 +52,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         var policyBuilder = new ResiliencePolicyBuilder(policy);
         builder?.Invoke(policyBuilder);
 
-        _defaultPolicy = policy;
-        return this;
+        return WithDefaultPolicy(policy);
     }
 
     /// <summary>
@@ -144,7 +147,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         if (String.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));
 
-        return _policies.TryGetValue(name, out var policy) ? policy : useDefault ? _defaultPolicy : null;
+        return _policies.TryGetValue(name, out var policy) ? policy : useDefault ? GetDefaultPolicy() : null;
     }
 
     /// <summary>

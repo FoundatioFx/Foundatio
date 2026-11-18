@@ -773,6 +773,36 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task ListAddAsync_WhenAccountingLoggerAppends_KeepsBothWritesAndTheirSize(bool useWorker)
+    {
+        // Arrange
+        Log.DefaultLogLevel = LogLevel.Trace;
+        using var cache = CreateCacheClient(o => o.MaxMemorySize(1_000)
+            .SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count));
+        await cache.ListAddAsync("list", [1]);
+        long nestedCount = 0;
+        Log.Options.WriteLogEntryFunc = entry =>
+        {
+            if (!entry.Message.StartsWith("UpdateMemorySize:", StringComparison.Ordinal))
+                return;
+
+            Log.Options.WriteLogEntryFunc = null;
+            var nested = useWorker
+                ? Task.Run(() => cache.ListAddAsync("list", [3]), TestCancellationToken)
+                : cache.ListAddAsync("list", [3]);
+            nestedCount = nested.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken).GetAwaiter().GetResult();
+        };
+
+        // Act & Assert
+        Assert.Equal(1, await cache.ListAddAsync("list", [2]));
+        Assert.Equal(1, nestedCount);
+        Assert.Equal([1, 2, 3], (await cache.GetListAsync<int>("list")).Value.Order());
+        Assert.Equal(3, cache.CurrentMemorySize);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task ListAddAsync_WhenComparerThrowsPartwayThroughABatch_LeavesTheListUnchanged(bool cloneValues)
     {
         // Arrange
@@ -1480,6 +1510,32 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.ListRemoveAsync_WithValues_RemovesCorrectly();
     }
 
+    [Fact]
+    public async Task ListUpdate_AfterReplacingFixedSizeCalculator_SizesTheCompleteDictionary()
+    {
+        // Arrange
+        var counts = new List<int>();
+        using var cache = CreateCacheClient(o =>
+        {
+            o.WithFixedSizing(1_000, 64).CloneValues(true);
+            o.Target.SizeCalculator += value =>
+            {
+                var dictionary = Assert.IsType<Dictionary<int, DateTime?>>(value);
+                counts.Add(dictionary.Count);
+                return dictionary.Count;
+            };
+
+            return o;
+        });
+
+        // Act & Assert
+        Assert.Equal(2, await cache.ListAddAsync("list", [1, 2]));
+        Assert.Equal(1, await cache.ListAddAsync("list", [3]));
+        Assert.Equal(1, await cache.ListRemoveAsync("list", [1]));
+        Assert.Equal([2, 1, 3, 2], counts);
+        Assert.Equal(2, cache.CurrentMemorySize);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1704,6 +1760,24 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Null(await cache.GetExpirationAsync("list"));
         Assert.Equal(1, await cache.ListAddAsync("list", [0], TimeSpan.FromMinutes(5)));
         Assert.Equal(TimeSpan.FromMinutes(5), await cache.GetExpirationAsync("list"));
+    }
+
+    [Fact]
+    public async Task ListUpdate_WithUnclonedOrderedDictionary_PreservesKeyIdentityAndOrder()
+    {
+        // Arrange
+        using var cache = CreateCacheClient(o => o.CloneValues(false));
+        var first = new object();
+        var second = new object();
+        var third = new object();
+        var original = new OrderedDictionary<object, DateTime?> { [first] = null, [second] = null };
+        await cache.SetAsync("list", original);
+
+        // Act & Assert
+        Assert.Equal(1, await cache.ListAddAsync("list", [third]));
+        Assert.Equal(1, await cache.ListRemoveAsync("list", [first]));
+        Assert.Equal([second, third], (await cache.GetAsync<OrderedDictionary<object, DateTime?>>("list")).Value.Keys);
+        Assert.Equal([first, second], original.Keys);
     }
 
     [Fact]

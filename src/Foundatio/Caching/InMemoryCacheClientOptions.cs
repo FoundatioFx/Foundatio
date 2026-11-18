@@ -34,11 +34,28 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// <item>Must return a non-negative value representing the estimated size in bytes</item>
     /// <item>Negative return values will cause the entry to be skipped (not cached) with a warning logged</item>
     /// <item>Should be thread-safe as it may be called concurrently</item>
+    /// <item>Treat the value as read-only. List updates can hold the list lock during sizing, so estimate from the supplied value and avoid waiting for other cache operations.</item>
     /// <item>Should handle null values gracefully (typically return 8 bytes for a null reference)</item>
     /// </list>
     /// </para>
     /// </remarks>
-    public Func<object, long>? SizeCalculator { get; set; }
+    public Func<object, long>? SizeCalculator
+    {
+        get;
+        set
+        {
+            field = value;
+            UsesFixedSizing = false;
+        }
+    }
+
+    internal bool UsesFixedSizing { get; private set; }
+
+    internal void SetFixedSize(long size)
+    {
+        SizeCalculator = _ => size;
+        UsesFixedSizing = true;
+    }
 
     /// <summary>
     /// The maximum size in bytes for individual cache entries. Entries larger than this will be skipped (not cached) and a warning will be logged.
@@ -101,7 +118,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     public InMemoryCacheClientOptionsBuilder WithFixedSizing(long maxMemorySize, long averageEntrySize)
     {
         Target.MaxMemorySize = maxMemorySize;
-        Target.SizeCalculator = _ => averageEntrySize;
+        Target.SetFixedSize(averageEntrySize);
         return this;
     }
 

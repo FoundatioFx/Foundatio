@@ -26,6 +26,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
+    private readonly bool _usesFixedSizing;
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
@@ -76,6 +77,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
+        _usesFixedSizing = options.UsesFixedSizing;
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -369,6 +371,21 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </summary>
     private bool TrySwapEntry(string key, CacheEntry? current, CacheEntry? desired)
     {
+        if (!_shouldTrackMemory || (current?.Size ?? 0) == (desired?.Size ?? 0))
+            return TrySwapEntryCore(key, current, desired);
+
+        if (!TrySwapEntry(key, current, desired, out var change))
+            return false;
+
+        LogMemorySizeChange(change);
+        return true;
+    }
+
+    private readonly record struct MemorySizeChange(long Delta, long Before, long After, bool Overflowed);
+
+    private bool TrySwapEntry(string key, CacheEntry? current, CacheEntry? desired, out MemorySizeChange change)
+    {
+        change = default;
         long delta = (desired?.Size ?? 0) - (current?.Size ?? 0);
         if (!_shouldTrackMemory || delta is 0)
             return TrySwapEntryCore(key, current, desired);
@@ -391,14 +408,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             Interlocked.Exchange(ref _currentMemorySize, after);
         }
 
-        if (overflowed)
+        change = new(delta, before, after, overflowed);
+        return true;
+    }
+
+    private void LogMemorySizeChange(in MemorySizeChange change)
+    {
+        if (change.Overflowed)
             _logger.LogWarning("Memory size counter would overflow, clamping to {MaxValue} (Current={Current}, Delta={Delta})",
-                Int64.MaxValue, before, delta);
+                Int64.MaxValue, change.Before, change.Delta);
 
         if (_logger.IsEnabled(LogLevel.Trace))
             _logger.LogTrace("UpdateMemorySize: Delta={Delta}, Before={Before}, After={After}, Max={Max}",
-                delta, before, after, _maxMemorySize);
-        return true;
+                change.Delta, change.Before, change.After, _maxMemorySize);
     }
 
     private bool TrySwapEntryCore(string key, CacheEntry? current, CacheEntry? desired)
@@ -690,11 +712,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             // itself is rejected before it is merged. Like any other cached value, they are cloned after sizing.
             if (_hasSizeCalculator)
             {
-                input = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
-                foreach (var item in items)
-                    input[item] = expiresAt;
+                if (_usesFixedSizing)
+                {
+                    inputSize = CalculateEntrySize(items, typeof(Dictionary<T, DateTime?>));
+                }
+                else
+                {
+                    input = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
+                    foreach (var item in items)
+                        input[item] = expiresAt;
 
-                inputSize = CalculateEntrySize(input);
+                    inputSize = CalculateEntrySize(input);
+                }
+
                 if (inputSize < 0)
                     return 0;
             }
@@ -716,16 +746,27 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             if (current?.StoredValue is CacheList<T> list)
             {
+                long count;
+                ListUpdateLog updateLog;
                 lock (list.SyncRoot)
                 {
-                    if (_memory.TryGetValue(key, out var latest) && ReferenceEquals(latest, current) && !current.IsExpired
-                        && (list.CanUpdateInPlace
-                            ? TryUpdateList(key, current, list, items, expiresAt, remove, out long count)
-                            : TryReplaceList(key, current, list, items, expiresAt, remove, out count)))
-                        return count;
+                    if (!_memory.TryGetValue(key, out var latest) || !ReferenceEquals(latest, current) || current.IsExpired)
+                        continue;
+
+                    bool updated = list.CanUpdateInPlace
+                        ? TryUpdateList(key, current, list, items, expiresAt, remove, out count, out updateLog)
+                        : TryReplaceList(key, current, list, items, expiresAt, remove, out count, out updateLog);
+                    if (!updated)
+                        continue;
                 }
 
-                continue;
+                // A logger can write to the same key. Finish the journal and release the list lock first.
+                if (updateLog.SizeChange.Delta != 0)
+                    LogMemorySizeChange(updateLog.SizeChange);
+                if (updateLog.ExpiredMembers > 0)
+                    LogExpiredListValues(key, updateLog.ExpiredMembers);
+
+                return count;
             }
 
             if (current is not null && current.StoredValue is not IDictionary<T, DateTime?>)
@@ -802,12 +843,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return TrySwapEntry(key, stored, desired);
     }
 
+    private struct ListUpdateLog
+    {
+        public MemorySizeChange SizeChange;
+        public int ExpiredMembers;
+    }
+
     /// <summary>
     /// Updates a stored list while holding its lock. Returns <c>false</c> when the entry was replaced before the
     /// update could be stored, after undoing the change.
     /// </summary>
-    private bool TryUpdateList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count) where T : notnull
+    private bool TryUpdateList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count, out ListUpdateLog updateLog) where T : notnull
     {
+        updateLog = default;
         bool changed;
         int expired;
         try
@@ -859,14 +907,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             desired = current.WithValue(list, list.ExpiresAt, size);
         }
 
-        if (!TrySwapEntry(key, current, desired))
+        if (!TrySwapEntry(key, current, desired, out updateLog.SizeChange))
         {
             list.Rollback();
             return false;
         }
 
         list.Commit();
-        LogExpiredListValues(key, expired);
+        updateLog.ExpiredMembers = expired;
         return true;
     }
 
@@ -876,8 +924,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// throwing comparer or a rejected update leaves the list exactly as it was. Returns <c>false</c> when the entry
     /// was replaced or expired first.
     /// </summary>
-    private bool TryReplaceList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count) where T : notnull
+    private bool TryReplaceList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count, out ListUpdateLog updateLog) where T : notnull
     {
+        updateLog = default;
         var candidate = list.CreateCandidate();
         count = candidate.Apply(items, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove, out bool changed, out int expired);
         candidate.Commit();
@@ -899,10 +948,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         var desired = candidate.Count is 0 ? null : current.WithValue(candidate, candidate.ExpiresAt, size);
-        if (!TrySwapEntry(key, current, desired))
+        if (!TrySwapEntry(key, current, desired, out updateLog.SizeChange))
             return false;
 
-        LogExpiredListValues(key, expired);
+        updateLog.ExpiredMembers = expired;
         return true;
     }
 
@@ -914,6 +963,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         if (!_hasSizeCalculator)
             return 0;
+
+        if (_usesFixedSizing)
+            return CalculateEntrySize(list);
 
         object values = _shouldClone
             ? CacheEntry.CloneValue(list.Values, CacheEntry.RequiresDictionaryKeyCloning(list.DictionaryType))!

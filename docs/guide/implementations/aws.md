@@ -178,6 +178,8 @@ Things to know:
 
 Deleting a queue takes up to 60 seconds in SQS, and a send during that window can succeed and then be lost with the queue ([DeleteQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteQueue.html)). Stop producers and workers before `DeleteQueueAsync` and wait at least 60 seconds before reusing the name. After a `QueueDoesNotExistException`, the cached queue url is cleared so the next call recreates the queue.
 
+For shared-worker error handling, see [Worker Error Handling](../queues.md#worker-error-handling).
+
 ## Next Steps
 
 - [File Storage Guide](/guide/storage) - Usage patterns

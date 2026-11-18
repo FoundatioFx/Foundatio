@@ -961,6 +961,149 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task StartWorkingAsync_WhenAbandonThrows_KeepsWorkingAsync()
+    {
+        // Arrange
+        using var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+        if (queue is null)
+            return;
+
+        using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            int abandonedCount = 0;
+            var abandonFailed = new AsyncManualResetEvent(false);
+            using var abandonedHandler = queue.Abandoned.AddSyncHandler((_, _) =>
+            {
+                if (Interlocked.Increment(ref abandonedCount) == 1)
+                {
+                    abandonFailed.Set();
+                    throw new InvalidOperationException("Simulated abandon failure");
+                }
+            });
+
+            var processedSecond = new AsyncManualResetEvent(false);
+            using var completedHandler = queue.Completed.AddSyncHandler((_, args) =>
+            {
+                if (String.Equals(args.Entry.Value.Data, "Second", StringComparison.Ordinal))
+                    processedSecond.Set();
+            });
+
+            // Act
+            await queue.StartWorkingAsync((entry, _) =>
+            {
+                if (String.Equals(entry.Value.Data, "First", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Simulated handler failure");
+
+                return Task.CompletedTask;
+            }, autoComplete: true, cancellationToken: cancellationTokenSource.Token);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
+            await abandonFailed.WaitAsync(cancellationTokenSource.Token);
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
+
+            await processedSecond.WaitAsync(cancellationTokenSource.Token);
+
+            // Assert
+            Assert.True(abandonedCount >= 1);
+        }
+        finally
+        {
+            await cancellationTokenSource.CancelAsync();
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task StartWorkingAsync_WhenCancelled_StopsWithoutWorkerErrorsAsync()
+    {
+        // Arrange
+        using var queue = GetQueue(retries: 0);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            int handlerCalls = 0;
+            using var workerCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+
+            // Act
+            await queue.StartWorkingAsync((_, _) =>
+            {
+                Interlocked.Increment(ref handlerCalls);
+                return Task.CompletedTask;
+            }, autoComplete: true, cancellationToken: workerCancellationTokenSource.Token);
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+            await workerCancellationTokenSource.CancelAsync();
+            await Task.Delay(TimeSpan.FromSeconds(1), TestCancellationToken);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+
+            // Assert
+            Assert.Equal(0, handlerCalls);
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(0, stats.Errors);
+                Assert.Equal(1, stats.Queued);
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task StartWorkingAsync_WhenDequeueThrows_KeepsWorkingAsync()
+    {
+        // Arrange
+        using var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
+        if (queue is null)
+            return;
+
+        using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            int dequeuedCount = 0;
+            using var dequeuedHandler = queue.Dequeued.AddSyncHandler((_, _) =>
+            {
+                if (Interlocked.Increment(ref dequeuedCount) == 1)
+                    throw new InvalidOperationException("Simulated dequeue failure");
+            });
+
+            var processed = new AsyncManualResetEvent(false);
+            using var completedHandler = queue.Completed.AddSyncHandler((_, _) => processed.Set());
+
+            // Act
+            await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellationTokenSource.Token);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
+
+            await processed.WaitAsync(cancellationTokenSource.Token);
+
+            // Assert
+            Assert.True(dequeuedCount >= 2);
+        }
+        finally
+        {
+            await cancellationTokenSource.CancelAsync();
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public virtual async Task WorkItemsWillTimeoutAsync()
     {
         using var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromSeconds(1));
