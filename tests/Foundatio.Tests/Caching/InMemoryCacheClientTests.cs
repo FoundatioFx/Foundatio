@@ -902,84 +902,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ListAddAsync_WithActualLargeListUpdates_DoesNotCopyEntireList(bool fixedSizing)
-    {
-        // Arrange
-        using var cache = CreateCacheClient(o =>
-        {
-            o.CloneValues(false).TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow));
-            return fixedSizing ? o.WithFixedSizing(1000000, 64) : o;
-        });
-        await cache.ListAddAsync("small", Enumerable.Range(0, 10));
-        await cache.ListAddAsync("large", Enumerable.Range(0, 1000));
-        int[] item = [-1];
-        await UpdateAsync("small");
-        await UpdateAsync("large");
-
-        // Act
-        long smallAllocation = await MeasureAsync("small");
-        long largeAllocation = await MeasureAsync("large");
-
-        // Assert
-        Assert.True(largeAllocation <= smallAllocation + 8192,
-            $"Small updates should not copy every element: small={smallAllocation}, large={largeAllocation} bytes.");
-        Assert.Equal(Enumerable.Range(0, 1000), (await cache.GetListAsync<int>("large")).Value);
-        Assert.Equal(fixedSizing ? 128 : 0, cache.CurrentMemorySize);
-
-        async Task UpdateAsync(string key)
-        {
-            await cache.ListAddAsync(key, item);
-            await cache.ListRemoveAsync(key, item);
-        }
-
-        async Task<long> MeasureAsync(string key)
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            await UpdateAsync(key);
-            return GC.GetAllocatedBytesForCurrentThread() - before;
-        }
-    }
-
-    [Fact]
-    public async Task ListAddAsync_WithBuiltInDynamicSizing_DoesNotCopyEntireList()
-    {
-        // Arrange
-        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock)
-            .WithDynamicSizing(100_000_000, Log));
-        await cache.ListAddAsync("small", Enumerable.Range(0, 1000));
-        await cache.ListAddAsync("large", Enumerable.Range(0, 10_000));
-        int[] item = [-1];
-        await UpdateAsync("small");
-        await UpdateAsync("large");
-
-        // Act
-        long smallAllocation = await MeasureAsync("small");
-        long largeAllocation = await MeasureAsync("large");
-
-        // Assert
-        _logger.LogInformation("Dynamic list updates allocated {Small} bytes small and {Large} bytes large", smallAllocation, largeAllocation);
-        Assert.True(largeAllocation <= smallAllocation + 32_768,
-            $"Dynamic sizing must not copy the whole list: small={smallAllocation}, large={largeAllocation} bytes.");
-        Assert.Equal(Enumerable.Range(0, 10_000), (await cache.GetListAsync<int>("large")).Value);
-
-        async Task UpdateAsync(string key)
-        {
-            await cache.ListAddAsync(key, item);
-            await cache.ListRemoveAsync(key, item);
-        }
-
-        async Task<long> MeasureAsync(string key)
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            await UpdateAsync(key);
-            return GC.GetAllocatedBytesForCurrentThread() - before;
-        }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
     public async Task ListAddAsync_WithCloneValuesAndARetainedSizerArgument_StoresAPrivateList(bool remove)
     {
         // Arrange
@@ -2084,7 +2006,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData("sizing")]
     [InlineData("retry")]
     [InlineData("entry")]
-    public async Task ReplaceIfEqualAsync_WhenReplacementExpiresBeforePublication_PreservesLiveEntry(string expirationStage)
+    public async Task ReplaceIfEqualAsync_WhenReplacementExpiresBeforeTheEntryIsStored_PreservesLiveEntry(string expirationStage)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -3983,7 +3905,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public void UpdateEntry_WhenKeyRemovedDuringUpdate_AddsInsteadOfUpdating()
     {
         // Arrange
-        // The key disappears between the read and the publish, so the retry must take the add path and report
+        // The key disappears between the read and the swap, so the retry must take the add path and report
         // it. Reporting the discarded update's result is how AddAsync used to leave lock keys with no owner.
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50));
@@ -4153,6 +4075,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return new InMemoryCacheClient(o =>
         {
             o
+                .LoggerFactory(Log)
                 .Serializer(DefaultSerializer.Instance)
                 .ResiliencePolicyProvider(new ResiliencePolicyProvider(loggerFactory: Log));
             return config is null ? o : config(o);

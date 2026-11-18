@@ -97,7 +97,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <remarks>
     /// <para>
     /// The snapshot and counter assignment are serialized with size-changing writes and clears,
-    /// so a concurrent publication cannot have its size counted twice or overwritten by the recount.
+    /// so a concurrent store cannot have its size counted twice or overwritten by the recount.
     /// </para>
     /// <para>
     /// Expired entries that are still stored are counted, because removing them later subtracts their size again.
@@ -1356,6 +1356,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 var candidate = needsMemoryCompaction ? FindWorstSizeToUsageRatio() : FindLeastRecentlyUsed();
 
                 if (candidate is not { } entryToRemove)
+                    break;
+
+                if (!ShouldCompact)
                     break;
 
                 if (_logger.IsEnabled(LogLevel.Debug))
