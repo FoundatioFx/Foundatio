@@ -693,7 +693,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (_hasSizeCalculator)
             {
                 if (_usesFixedSizing)
+                {
                     inputSize = CalculateEntrySize(items, typeof(Dictionary<T, DateTime?>));
+                }
                 else
                 {
                     input = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
@@ -702,6 +704,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                     inputSize = CalculateEntrySize(input);
                 }
+
                 if (inputSize < 0)
                     return 0;
             }

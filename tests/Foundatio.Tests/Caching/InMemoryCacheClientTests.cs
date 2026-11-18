@@ -1494,6 +1494,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 counts.Add(dictionary.Count);
                 return dictionary.Count;
             };
+
             return o;
         });
 
