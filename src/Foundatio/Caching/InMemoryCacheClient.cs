@@ -189,6 +189,13 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         }
     }
 
+    /// <summary>
+    /// Returns the live entries' values in eviction order, without recording an access.
+    /// </summary>
+    /// <remarks>
+    /// Intended for diagnostics. Each read copies the entry table and, when <see cref="InMemoryCacheClientOptions.CloneValues"/>
+    /// is set, deep-clones every value it returns.
+    /// </remarks>
     public ICollection<KeyValuePair<string, object?>> Items
     {
         get
