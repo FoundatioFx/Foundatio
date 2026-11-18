@@ -353,29 +353,15 @@ public partial class InMemoryCacheClient
     private static CacheValue<ICollection<T>> ReadListPage<T>(Dictionary<T, DateTime?> dictionary, DateTime utcNow, int page, int pageSize, bool checkExpiration = true) where T : notnull
     {
         var result = new ListPage<T>(dictionary.Count, page, pageSize);
-        if (checkExpiration)
+        foreach (var pair in dictionary)
         {
-            foreach (var pair in dictionary)
-            {
-                if (pair.Value < utcNow)
-                    continue;
-                if (result.TrySkip())
-                    continue;
-                result.Add(pair.Key);
-                if (result.IsFull)
-                    break;
-            }
-        }
-        else
-        {
-            foreach (var pair in dictionary)
-            {
-                if (result.TrySkip())
-                    continue;
-                result.Add(pair.Key);
-                if (result.IsFull)
-                    break;
-            }
+            if (checkExpiration && pair.Value < utcNow)
+                continue;
+            if (result.TrySkip())
+                continue;
+            result.Add(pair.Key);
+            if (result.IsFull)
+                break;
         }
         return result.ToCacheValue();
     }

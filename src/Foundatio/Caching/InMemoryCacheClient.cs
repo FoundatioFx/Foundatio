@@ -1186,6 +1186,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     internal sealed class CacheEntry
     {
         // FastCloneState reserves array length + 1 references: four inline and up to 4096 pooled.
+        // Larger dictionaries take the copy constructor to avoid unpooled tracking; this affects speed only.
         private const int MaxPooledDictionaryCloneCapacity = 4099;
         private static readonly ConcurrentDictionary<Type, Func<object, bool, object>> _dictionaryCloners = new();
         private readonly object? _cacheValue;
@@ -1334,7 +1335,8 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             }
 
             int capacity = dictionary.EnsureCapacity(0);
-            // Match the vendored cloner's small-dictionary boundary and avoid unused storage or unpooled tracking.
+            // Each path below is correct at any size. These limits mirror the vendored cloner only to pick the
+            // cheapest path, so re-measure them after updating FastCloner.
             if ((dictionary.Count <= 32 || dictionary.Count <= capacity / 2 || capacity > MaxPooledDictionaryCloneCapacity)
                 && !forceDictionaryRebuild
                 && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(TValue))
