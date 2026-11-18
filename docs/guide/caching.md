@@ -281,7 +281,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - Size-changing writes, clears, and recounts coordinate their memory accounting to prevent lasting drift from publication order. Disposal clears the tracked size together with the stored entries. Sizing and logging callbacks run outside the accounting lock.
 :::
 
-`ListAddAsync` and `ListRemoveAsync` update each list under its own lock, so concurrent updates to the same key never lose values and updates to different keys never contend. An update touches only the values it adds or removes, plus any values that have expired; it does not copy or rescan the rest of the list. A rejected update is rolled back, leaving the previous values, expiration, and tracked size in place.
+`ListAddAsync` and `ListRemoveAsync` update each list under its own lock, so concurrent updates to the same key never lose values and updates to different keys never contend. When members are strings, enums, `Guid`, `TimeSpan`, or primitives other than `float` and `double`, compared with the default comparer, an update touches only the values it adds or removes, plus any values that have expired; it does not copy or rescan the rest of the list. Other member types and custom comparers can run caller code partway through an update or treat distinct values as equal, so those updates are applied to a private copy of the list and then published. Either way, a rejected or failed update leaves the previous values, expiration, and tracked size in place.
 
 A dictionary returned by `GetAsync<Dictionary<T, DateTime?>>` with cloning disabled, or stored with `SetAsync`, may still be held by the caller, so the next list update copies it once instead of changing it. Later updates work in place again. Copies keep the dictionary's runtime type and comparer, including subclasses and other `IDictionary` implementations.
 
@@ -775,7 +775,7 @@ await cache.ListRemoveAsync("user:123:recent-searches", new[] { "query1" });
 | Positive `TimeSpan` ≥ 5ms | Each supplied value expires independently after this duration. |
 | Below 5ms, including zero or negative | The supplied values are removed from the list if present; `ListAddAsync` returns `0`. |
 
-In-memory list updates recompute the key's expiration from the remaining values. If every remaining value expires, the key uses the latest expiration. An empty list is removed. Removing values does not refresh the expiration of values left in the list.
+In-memory list updates that change the list recompute the key's expiration from the remaining values. An add that changes nothing, such as re-adding a value with the same expiration, leaves the key's expiration as is, as Redis does. If every remaining value expires, the key uses the latest expiration. An empty list is removed. Removing values does not refresh the expiration of values left in the list.
 
 ### Bulk Operations
 
