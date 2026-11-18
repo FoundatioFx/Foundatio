@@ -3510,6 +3510,51 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task ListAddAsync_WhenEntryAndInputExpireDuringSizing_ReclaimsEntryOnce(bool existingList)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        bool advance = false;
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
+            .SizeCalculator(value =>
+            {
+                if (advance && value is IDictionary<string, DateTime?> { Count: 1 } input && input.ContainsKey("new"))
+                {
+                    advance = false;
+                    timeProvider.Advance(TimeSpan.FromMinutes(2));
+                }
+                return value is ICollection collection ? collection.Count : 1;
+            }));
+        if (existingList)
+            await cache.ListAddAsync("list", ["old"], TimeSpan.FromMinutes(1));
+        else
+            await cache.SetAsync("list", "scalar", TimeSpan.FromMinutes(1));
+        int notifications = 0;
+        var expired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, _) =>
+        {
+            Interlocked.Increment(ref notifications);
+            expired.TrySetResult();
+        });
+        advance = true;
+
+        // Act
+        long added = await cache.ListAddAsync("list", ["new"], TimeSpan.FromMinutes(1));
+
+        // Assert
+        Assert.Equal(0, added);
+        Assert.False(await cache.ExistsAsync("list"));
+        Assert.Equal(0, cache.CurrentMemorySize);
+        Assert.Equal(0, cache.Count);
+        await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        await cache.SetAsync("other", "value");
+        await Task.Delay(50, TestCancellationToken);
+        Assert.Equal(1, notifications);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task ListAddAsync_WithRepeatedMixedBatches_MatchesSetModel(bool fixedSizing)
     {
         // Arrange

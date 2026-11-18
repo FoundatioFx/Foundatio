@@ -223,7 +223,8 @@ public partial class InMemoryCacheClient
         if (size < 0 || !remove && IsInputExpired(expiresAt))
         {
             count = 0;
-            return true;
+            // Still reclaim an expired entry this write found, so the caller's expiration notice is accurate.
+            return ReferenceEquals(stored, current) || TryPublish(key, stored, null);
         }
 
         CacheEntry? desired = list.Count is 0 ? null
