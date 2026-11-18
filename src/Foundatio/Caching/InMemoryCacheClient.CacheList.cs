@@ -173,6 +173,22 @@ public partial class InMemoryCacheClient
             _journal.Clear();
             if (_journal.Capacity > 1024)
                 _journal.Capacity = 0;
+            TrimExcess();
+        }
+
+        /// <summary>
+        /// Releases the capacity left behind when most members were removed or expired, so a shrunken list does not
+        /// keep its peak storage. Trimming only once a quarter of the capacity is in use keeps the cost amortized.
+        /// </summary>
+        private void TrimExcess()
+        {
+            if (IsExposed || _values.GetType() != typeof(Dictionary<T, DateTime?>))
+                return;
+
+            var dictionary = (Dictionary<T, DateTime?>)_values;
+            int capacity = dictionary.EnsureCapacity(0);
+            if (capacity > 64 && dictionary.Count <= capacity / 4)
+                dictionary.TrimExcess();
         }
 
         /// <summary>
