@@ -265,6 +265,8 @@ Use `Foundatio.Xunit.v3` for test logging and DI integration. Two base classes:
 - **`TestWithLoggingBase`** -- lightweight, no DI container. `_logger` (`ILogger`) for logging; `Log` (`ILoggerFactory`) for passing to Foundatio services.
 - **`TestLoggerBase`** -- full DI via `TestLoggerFixture`. Override `ConfigureServices` to register services. `Log` (`ILogger`) for logging; `TestLogger` (`ILoggerFactory`) for passing to Foundatio services.
 
+Use `Microsoft.Extensions.Time.Testing.FakeTimeProvider` for expiration and timer tests. Inject the same instance into collaborating caches and lock providers, and advance it explicitly. A real-time timeout may bound an awaited completion, but should not simulate cache expiration. Keep shared test-harness coverage when adding provider-specific fake-time tests. Test observable behavior rather than the number of clock reads.
+
 ```csharp
 using Foundatio.Caching;
 using Foundatio.Xunit;
@@ -306,7 +308,7 @@ public class OrderServiceTests : TestLoggerBase
 
 - **Lock returns null**: `TryAcquireAsync` returns `null` when the lock cannot be acquired -- always guard with `is not null` before doing work. `AcquireAsync` throws `LockAcquisitionTimeoutException` instead of returning null.
 - **Dispose streams and locks**: `ILock` is `IAsyncDisposable` -- use `await using`. Streams from `GetFileStreamAsync` are `IDisposable` -- use `using var`.
-- **Cache TTL floor**: Expiration values below 5ms are treated as already-expired and the key is silently removed. If you compute TTL dynamically (e.g., `expiresAt - now`), guard against near-zero values.
+- **Cache TTL floor**: Expiration values below 5ms are treated as already expired. Key writes remove the key; `ListAddAsync` removes only the supplied values. Guard dynamically computed TTLs against near-zero values.
 - **Cache `GetAsync` returns `CacheValue<T>`**: Check `result.HasValue` before accessing `result.Value`. A missing key returns `HasValue = false`, not an exception.
 - **Cache stampede (thundering herd)**: The cache-aside pattern (`Get` -> miss -> load -> `Set`) is vulnerable to stampedes when a popular key expires and many callers regenerate simultaneously. Use `CacheLockProvider` to serialize regeneration: acquire a lock keyed on the cache key, double-check the cache after acquiring, and only then call the backing store. See the [Cache Stampede Protection](https://foundatio.readthedocs.io/guide/caching.html#cache-stampede-protection) docs for the full pattern.
 - **Queue auto-complete**: `QueueJobBase<T>` auto-completes entries based on `JobResult` by default. Set `AutoComplete = false` only when you need manual `CompleteAsync()`/`AbandonAsync()` control. Manual `DequeueAsync` does NOT auto-complete.
@@ -314,6 +316,8 @@ public class OrderServiceTests : TestLoggerBase
 - **Failure semantics depend on job type**: `JobResult` only has `IsSuccess` -- there is no separate "failed but don't retry" status. For **queue-processed jobs** (`QueueJobBase<T>.ProcessQueueEntryAsync`, or setting `context.Result` in a `WorkItemJob` handler), a non-success result triggers `AbandonAsync`, which re-queues the entry and eventually dead-letters it after `Retries` is exhausted -- reserve `FailedWithMessage`/`FromException` for transient errors you want retried, and log + return `JobResult.Success`/`SuccessWithMessage(...)` for permanent errors to avoid a pointless retry loop. For **standalone/manual jobs** (`JobBase`, a one-off `RunAsync()`/`RunInConsoleAsync()` run, or scheduled/cron jobs via `Foundatio.Extensions.Hosting`), there is no built-in retry or dead letter queue -- a failed result just produces an error-level log, a non-zero exit code from `RunInConsoleAsync`, or a failed entry in the job run history. Returning `FailedWithMessage`/`FromException` there is correct even for permanent errors, since nothing inside Foundatio will retry it.
 - **JobWithLockBase vs manual locking**: Use `JobWithLockBase` when the entire run must be single-instance (leader election). Use manual `ILockProvider.AcquireAsync` inside `JobBase` for finer-grained locking within a job.
 - **JobContext.RenewLockAsync**: Call in long-running jobs (both `JobBase` and `QueueJobBase`) to prevent lock expiration mid-processing.
+- **In-memory behavior changes**: `RemoveIfEqualAsync` now removes a matching value immediately without raising `ItemExpired`; a write that finds an expired entry (before maintenance sweeps it) treats it as missing, reclaims it, and raises `ItemExpired` once. `ReplaceAsync` on an expired key returns `false`. `SetIfHigherAsync`/`SetIfLowerAsync` leave the TTL unchanged when the condition fails, matching Redis; use `SetExpirationAsync` to extend a TTL unconditionally. A size-rejected write leaves the previous value, TTL, and tracked size in place. `Items` returns payloads (cloned when `CloneValues` is set) without affecting LRU.
+- **In-memory lists**: Concurrent `ListAddAsync`/`ListRemoveAsync` on the same key no longer lose values. With string, enum, `Guid`, `TimeSpan`, or primitive (not `float`/`double`) members and the default comparer, each update costs only the values it touches; other member types and custom comparers copy the list once per update so a failing or partial comparer cannot corrupt it. A dictionary returned by an uncloned `GetAsync` or stored with `SetAsync` is copied once on the next list update. Size calculators receive the whole list dictionary on every changing update, so batch updates when using custom or dynamic sizing. Read members with `GetListAsync`; raw `GetAsync<Dictionary<T, DateTime?>>` with `CloneValues` copies the whole list. `CurrentMemorySize` is the calculator's estimate, not live heap. See the [caching guide](https://foundatio.readthedocs.io/guide/caching.html#in-memory-update-behavior).
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
 - **In-memory for tests**: In-memory implementations follow the same interfaces as production providers, but some behaviors differ (delivery delay limits, ordering, deduplication, group ids). Swap via DI for fast, isolated unit tests, and check [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps) before relying on provider-specific behavior.
@@ -331,7 +335,7 @@ public class OrderServiceTests : TestLoggerBase
 
 ### Serializers
 
-`ITextSerializer` extends `ISerializer` for human-readable formats (JSON). `ISerializer` covers binary formats. Default is `SystemTextJsonSerializer` (included in core).
+`ITextSerializer` extends `ISerializer` for human-readable formats (JSON). `ISerializer` covers binary and text serialization. Default is `SystemTextJsonSerializer` (included in core).
 
 | Package | Provides |
 | ------- | -------- |
