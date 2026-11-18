@@ -102,14 +102,16 @@ public partial class InMemoryCacheClient
         {
             lock (SyncRoot)
             {
-                // Expirations are immutable, so a dictionary of immutable keys only needs its entries copied.
+                // Expirations are immutable, so a dictionary of immutable keys only needs its entries copied. The copy
+                // constructor never carries over cached Keys or Values views, which a deep clone would leave bound to
+                // the live dictionary.
                 if (!forceDictionaryRebuild && _values.GetType() == typeof(Dictionary<T, DateTime?>)
                     && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T)))
                 {
                     var dictionary = (Dictionary<T, DateTime?>)_values;
                     if (ReferenceEquals(dictionary.Comparer, EqualityComparer<T>.Default)
                         || FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(dictionary.Comparer.GetType()))
-                        return dictionary.DeepClone()!;
+                        return new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer);
                 }
 
                 return CacheEntry.CloneValue(_values, forceDictionaryRebuild)!;

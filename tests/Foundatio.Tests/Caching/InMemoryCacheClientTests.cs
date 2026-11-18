@@ -2364,6 +2364,30 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(false, 10)]
+    [InlineData(false, 1000)]
+    [InlineData(true, 10)]
+    [InlineData(true, 1000)]
+    public async Task GetAsync_WithListReadThroughViews_IsolatesReturnedDictionaryFromLaterUpdates(bool cloneValues, int count)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        await cache.ListAddAsync("list", Enumerable.Range(0, count));
+        Assert.Equal(count, (await cache.GetListAsync<int>("list")).Value.Count);
+        var returned = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value!;
+
+        // Act
+        await cache.ListAddAsync("list", [-1]);
+        await cache.ListRemoveAsync("list", [0]);
+
+        // Assert
+        Assert.Equal(Enumerable.Range(0, count), returned.Keys.Order());
+        Assert.Equal(count, returned.Values.Count);
+        Assert.Contains(-1, (await cache.GetListAsync<int>("list")).Value);
+        Assert.DoesNotContain(0, (await cache.GetListAsync<int>("list")).Value);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(32)]
