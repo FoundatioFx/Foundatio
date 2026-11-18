@@ -47,7 +47,6 @@ Meanwhile, run core yourself: `dotnet build Foundatio.slnx` and `dotnet test Fou
 
 - Put a blank line between test methods. This finds misses in changed files: `rg -n -U '\}\r?\n[ \t]*\[(Fact|Theory)' <files>`.
 - Check every changed doc statement against the code: defaults on the options class (not the builder), clamping vs. rejecting, and whether a provider actually supports the feature. Re-read `git diff origin/main...HEAD -- docs .agents`.
-- When you change core abstractions, update `.agents/skills/foundatio/SKILL.md`.
 
 ## 6. Push and update the PRs
 
