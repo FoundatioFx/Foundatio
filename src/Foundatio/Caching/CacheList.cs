@@ -51,7 +51,7 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
         _values = values;
         _exposedValues = exposed ? values : null;
         _bounds = Bounds.Calculate(values);
-        _hasCallbackFreeComparer = s_hasValueEquality
+        _hasCallbackFreeComparer = _hasValueEquality
             && values.GetType() == typeof(Dictionary<T, DateTime?>)
             && ReferenceEquals(((Dictionary<T, DateTime?>)values).Comparer, EqualityComparer<T>.Default);
     }
@@ -61,7 +61,7 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
     /// equal, so a rollback can restore the member it removed from the key it was given. Custom structs, and framework
     /// types such as <see cref="DateTime"/> or <see cref="decimal"/> whose equal values can differ, are excluded.
     /// </summary>
-    private static readonly bool s_hasValueEquality = typeof(T) == typeof(string) || typeof(T) == typeof(Guid)
+    private static readonly bool _hasValueEquality = typeof(T) == typeof(string) || typeof(T) == typeof(Guid)
         || typeof(T) == typeof(TimeSpan) || typeof(T).IsEnum
         || typeof(T).IsPrimitive && typeof(T) != typeof(float) && typeof(T) != typeof(double);
 
@@ -74,7 +74,7 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
 
     /// <summary>
     /// Returns a private list holding the committed members, for an update that cannot run in place. A change
-    /// still in progress on this list is left out, so a nested update never publishes or undoes it.
+    /// still in progress on this list is left out, so a nested update never stores or undoes it.
     /// </summary>
     public CacheList<T> CreateCandidate()
     {
@@ -241,7 +241,7 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
 
     /// <summary>
     /// Undoes the changes made by the last journaled <see cref="Apply"/>. Expired members it dropped stay dropped;
-    /// nothing can observe them, and the published entry keeps its size until the next accepted update.
+    /// nothing can observe them, and the stored entry keeps its size until the next accepted update.
     /// </summary>
     public void Rollback()
     {
@@ -428,7 +428,7 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
         /// <param name="expiration">The member expiration being tracked.</param>
         /// <param name="replaceEqualLatest">
         /// Whether an expiration with the same ticks as <see cref="Latest"/> replaces it, so a newly written
-        /// <see cref="DateTimeKind"/> is published instead of the one it overwrote.
+        /// <see cref="DateTimeKind"/> is reported instead of the one it overwrote.
         /// </param>
         public void Add(DateTime? expiration, bool replaceEqualLatest = true)
         {
@@ -467,88 +467,88 @@ internal sealed class CacheList<T> : ICacheList where T : notnull
         }
     }
 
-        public static CacheValue<ICollection<T>> ReadPage(Dictionary<T, DateTime?> dictionary, DateTime utcNow, int page, int pageSize, bool checkExpiration = true)
+    public static CacheValue<ICollection<T>> ReadPage(Dictionary<T, DateTime?> dictionary, DateTime utcNow, int page, int pageSize, bool checkExpiration = true)
+    {
+        var result = new ListPage(dictionary.Count, page, pageSize);
+        foreach (var pair in dictionary)
         {
-            var result = new ListPage(dictionary.Count, page, pageSize);
+            if (checkExpiration && pair.Value < utcNow)
+                continue;
+            if (result.TrySkip())
+                continue;
+            result.Add(pair.Key);
+            if (result.IsFull)
+                break;
+        }
+        return result.ToCacheValue();
+    }
+
+    private struct ListPage
+    {
+        private int _skip;
+        private readonly int _initialSkip;
+        private readonly int _capacity;
+        private T[]? _values;
+        private int _count;
+        private bool _hasValue;
+
+        public ListPage(int count, int page, int pageSize)
+        {
+            _skip = Math.Max(0, unchecked((page - 1) * pageSize));
+            _initialSkip = _skip;
+            _capacity = Math.Min(Math.Max(0, pageSize), Math.Max(0, count - _skip));
+        }
+
+        public bool IsFull => _hasValue && _count == _capacity;
+        public bool CanSkip(int count) => _capacity > 0 && _skip >= count;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TrySkip(int count = 1)
+        {
+            if (!CanSkip(count))
+                return false;
+
+            _skip -= count;
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add(T value)
+        {
+            _hasValue = true;
+            if (_capacity is 0)
+                return;
+
+            _values ??= new T[_capacity];
+            _values[_count++] = value;
+        }
+
+        public CacheValue<ICollection<T>> ToCacheValue()
+        {
+            var values = _values ?? [];
+            if (_count != values.Length)
+                Array.Resize(ref values, _count);
+            return new CacheValue<ICollection<T>>(values, _hasValue || _skip < _initialSkip);
+        }
+    }
+
+    public static T[] ReadValues(Dictionary<T, DateTime?> dictionary, DateTime utcNow, bool checkExpiration = true)
+    {
+        var result = new T[dictionary.Count];
+        int count = 0;
+        if (checkExpiration)
+        {
             foreach (var pair in dictionary)
-            {
-                if (checkExpiration && pair.Value < utcNow)
-                    continue;
-                if (result.TrySkip())
-                    continue;
-                result.Add(pair.Key);
-                if (result.IsFull)
-                    break;
-            }
-            return result.ToCacheValue();
+                if (pair.Value is null || pair.Value >= utcNow)
+                    result[count++] = pair.Key;
         }
-
-        private struct ListPage
+        else
         {
-            private int _skip;
-            private readonly int _initialSkip;
-            private readonly int _capacity;
-            private T[]? _values;
-            private int _count;
-            private bool _hasValue;
-
-            public ListPage(int count, int page, int pageSize)
-            {
-                _skip = Math.Max(0, unchecked((page - 1) * pageSize));
-                _initialSkip = _skip;
-                _capacity = Math.Min(Math.Max(0, pageSize), Math.Max(0, count - _skip));
-            }
-
-            public bool IsFull => _hasValue && _count == _capacity;
-            public bool CanSkip(int count) => _capacity > 0 && _skip >= count;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool TrySkip(int count = 1)
-            {
-                if (!CanSkip(count))
-                    return false;
-
-                _skip -= count;
-                return true;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Add(T value)
-            {
-                _hasValue = true;
-                if (_capacity is 0)
-                    return;
-
-                _values ??= new T[_capacity];
-                _values[_count++] = value;
-            }
-
-            public CacheValue<ICollection<T>> ToCacheValue()
-            {
-                var values = _values ?? [];
-                if (_count != values.Length)
-                    Array.Resize(ref values, _count);
-                return new CacheValue<ICollection<T>>(values, _hasValue || _skip < _initialSkip);
-            }
+            dictionary.Keys.CopyTo(result, 0);
+            count = result.Length;
         }
-
-        public static T[] ReadValues(Dictionary<T, DateTime?> dictionary, DateTime utcNow, bool checkExpiration = true)
-        {
-            var result = new T[dictionary.Count];
-            int count = 0;
-            if (checkExpiration)
-            {
-                foreach (var pair in dictionary)
-                    if (pair.Value is null || pair.Value >= utcNow)
-                        result[count++] = pair.Key;
-            }
-            else
-            {
-                dictionary.Keys.CopyTo(result, 0);
-                count = result.Length;
-            }
-            if (count != result.Length)
-                Array.Resize(ref result, count);
-            return result;
-        }
+        if (count != result.Length)
+            Array.Resize(ref result, count);
+        return result;
+    }
 }

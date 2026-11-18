@@ -18,7 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching;
 
-public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
+public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory;
     private readonly bool _shouldClone;
@@ -322,7 +322,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     /// Receives the current live entry (<c>null</c> when the key is missing or expired) and returns the entry the
     /// key should hold: the same instance to leave it unchanged, a new instance to add or replace it, or
     /// <c>null</c> to remove it. It runs again when the entry expires during the callback or another writer changes the key first,
-    /// so it must not have side effects; only the result of the attempt that was published is returned.
+    /// so it must not have side effects; only the result of the attempt that was stored is returned.
     /// </param>
     internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
@@ -334,12 +334,12 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             if (!reclaimedExpired && stored is { IsExpired: true })
             {
                 // Sizing, cloning or conversion can outlive the observed entry. Recompute from a missing key
-                // instead of publishing a decision that would revive its expired value.
+                // instead of storing a decision that would revive its expired value.
                 reclaimedExpired = true;
                 (desired, result) = update(null);
             }
 
-            if (!ReferenceEquals(desired, stored) && !TryPublish(key, stored, desired))
+            if (!ReferenceEquals(desired, stored) && !TrySwapEntry(key, stored, desired))
                 continue;
 
             if (reclaimedExpired)
@@ -356,7 +356,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     {
         while (_memory.TryGetValue(key, out var current))
         {
-            if (TryPublish(key, current, null))
+            if (TrySwapEntry(key, current, null))
                 return current;
         }
 
@@ -364,21 +364,21 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     }
 
     /// <summary>
-    /// Publishes <paramref name="desired"/> in place of <paramref name="current"/> with a compare-and-swap, adjusting
+    /// Swaps <paramref name="desired"/> in for <paramref name="current"/> with a compare-and-swap, adjusting
     /// tracked memory by the size difference. Returns <c>false</c>, changing nothing, if another writer got there first.
     /// </summary>
-    private bool TryPublish(string key, CacheEntry? current, CacheEntry? desired)
+    private bool TrySwapEntry(string key, CacheEntry? current, CacheEntry? desired)
     {
         long delta = (desired?.Size ?? 0) - (current?.Size ?? 0);
         if (!_shouldTrackMemory || delta is 0)
-            return TryPublishValue(key, current, desired);
+            return TrySwapEntryCore(key, current, desired);
 
         long before;
         long after;
         bool overflowed;
         lock (_memorySizeLock)
         {
-            if (!TryPublishValue(key, current, desired))
+            if (!TrySwapEntryCore(key, current, desired))
                 return false;
 
             before = _currentMemorySize;
@@ -392,7 +392,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         }
 
         if (overflowed)
-            _logger.LogWarning("Memory size counter would overflow. Clamping to {MaxValue}. Current={Current}, Delta={Delta}",
+            _logger.LogWarning("Memory size counter would overflow, clamping to {MaxValue} (Current={Current}, Delta={Delta})",
                 Int64.MaxValue, before, delta);
 
         if (_logger.IsEnabled(LogLevel.Trace))
@@ -401,7 +401,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         return true;
     }
 
-    private bool TryPublishValue(string key, CacheEntry? current, CacheEntry? desired)
+    private bool TrySwapEntryCore(string key, CacheEntry? current, CacheEntry? desired)
     {
         return (current, desired) switch
         {
@@ -419,7 +419,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     {
         return _memory.TryGetValue(key, out var current)
             && ReferenceEquals(current, observed)
-            && TryPublish(key, current, null);
+            && TrySwapEntry(key, current, null);
     }
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
@@ -575,6 +575,395 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             _logger.LogError(ex, "Unable to read cached value as {ValueType}: {Message}", typeof(T).Name, ex.Message);
             return null;
         }
+    }
+
+    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            await ListRemoveAsync(key, values).AnyContext();
+            return 0;
+        }
+
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
+
+        // A string argument binds T to char; it is one member, as it has always been.
+        long added = values is string stringValue
+            ? UpdateList(key, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { stringValue }, expiresAt, remove: false)
+            : UpdateList(key, GetDistinctListValues(values), expiresAt, remove: false);
+
+        if (added > 0)
+            await StartMaintenanceAsync().AnyContext();
+
+        return added;
+    }
+
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
+
+        Interlocked.Increment(ref _writes);
+
+        long removed = values is string stringValue
+            ? UpdateList(key, new HashSet<string>([stringValue]), null, remove: true)
+            : UpdateList(key, GetDistinctListValues(values), null, remove: true);
+
+        if (removed > 0 && _logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Removed value from set with cache key: {Key}", key);
+
+        return Task.FromResult(removed);
+    }
+
+    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (page is < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
+        if (_memory.TryGetValue(key, out var entry) && !entry.IsExpired && entry.StoredValue is CacheList<T> list)
+        {
+            Interlocked.Increment(ref _hits);
+            entry.RecordAccess();
+            var result = list.Read(_timeProvider.GetUtcNow().UtcDateTime, page, pageSize);
+            if (ShouldCloneListMembers<T>())
+            {
+                var members = (T[])result.Value;
+                for (int index = 0; index < members.Length; index++)
+                    members[index] = members[index].DeepClone()!;
+            }
+
+            return result;
+        }
+
+        // A dictionary stored directly with SetAsync is readable as a list until a list update takes it over. Stored
+        // payloads are never changed by the cache, so safe keys can be read without cloning the whole dictionary.
+        if (entry is { IsExpired: false, StoredValue: Dictionary<T, DateTime?> stored } && stored.GetType() == typeof(Dictionary<T, DateTime?>)
+            && (!_shouldClone || FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T))))
+        {
+            Interlocked.Increment(ref _hits);
+            entry.RecordAccess();
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
+            if (page.HasValue)
+                return CacheList<T>.ReadPage(stored, now, page.Value, pageSize);
+
+            var keys = CacheList<T>.ReadValues(stored, now);
+            return new CacheValue<ICollection<T>>(keys, keys.Length > 0);
+        }
+
+        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime?>>(key).AnyContext();
+        if (!dictionaryCacheValue.HasValue)
+            return new CacheValue<ICollection<T>>([], false);
+
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var nonExpiredKeys = dictionaryCacheValue.Value.Where(kvp => kvp.Value is null || kvp.Value >= utcNow).Select(kvp => kvp.Key).ToArray();
+        if (nonExpiredKeys.Length is 0)
+            return new CacheValue<ICollection<T>>([], false);
+
+        if (!page.HasValue)
+            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
+
+        int skip = (page.Value - 1) * pageSize;
+        return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
+    }
+
+    /// <summary>
+    /// Adds or removes list members. Writers to the same list take turns on the list's lock and store the resized
+    /// entry before releasing it, so they never redo work for each other. The swap only fails when another kind of
+    /// write replaced the entry; the change is then rolled back and retried against the new entry.
+    /// </summary>
+    private long UpdateList<T>(string key, HashSet<T> items, DateTime? expiresAt, bool remove) where T : notnull
+    {
+        if (items.Count is 0)
+            return 0;
+
+        Dictionary<T, DateTime?>? input = null;
+        long inputSize = 0;
+        if (!remove)
+        {
+            // Added values are sized on their own first, as they always have been, so a batch that is too large by
+            // itself is rejected before it is merged. Like any other cached value, they are cloned after sizing.
+            if (_hasSizeCalculator)
+            {
+                input = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
+                foreach (var item in items)
+                    input[item] = expiresAt;
+
+                inputSize = CalculateEntrySize(input);
+                if (inputSize < 0)
+                    return 0;
+            }
+
+            if (ShouldCloneListMembers<T>())
+            {
+                items = CloneListMembers(items);
+                input = null;
+            }
+
+            Interlocked.Increment(ref _writes);
+        }
+
+        while (true)
+        {
+            _memory.TryGetValue(key, out var stored);
+            bool reclaimExpired = stored is { IsExpired: true };
+            var current = reclaimExpired ? null : stored;
+
+            if (current?.StoredValue is CacheList<T> list)
+            {
+                lock (list.SyncRoot)
+                {
+                    if (_memory.TryGetValue(key, out var latest) && ReferenceEquals(latest, current) && !current.IsExpired
+                        && (list.CanUpdateInPlace
+                            ? TryUpdateList(key, current, list, items, expiresAt, remove, out long count)
+                            : TryReplaceList(key, current, list, items, expiresAt, remove, out count)))
+                        return count;
+                }
+
+                continue;
+            }
+
+            if (current is not null && current.StoredValue is not IDictionary<T, DateTime?>)
+            {
+                if (remove)
+                    return 0;
+                throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
+            }
+
+            if (current is null && remove)
+            {
+                if (!reclaimExpired)
+                    return 0;
+                if (!TrySwapEntry(key, stored, null))
+                    continue;
+
+                OnItemExpired(key);
+                return 0;
+            }
+
+            if (!TryCreateList(key, stored, current, items, expiresAt, remove, input, inputSize, out long result))
+                continue;
+
+            if (reclaimExpired)
+                OnItemExpired(key);
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Starts a list for a missing key, or takes over a dictionary stored with <c>SetAsync</c>. Nothing else can see
+    /// the new list until it is stored, so it needs no lock and no rollback. Returns <c>false</c> when another
+    /// writer changed the key first.
+    /// </summary>
+    private bool TryCreateList<T>(string key, CacheEntry? stored, CacheEntry? current, HashSet<T> items, DateTime? expiresAt, bool remove, Dictionary<T, DateTime?>? input, long inputSize, out long count) where T : notnull
+    {
+        CacheList<T> list;
+        long size;
+        if (current is null)
+        {
+            // With CloneValues the size calculator may keep the dictionary it was given, so it is never stored.
+            list = input is not null && !_shouldClone ? CacheList<T>.Create(input) : CacheList<T>.Create(items, expiresAt);
+            count = items.Count;
+            size = inputSize;
+        }
+        else
+        {
+            list = CacheList<T>.Adopt((IDictionary<T, DateTime?>)current.StoredValue!);
+            count = list.Apply(items, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove, out bool changed, out int expired);
+            list.Commit();
+            LogExpiredListValues(key, expired);
+            if (!changed)
+            {
+                if (remove)
+                    count = 0;
+                return true;
+            }
+
+            size = list.Count > 0 ? CalculateListSize(list) : 0;
+            if (current.IsExpired)
+                return false;
+        }
+
+        if (size < 0 || !remove && IsInputExpired(expiresAt))
+        {
+            count = 0;
+            // Still reclaim an expired entry this write found, so the caller's expiration notice is accurate.
+            return ReferenceEquals(stored, current) || TrySwapEntry(key, stored, null);
+        }
+
+        CacheEntry? desired = list.Count is 0 ? null
+            : current is null ? new CacheEntry(list, list.ExpiresAt, _timeProvider, _shouldClone, size, valueIsOwned: true)
+            : current.WithValue(list, list.ExpiresAt, size);
+        return TrySwapEntry(key, stored, desired);
+    }
+
+    /// <summary>
+    /// Updates a stored list while holding its lock. Returns <c>false</c> when the entry was replaced before the
+    /// update could be stored, after undoing the change.
+    /// </summary>
+    private bool TryUpdateList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count) where T : notnull
+    {
+        bool changed;
+        int expired;
+        try
+        {
+            count = list.Apply(items, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove, out changed, out expired);
+        }
+        catch
+        {
+            list.Rollback();
+            throw;
+        }
+
+        if (!changed)
+        {
+            list.Commit();
+            if (remove)
+                count = 0;
+            return true;
+        }
+
+        CacheEntry? desired = null;
+        if (list.Count > 0)
+        {
+            long size;
+            try
+            {
+                size = CalculateListSize(list);
+            }
+            catch
+            {
+                list.Rollback();
+                throw;
+            }
+
+            // Sizing can outlive the entry; start over from a missing key so it is reclaimed rather than revived.
+            if (current.IsExpired)
+            {
+                list.Rollback();
+                return false;
+            }
+
+            if (size < 0 || !remove && IsInputExpired(expiresAt))
+            {
+                list.Rollback();
+                count = 0;
+                return true;
+            }
+
+            desired = current.WithValue(list, list.ExpiresAt, size);
+        }
+
+        if (!TrySwapEntry(key, current, desired))
+        {
+            list.Rollback();
+            return false;
+        }
+
+        list.Commit();
+        LogExpiredListValues(key, expired);
+        return true;
+    }
+
+    /// <summary>
+    /// Updates a stored list through a private candidate, for comparers that run caller code and for updates
+    /// nested inside another update of the same list. Nothing changes until the candidate is stored, so a
+    /// throwing comparer or a rejected update leaves the list exactly as it was. Returns <c>false</c> when the entry
+    /// was replaced or expired first.
+    /// </summary>
+    private bool TryReplaceList<T>(string key, CacheEntry current, CacheList<T> list, HashSet<T> items, DateTime? expiresAt, bool remove, out long count) where T : notnull
+    {
+        var candidate = list.CreateCandidate();
+        count = candidate.Apply(items, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove, out bool changed, out int expired);
+        candidate.Commit();
+        if (!changed)
+        {
+            if (remove)
+                count = 0;
+            return true;
+        }
+
+        long size = candidate.Count > 0 ? CalculateListSize(candidate) : 0;
+        if (current.IsExpired)
+            return false;
+
+        if (size < 0 || !remove && IsInputExpired(expiresAt))
+        {
+            count = 0;
+            return true;
+        }
+
+        var desired = candidate.Count is 0 ? null : current.WithValue(candidate, candidate.ExpiresAt, size);
+        if (!TrySwapEntry(key, current, desired))
+            return false;
+
+        LogExpiredListValues(key, expired);
+        return true;
+    }
+
+    /// <summary>
+    /// Sizes the live members. With <see cref="InMemoryCacheClientOptions.CloneValues"/> the calculator has always
+    /// received a private copy, so it is still given one and cannot change or keep the stored list.
+    /// </summary>
+    private long CalculateListSize<T>(CacheList<T> list) where T : notnull
+    {
+        if (!_hasSizeCalculator)
+            return 0;
+
+        object values = _shouldClone
+            ? CacheEntry.CloneValue(list.Values, CacheEntry.RequiresDictionaryKeyCloning(list.DictionaryType))!
+            : list.Values;
+        return CalculateEntrySize(values);
+    }
+
+    private bool IsInputExpired(DateTime? expiresAt) => expiresAt < _timeProvider.GetUtcNow().UtcDateTime;
+
+    private void LogExpiredListValues(string key, int expired)
+    {
+        if (expired > 0 && _logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expired, key);
+    }
+
+    private static HashSet<T> GetDistinctListValues<T>(IEnumerable<T> values) where T : notnull
+    {
+        bool canBeNull = default(T) is null;
+        // Copying a set with the same comparer reuses its buckets without hashing, so it is fast and runs no callbacks.
+        if (values is HashSet<T> set && set.GetType() == typeof(HashSet<T>)
+            && ReferenceEquals(set.Comparer, EqualityComparer<T>.Default))
+        {
+            var copy = new HashSet<T>(set, set.Comparer);
+            if (canBeNull)
+                copy.Remove(default!);
+            return copy;
+        }
+
+        var items = new HashSet<T>();
+        foreach (var value in values)
+        {
+            if (!canBeNull || value is not null)
+                items.Add(value);
+        }
+
+        return items;
+    }
+
+    /// <summary>
+    /// List storage is private, so <see cref="InMemoryCacheClientOptions.CloneValues"/> only needs to copy mutable
+    /// members: once when they are added and once when they are read.
+    /// </summary>
+    private bool ShouldCloneListMembers<T>() => _shouldClone && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
+
+    private static HashSet<T> CloneListMembers<T>(HashSet<T> items) where T : notnull
+    {
+        var clones = new HashSet<T>(items.Count, items.Comparer);
+        foreach (var item in items)
+            clones.Add(item.DeepClone()!);
+        return clones;
     }
 
     private async Task<bool> SetInternalAsync(string key, CacheEntry entry, WriteMode mode)
@@ -992,7 +1381,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             // Log if we hit maxRemovals but still need compaction
             if (removalCount >= maxRemovals && ShouldCompact)
             {
-                _logger.LogDebug("CompactAsync: Reached max removals ({MaxRemovals}) but still over limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0}). Will retry on next maintenance cycle.",
+                _logger.LogDebug("CompactAsync: Reached max removals ({MaxRemovals}) but still over limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0}), retrying on next maintenance cycle",
                     maxRemovals, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
             }
         }
@@ -1181,8 +1570,8 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     }
 
     /// <summary>
-    /// A cache entry's value, expiration and size never change after it is published to the cache dictionary;
-    /// changes publish a copy (<see cref="WithValue"/>, <see cref="WithExpiration"/>). This lets conditional removals
+    /// A cache entry's value, expiration and size never change after it is stored in the cache dictionary;
+    /// changes store a copy (<see cref="WithValue"/>, <see cref="WithExpiration"/>). This lets conditional removals
     /// compare by reference and guarantees the entry they checked is the entry they remove. Only access metadata
     /// (<see cref="LastAccessTicks"/>) is updated in place, and it does not participate in equality.
     /// </summary>
@@ -1292,6 +1681,57 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             return !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(keyType);
         }
 
+        /// <summary>
+        /// Deep clones a cached value for <see cref="InMemoryCacheClientOptions.CloneValues"/>. Dictionaries take a
+        /// dedicated path instead of plain <c>DeepClone()</c>; every other value is cloned with <c>DeepClone()</c>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The dedicated path works around bugs in the vendored FastCloner (3.5.3). They are also on <c>main</c>, which
+        /// uses plain <c>DeepClone()</c>, and all but the default-hash struct key case are still in upstream 3.5.6.
+        /// Most only appear after the first clone of a type in a process, because that first clone is reference tracked.
+        /// </para>
+        /// <list type="bullet">
+        /// <item><b>Cached views.</b> A <see cref="Dictionary{TKey,TValue}"/> over 32 entries keeps its cached
+        /// <c>Keys</c> and <c>Values</c> bound to the source, so the clone's <c>Keys</c> reflect later changes to the
+        /// caller's dictionary. Comparers or keys that reference the dictionary also point at the source.
+        /// <c>DeepCloneTo(dictionary, ShallowClone(dictionary))</c> tracks the root so they all point at the clone.</item>
+        /// <item><b>Stale hashes.</b> Copied buckets keep the source's hash codes. When the comparer is cloned (an
+        /// identity-based comparer, <see cref="ReferenceEqualityComparer"/>) or the keys are cloned (value types that
+        /// hold references), lookups miss. Those dictionaries are rebuilt: <paramref name="forceDictionaryRebuild"/> and
+        /// <see cref="RehashClonedDictionary{TKey,TValue}"/>.</item>
+        /// <item><b>Crash.</b> Cloning a <see cref="ConcurrentDictionary{TKey,TValue}"/> overflows the stack, so it is
+        /// copied with its constructor.</item>
+        /// </list>
+        /// <para>
+        /// Two parts exist only for speed. <see cref="IsSafeComparer{TKey}"/> shares the stateless framework comparers
+        /// instead of copying them; a copy forces a rebuild, which doubles the allocation. Dictionaries with immutable
+        /// keys and values use the copy constructor, which skips unpooled reference tracking and doesn't copy unused
+        /// capacity: about 85 µs and 364 KB for 10,000 entries, against about 125 µs and 823 KB.
+        /// </para>
+        /// <para>
+        /// The key and value types are only known at runtime, so the generic cloner is created with
+        /// <c>MakeGenericMethod</c> and cached per type. Without dynamic code (Native AOT) it falls back to
+        /// <c>DeepClone()</c>, which is what <c>main</c> does.
+        /// </para>
+        /// <para>
+        /// Upstream issues: <see href="https://github.com/lofcz/FastCloner/issues/62">ConcurrentDictionary stack overflow</see>,
+        /// <see href="https://github.com/lofcz/FastCloner/issues/63">cached Keys/Values views</see>,
+        /// <see href="https://github.com/lofcz/FastCloner/issues/64">stateful comparers and back-references</see>,
+        /// <see href="https://github.com/lofcz/FastCloner/issues/65">shared value-type keys</see> and
+        /// <see href="https://github.com/lofcz/FastCloner/issues/66">unused capacity and default comparers</see>.
+        /// </para>
+        /// <para>
+        /// Replace this method with <c>value.DeepClone()</c> once FastCloner (1) tracks the root dictionary on every
+        /// clone, (2) rebuilds buckets when it clones keys or comparers and deep clones value-type keys of small
+        /// dictionaries, and (3) clones <see cref="ConcurrentDictionary{TKey,TValue}"/> without overflowing. If it also
+        /// shares <see cref="EqualityComparer{T}.Default"/> and <see cref="Comparer{T}.Default"/>, the speed-only parts
+        /// can go at the cost noted above. The regression tests are <c>SetAsync_WithCachedDictionaryViews_*</c>,
+        /// <c>GetAsync_WithCachedDictionaryViews_*</c>, <c>GetAsync_WithInstanceHashComparer_*</c>,
+        /// <c>GetAsync_WithReferenceHashedKeys_*</c>, <c>ListAddAsync_WithReferenceHoldingStructs_*</c> and
+        /// <c>ListAddAsync_WithCustomComparer_*</c>.
+        /// </para>
+        /// </remarks>
         internal static object? CloneValue(object? value, bool forceDictionaryRebuild)
         {
             if (value is null)
@@ -1493,8 +1933,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         // Validate both the calculator result and fallback estimate.
         if (size < 0)
         {
-            _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
-                "Custom SizeCalculator functions must return non-negative values.",
+            _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}, skipping entry because custom SizeCalculator functions must return non-negative values",
                 size, entryType?.Name ?? GetEntryTypeName(value));
             return -1;
         }
@@ -1504,7 +1943,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             if (_shouldThrowOnMaxEntrySizeExceeded)
                 throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, entryType?.Name ?? GetEntryTypeName(value));
 
-            _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
+            _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}, skipping entry",
                 size, _maxEntrySize.Value, entryType?.Name ?? GetEntryTypeName(value));
             return -1;
         }

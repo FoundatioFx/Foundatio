@@ -687,12 +687,6 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
-    {
-        return base.SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged();
-    }
-
-    [Fact]
     public override Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
     {
         return base.SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease();
@@ -702,6 +696,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
     {
         return base.SetIfLowerAsync_WithDateTime_UpdatesWhenLower();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        return base.SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged();
     }
 
     [Fact]

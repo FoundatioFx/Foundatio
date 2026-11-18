@@ -262,7 +262,7 @@ var limitedCache = new InMemoryCacheClient(o => o.MaxItems(1000));
 
 #### In-memory update behavior
 
-Conditional writes and list updates publish replacement entries atomically. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size. `MaxEntrySize` also applies to the fallback estimate used when a custom size calculator throws.
+Conditional writes and list updates swap in replacement entries atomically. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size. `MaxEntrySize` also applies to the fallback estimate used when a custom size calculator throws.
 
 Every write treats an expired entry as missing, even before background maintenance removes it, matching Redis: `IncrementAsync`, `SetIfHigherAsync`, `SetIfLowerAsync` and `ListAddAsync` start fresh, `ReplaceAsync`, `SetExpirationAsync` and `ListRemoveAsync` find nothing to change, and `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` rather than letting a stale owner remove or renew it. A write that finds an expired entry reclaims it and raises `ItemExpired` once, without touching a concurrent replacement.
 
@@ -281,7 +281,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - Size-changing writes, clears, and recounts coordinate their memory accounting to prevent lasting drift from publication order. Disposal clears the tracked size together with the stored entries. Sizing and logging callbacks run outside the accounting lock.
 :::
 
-`ListAddAsync` and `ListRemoveAsync` update each list under its own lock, so concurrent updates to the same key never lose values and updates to different keys never contend. When members are strings, enums, `Guid`, `TimeSpan`, or primitives other than `float` and `double`, compared with the default comparer, an update touches only the values it adds or removes, plus any values that have expired; it does not copy or rescan the rest of the list. Other member types and custom comparers can run caller code partway through an update or treat distinct values as equal, so those updates are applied to a private copy of the list and then published. Either way, a rejected or failed update leaves the previous values, expiration, and tracked size in place.
+`ListAddAsync` and `ListRemoveAsync` update each list under its own lock, so concurrent updates to the same key never lose values and updates to different keys never contend. When members are strings, enums, `Guid`, `TimeSpan`, or primitives other than `float` and `double`, compared with the default comparer, an update touches only the values it adds or removes, plus any values that have expired; it does not copy or rescan the rest of the list. Other member types and custom comparers can run caller code partway through an update or treat distinct values as equal, so those updates are applied to a private copy of the list, which then replaces it. Either way, a rejected or failed update leaves the previous values, expiration, and tracked size in place.
 
 A dictionary returned by `GetAsync<Dictionary<T, DateTime?>>` with cloning disabled, or stored with `SetAsync`, may still be held by the caller, so the next list update copies it once instead of changing it. Later updates work in place again. Copies keep the dictionary's runtime type and comparer, including subclasses and other `IDictionary` implementations.
 

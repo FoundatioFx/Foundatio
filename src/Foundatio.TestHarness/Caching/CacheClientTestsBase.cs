@@ -750,6 +750,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             const int increments = 1000;
+
             // Act
             await Parallel.ForEachAsync(Enumerable.Range(0, increments), TestCancellationToken,
                 async (_, _) => await cache.IncrementAsync("counter", 1));
@@ -1003,6 +1004,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // The first call returns its full value and each later increase returns the delta, so the
             // differences of every successful update add up to the final maximum.
             long total = 0;
+
             // Act
             await Parallel.ForEachAsync(Enumerable.Range(1, 1000), TestCancellationToken,
                 async (i, _) => Interlocked.Add(ref total, await cache.SetIfHigherAsync("set-if-higher", (long)i)));
@@ -1095,6 +1097,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("set-if-lower", 1001L);
 
             long total = 0;
+
             // Act
             await Parallel.ForEachAsync(Enumerable.Range(1, 1000), TestCancellationToken,
                 async (i, _) => Interlocked.Add(ref total, await cache.SetIfLowerAsync("set-if-lower", (long)i)));
@@ -1186,11 +1189,12 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             const int values = 1000;
+
             // Act
             await Parallel.ForEachAsync(Enumerable.Range(0, values), TestCancellationToken,
                 async (i, _) => await cache.ListAddAsync("set", new[] { i }));
-
             var result = await cache.GetListAsync<int>("set");
+
             // Assert
             Assert.Equal(values, result.Value.Count);
         }
@@ -1274,22 +1278,25 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.NotNull(expiration);
             Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
 
-            // Keep the other item permanent so scheduler delays cannot expire both before the assertion.
+            // Multiple expirations expire individual items - test staggered expiration in one pass
             const string key = "list:staggered-expiration";
-            Assert.Equal(1, await cache.ListAddAsync(key, [3]));
             Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(50)));
+            Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(150)));
 
-            await WaitUntilAsync(async () => !(await cache.GetListAsync<int>(key)).Value?.Contains(2) ?? true);
             var cacheValue = await cache.GetListAsync<int>(key);
+            Assert.True(cacheValue.HasValue);
+            Assert.Equal(2, cacheValue.Value.Count);
+
+            // Wait for first item to expire
+            await Task.Delay(75);
+            cacheValue = await cache.GetListAsync<int>(key);
             Assert.True(cacheValue.HasValue);
             Assert.Single(cacheValue.Value);
             Assert.Contains(3, cacheValue.Value);
-            Assert.DoesNotContain(2, cacheValue.Value);
+            Assert.DoesNotContain(2, cacheValue.Value); // Explicit verification item 2 expired
 
-            // Verify whole-key expiration on a new list, without relying on shortening a permanent key's TTL.
-            Assert.Equal(1, await cache.ListRemoveAsync(key, [3]));
-            Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(50)));
-            await WaitUntilAsync(async () => !await cache.ExistsAsync(key));
+            // Wait for second item to expire
+            await Task.Delay(100, TestCancellationToken);
             Assert.False(await cache.ExistsAsync(key));
 
             // Null expiration: should succeed and remove expiration
@@ -1316,20 +1323,6 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             expiration = await cache.GetExpirationAsync("list-unchanged-ttl");
             Assert.NotNull(expiration);
             Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
-        }
-    }
-
-    /// <summary>
-    /// Polls instead of sleeping a fixed time, so expiration tests finish as soon as the provider expires the value
-    /// and still tolerate a slow scheduler.
-    /// </summary>
-    private async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        var elapsed = Stopwatch.StartNew();
-        while (!await condition())
-        {
-            Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), "Timed out waiting for the cache value to expire.");
-            await Task.Delay(10, TestCancellationToken);
         }
     }
 

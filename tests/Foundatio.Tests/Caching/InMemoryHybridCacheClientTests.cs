@@ -712,12 +712,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged();
     }
 
-    [Fact]
-    public override Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
-    {
-        return base.SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged();
-    }
-
     [Fact(Skip = "Skip because HybridCacheClient can cache a stale local value under concurrent writes: https://github.com/FoundatioFx/Foundatio/issues/572")]
     public override Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
     {
@@ -728,6 +722,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
     {
         return base.SetIfLowerAsync_WithDateTime_UpdatesWhenLower();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        return base.SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged();
     }
 
     [Fact]
