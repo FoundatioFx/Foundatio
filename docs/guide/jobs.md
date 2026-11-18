@@ -441,10 +441,12 @@ public record DeleteEntityWorkItem
 | `Data` | The raw work item payload (use `GetData<T>()` instead) |
 | `JobId` | Unique identifier for this job run |
 | `WorkItemLock` | Optional distributed lock for the work item |
-| `CancellationToken` | Signals that processing should stop |
+| `CancellationToken` | Signals that processing should stop, including when `AutoRenewLockOnProgress` detects that the work item lock was lost. After a lost lock the entry is abandoned and retried, even if the handler returns normally |
 | `Result` | Set to `JobResult.FailedWithMessage(...)` to indicate failure without throwing. As with `QueueJobBase`, a non-success `Result` abandons and retries the entry -- see [Retry vs Permanent Failure](#retry-vs-permanent-failure) |
-| `ReportProgressAsync(progress, message)` | Publishes `WorkItemStatus` updates via `IMessageBus` |
-| `RenewLockAsync()` | Extends the work item lock lease |
+| `ReportProgressAsync(progress, message)` | Publishes `WorkItemStatus` updates via `IMessageBus`. With `AutoRenewLockOnProgress`, it also renews the queue entry and work item lock |
+| `RenewLockAsync()` | Extends the work item lock lease. Throws `LockException` if a cache-backed lock was lost; stop the work |
+
+With `AutoRenewLockOnProgress`, a failed work item lock renewal cancels the context token without waiting for queue renewal. For a lock collection, the job observes the result when the collection finishes renewing. When progress reports are enabled, a terminal failure status is published before abandonment, including when the handler returns normally after cancellation. Queue renewal errors are logged and do not themselves cancel the handler. The default `WorkItemHandlerBase` uses `EmptyLock`; preventing concurrent redelivery requires overriding `GetWorkItemLockAsync` with an exclusive lock shared by all processors of that work item. When the handler exits, the job waits for progress reports already in flight before completing or abandoning the entry and releasing its lock. Reports started after that boundary are ignored, so retained callbacks cannot renew a released lock or publish progress after the terminal status. Configure provider timeouts because in-flight renewals must settle before cleanup.
 
 ### WorkItemHandlers
 
@@ -925,4 +927,3 @@ services.AddJob<OrderProcessorJob>(o => o.InstanceCount(4));
 - [Locks](./locks) — Distributed locking for singleton jobs
 - [Resilience](./resilience) — Retry policies for job reliability
 - [Serialization](./serialization) — Serializer configuration and performance
-

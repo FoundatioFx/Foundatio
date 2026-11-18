@@ -66,15 +66,16 @@ public interface IWorkItemHandler
     /// Processes a single work item. The <paramref name="context"/> provides access to the
     /// deserialized payload via <see cref="WorkItemContext.GetData{T}"/> and supports reporting
     /// progress via <see cref="WorkItemContext.ReportProgressAsync(int, string?)"/>.
-    /// If this method completes without calling <see cref="IQueueEntry.CompleteAsync"/>,
-    /// the entry is auto-completed when <see cref="AutoRenewLockOnProgress"/> is <c>true</c>.
+    /// The job completes an unsettled entry after successful handling. A lost work-item lease causes abandonment.
     /// </summary>
     /// <param name="context">Context containing the queue entry, work item data, and progress reporting.</param>
     Task HandleItemAsync(WorkItemContext context);
 
     /// <summary>
-    /// When <c>true</c>, the lock on the queue entry is automatically renewed each time
+    /// When <c>true</c>, the queue entry and work item lock are automatically renewed each time
     /// the handler reports progress. This prevents long-running work items from timing out.
+    /// Renewal errors are logged; if work item lock renewal fails, <see cref="WorkItemContext.CancellationToken"/>
+    /// is cancelled so cooperative handlers can stop.
     /// </summary>
     bool AutoRenewLockOnProgress { get; set; }
 
