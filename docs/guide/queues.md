@@ -898,7 +898,7 @@ If you are writing a custom `IQueue<T>` implementation by extending `QueueBase<T
 - **`EnsureQueueCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.). The shared worker calls it before each dequeue, so return immediately when setup is current.
 - **`DequeueImplAsync`** receives a linked token (caller + disposal). Respect it for the wait/poll operation.
 - **`EnqueueImplAsync`** does not receive a cancellation token — keep enqueue fast and non-blocking.
-- **`StartWorkingImpl`** should call `StartWorker(handler, autoComplete, cancellationToken)` to use the shared loop (see [Worker Error Handling](#worker-error-handling)). Report `WorkerErrorCount` as `QueueStats.Errors` and call `ResetWorkerErrorCount()` when stats are reset.
+- **`StartWorkingImpl`** should call `StartWorker(handler, autoComplete, cancellationToken)` to use the shared loop (see [Worker Error Handling](#worker-error-handling)). Report `WorkerErrorCount` as `QueueStats.Errors` and call `ResetWorkerErrorCount()` when stats are reset. Provider-specific workers can record errors with `IncrementWorkerErrorCount()`.
 
 ## Best Practices
 

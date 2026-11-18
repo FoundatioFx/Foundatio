@@ -400,13 +400,14 @@ public class QueueWorkerTests : TestWithLoggingBase
             return Dequeue?.Invoke(linkedCancellationToken) ?? base.DequeueImplAsync(linkedCancellationToken);
         }
 
-        public override Task CompleteAsync(IQueueEntry<SimpleWorkItem> queueEntry)
+        public override async Task CompleteAsync(IQueueEntry<SimpleWorkItem> queueEntry)
         {
             CompleteAttempts++;
+            await Task.Yield();
             if (FailComplete?.Invoke(queueEntry) == true)
                 throw new InvalidOperationException("Completion failed before settlement");
 
-            return base.CompleteAsync(queueEntry);
+            await base.CompleteAsync(queueEntry);
         }
 
         public override Task AbandonAsync(IQueueEntry<SimpleWorkItem> queueEntry)

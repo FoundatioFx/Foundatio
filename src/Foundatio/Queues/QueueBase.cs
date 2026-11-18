@@ -42,9 +42,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private int _groupIdUnsupportedLogged;
     private long _workerErrorCount;
 
-    private static readonly Func<int, TimeSpan> _workerErrorBackoff = ResiliencePolicy.ExponentialDelay(TimeSpan.FromSeconds(1));
-    private static readonly TimeSpan _maxWorkerErrorDelay = TimeSpan.FromSeconds(30);
-
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -59,8 +56,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _serializer = options.Serializer;
         options.Behaviors.ForEach(AttachBehavior);
 
-        var resiliencePolicyProvider = options.GetResiliencePolicyProvider() ?? options.ResiliencePolicyProvider;
-        _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
+        IHaveResiliencePolicyProvider policyOptions = options;
+        _resiliencePolicy = policyOptions.ResiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
         _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");
@@ -284,6 +281,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected long WorkerErrorCount => Interlocked.Read(ref _workerErrorCount);
 
     /// <summary>
+    /// Records an error from a provider-specific worker in the queue's worker error count.
+    /// </summary>
+    protected void IncrementWorkerErrorCount() => Interlocked.Increment(ref _workerErrorCount);
+
+    /// <summary>
     /// Resets <see cref="WorkerErrorCount"/> to zero. Call this when resetting queue stats.
     /// </summary>
     protected void ResetWorkerErrorCount() => Interlocked.Exchange(ref _workerErrorCount, 0);
@@ -324,7 +326,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     {
         _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
-        int consecutiveDequeueErrors = 0;
+        int backoffSeconds = 1;
         while (!cancellationToken.IsCancellationRequested)
         {
             IQueueEntry<T>? entry;
@@ -335,7 +337,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
                     break;
 
                 entry = await DequeueImplAsync(cancellationToken).AnyContext();
-                consecutiveDequeueErrors = 0;
+                backoffSeconds = 1;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -343,10 +345,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             }
             catch (Exception ex)
             {
-                consecutiveDequeueErrors++;
-                Interlocked.Increment(ref _workerErrorCount);
-
-                var delay = GetWorkerErrorDelay(consecutiveDequeueErrors);
+                IncrementWorkerErrorCount();
+                var delay = TimeSpan.FromSeconds(backoffSeconds * (1 - 0.25 * Random.Shared.NextDouble()));
+                backoffSeconds = Math.Min(30, backoffSeconds * 2);
                 _logger.LogError(ex, "Error dequeuing from {QueueName}, retrying in {Delay:g}: {Message}", _options.Name, delay, ex.Message);
                 await _timeProvider.SafeDelay(delay, cancellationToken).AnyContext();
                 continue;
@@ -367,7 +368,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             }
             catch (Exception ex)
             {
-                Interlocked.Increment(ref _workerErrorCount);
+                IncrementWorkerErrorCount();
                 _logger.LogError(ex, "Worker error: {Message}", ex.Message);
                 await AbandonWorkerEntryAsync(entry).AnyContext();
                 continue;
@@ -378,11 +379,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
             try
             {
-                await _resiliencePolicy.ExecuteAsync(async _ =>
-                {
-                    if (!entry.IsAbandoned && !entry.IsCompleted)
-                        await entry.CompleteAsync().AnyContext();
-                }, DisposedCancellationToken).AnyContext();
+                await _resiliencePolicy.ExecuteAsync(entry, static (e, _) =>
+                    e.IsAbandoned || e.IsCompleted ? ValueTask.CompletedTask : new ValueTask(e.CompleteAsync()), DisposedCancellationToken).AnyContext();
             }
             catch (OperationCanceledException) when (DisposedCancellationToken.IsCancellationRequested)
             {
@@ -390,7 +388,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             }
             catch (Exception ex)
             {
-                Interlocked.Increment(ref _workerErrorCount);
+                IncrementWorkerErrorCount();
                 _logger.LogError(ex, "Worker error attempting to auto complete entry {QueueEntryId}: {Message}", entry.Id, ex.Message);
             }
         }
@@ -405,11 +403,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         try
         {
-            await _resiliencePolicy.ExecuteAsync(async _ =>
-            {
-                if (!entry.IsAbandoned && !entry.IsCompleted)
-                    await entry.AbandonAsync().AnyContext();
-            }, DisposedCancellationToken).AnyContext();
+            await _resiliencePolicy.ExecuteAsync(entry, static (e, _) =>
+                e.IsAbandoned || e.IsCompleted ? ValueTask.CompletedTask : new ValueTask(e.AbandonAsync()), DisposedCancellationToken).AnyContext();
         }
         catch (OperationCanceledException) when (DisposedCancellationToken.IsCancellationRequested)
         {
@@ -419,16 +414,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         {
             _logger.LogError(ex, "Worker error abandoning queue entry {QueueEntryId}: {Message}", entry.Id, ex.Message);
         }
-    }
-
-    private static TimeSpan GetWorkerErrorDelay(int consecutiveErrors)
-    {
-        var delay = _workerErrorBackoff(Math.Min(consecutiveErrors, 16));
-        if (delay > _maxWorkerErrorDelay)
-            delay = _maxWorkerErrorDelay;
-
-        double jitter = delay.TotalMilliseconds * 0.25 * Random.Shared.NextDouble();
-        return TimeSpan.FromMilliseconds(delay.TotalMilliseconds - jitter);
     }
 
     public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;
