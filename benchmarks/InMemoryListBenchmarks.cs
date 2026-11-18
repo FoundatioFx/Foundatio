@@ -15,7 +15,7 @@ public class InMemoryListBenchmarks
     [Params(false, true)]
     public bool CloneValues { get; set; }
 
-    [Params(10, 1000)]
+    [Params(10, 1_000, 10_000)]
     public int Count { get; set; }
 
     [Params(SizingMode.None, SizingMode.Fixed, SizingMode.Custom, SizingMode.Dynamic)]
@@ -41,6 +41,7 @@ public class InMemoryListBenchmarks
                 _ => o
             };
         });
+
         _initial = Enumerable.Range(0, Count).ToArray();
         _batch = Enumerable.Range(0, Count / 2).ToArray();
         await _cache.ListAddAsync("set", _initial);

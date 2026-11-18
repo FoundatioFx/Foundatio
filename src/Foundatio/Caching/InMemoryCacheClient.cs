@@ -26,6 +26,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
+    private readonly bool _usesFixedSizing;
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
@@ -76,6 +77,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
+        _usesFixedSizing = options.UsesFixedSizing;
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -690,11 +692,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             // itself is rejected before it is merged. Like any other cached value, they are cloned after sizing.
             if (_hasSizeCalculator)
             {
-                input = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
-                foreach (var item in items)
-                    input[item] = expiresAt;
+                if (_usesFixedSizing)
+                {
+                    inputSize = CalculateEntrySize(items, typeof(Dictionary<T, DateTime?>));
+                }
+                else
+                {
+                    input = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
+                    foreach (var item in items)
+                        input[item] = expiresAt;
 
-                inputSize = CalculateEntrySize(input);
+                    inputSize = CalculateEntrySize(input);
+                }
+
                 if (inputSize < 0)
                     return 0;
             }
@@ -914,6 +924,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         if (!_hasSizeCalculator)
             return 0;
+
+        if (_usesFixedSizing)
+            return CalculateEntrySize(list);
 
         object values = _shouldClone
             ? CacheEntry.CloneValue(list.Values, CacheEntry.RequiresDictionaryKeyCloning(list.DictionaryType))!

@@ -64,6 +64,8 @@ docs                                  # Documentation site
 - Run `dotnet format` to auto-format code
 - Match existing file style; minimize diffs
 - No code comments unless necessary—code should be self-explanatory
+- **Control statements**: Use braces for multiline conditions or bodies. If any branch of an `if` / `else if` / `else` chain uses braces, brace every branch. A single-statement guard can omit braces.
+- **Block spacing**: Leave a blank line after a closing block (including a block lambda) before the next independent statement. Keep connected clauses such as `else`, `catch`, `finally`, and the `while` of a `do` loop together. Consecutive closing braces stay together.
 - **Field naming**: private and internal fields, including `static` and `static readonly` fields, use `_camelCase`. Never use an `s_` prefix.
 - **No `partial` classes**: keep a type in one file. Don't split a class across files to organize it. Extract a separate internal type instead.
 - **Loops**: prefer a loop with an explicit exit condition. Use `while (true)` only for a compare-and-swap retry loop whose iterations only repeat when another writer made progress, and document that.
