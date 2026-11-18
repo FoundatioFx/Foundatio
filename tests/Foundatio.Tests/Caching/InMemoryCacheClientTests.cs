@@ -1763,6 +1763,24 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ListUpdate_WithUnclonedOrderedDictionary_PreservesKeyIdentityAndOrder()
+    {
+        // Arrange
+        using var cache = CreateCacheClient(o => o.CloneValues(false));
+        var first = new object();
+        var second = new object();
+        var third = new object();
+        var original = new OrderedDictionary<object, DateTime?> { [first] = null, [second] = null };
+        await cache.SetAsync("list", original);
+
+        // Act & Assert
+        Assert.Equal(1, await cache.ListAddAsync("list", [third]));
+        Assert.Equal(1, await cache.ListRemoveAsync("list", [first]));
+        Assert.Equal([second, third], (await cache.GetAsync<OrderedDictionary<object, DateTime?>>("list")).Value.Keys);
+        Assert.Equal([first, second], original.Keys);
+    }
+
+    [Fact]
     public async Task RecalculateMemorySize_WithExpiredStoredEntry_KeepsSizeUntilRemoved()
     {
         // Arrange
