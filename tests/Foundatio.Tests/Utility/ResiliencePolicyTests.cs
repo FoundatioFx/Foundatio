@@ -244,22 +244,6 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     }
 
     [Fact]
-    public void GetPolicy_WithConfiguredDefault_PrefersQueuePolicyThenDefaultThenFallback()
-    {
-        var provider = new ResiliencePolicyProvider();
-        IResiliencePolicy Resolve() => provider.GetPolicy<IQueue<string>, IQueue>(b => b.WithMaxAttempts(7));
-
-        Assert.Equal(7, Assert.IsType<ResiliencePolicy>(Resolve()).MaxAttempts);
-
-        provider.WithDefaultPolicy(b => b.WithMaxAttempts(1));
-        Assert.Same(provider.GetDefaultPolicy(), Resolve());
-
-        var queuePolicy = new ResiliencePolicy { MaxAttempts = 2 };
-        provider.WithPolicy<IQueue>(queuePolicy);
-        Assert.Same(queuePolicy, Resolve());
-    }
-
-    [Fact]
     public void CanUseProvider()
     {
         var provider = new ResiliencePolicyProvider()
@@ -482,6 +466,27 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         Assert.True(await lockProvider.IsLockedAsync("test"));
 
         Assert.Equal(4, hitCount);
+    }
+
+    [Fact]
+    public void GetPolicy_WithConfiguredDefault_PrefersQueuePolicyThenDefaultThenFallback()
+    {
+        // Arrange
+        var provider = new ResiliencePolicyProvider();
+        var queuePolicy = new ResiliencePolicy { MaxAttempts = 2 };
+        IResiliencePolicy Resolve() => provider.GetPolicy<IQueue<string>, IQueue>(b => b.WithMaxAttempts(7));
+
+        // Act
+        var fallback = Resolve();
+        provider.WithDefaultPolicy(b => b.WithMaxAttempts(1));
+        var unmatched = Resolve();
+        provider.WithPolicy<IQueue>(queuePolicy);
+        var matched = Resolve();
+
+        // Assert
+        Assert.Equal(7, Assert.IsType<ResiliencePolicy>(fallback).MaxAttempts);
+        Assert.Same(provider.GetDefaultPolicy(), unmatched);
+        Assert.Same(queuePolicy, matched);
     }
 
     private async ValueTask<int> ReturnStuff()

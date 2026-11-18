@@ -961,49 +961,15 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task StartWorkingAsync_WhenDequeueThrows_KeepsWorkingAsync()
-    {
-        using var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
-        if (queue == null)
-            return;
-
-        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        try
-        {
-            await queue.DeleteQueueAsync();
-            await AssertEmptyQueueAsync(queue);
-
-            int dequeuedCount = 0;
-            using var dequeuedHandler = queue.Dequeued.AddSyncHandler((_, _) =>
-            {
-                if (Interlocked.Increment(ref dequeuedCount) == 1)
-                    throw new InvalidOperationException("Simulated dequeue failure");
-            });
-
-            var processed = new AsyncManualResetEvent(false);
-            using var completedHandler = queue.Completed.AddSyncHandler((_, _) => processed.Set());
-            await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellationTokenSource.Token);
-
-            await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
-            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
-
-            await processed.WaitAsync(cancellationTokenSource.Token);
-            Assert.True(dequeuedCount >= 2);
-        }
-        finally
-        {
-            await cancellationTokenSource.CancelAsync();
-            await CleanupQueueAsync(queue);
-        }
-    }
-
     public virtual async Task StartWorkingAsync_WhenAbandonThrows_KeepsWorkingAsync()
     {
+        // Arrange
         using var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-        if (queue == null)
+        if (queue is null)
             return;
 
-        using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
         try
         {
             await queue.DeleteQueueAsync();
@@ -1023,12 +989,14 @@ public abstract class QueueTestBase : TestWithLoggingBase
             var processedSecond = new AsyncManualResetEvent(false);
             using var completedHandler = queue.Completed.AddSyncHandler((_, args) =>
             {
-                if (args.Entry.Value.Data == "Second")
+                if (String.Equals(args.Entry.Value.Data, "Second", StringComparison.Ordinal))
                     processedSecond.Set();
             });
+
+            // Act
             await queue.StartWorkingAsync((entry, _) =>
             {
-                if (entry.Value.Data == "First")
+                if (String.Equals(entry.Value.Data, "First", StringComparison.Ordinal))
                     throw new InvalidOperationException("Simulated handler failure");
 
                 return Task.CompletedTask;
@@ -1039,6 +1007,8 @@ public abstract class QueueTestBase : TestWithLoggingBase
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
 
             await processedSecond.WaitAsync(cancellationTokenSource.Token);
+
+            // Assert
             Assert.True(abandonedCount >= 1);
         }
         finally
@@ -1050,8 +1020,9 @@ public abstract class QueueTestBase : TestWithLoggingBase
 
     public virtual async Task StartWorkingAsync_WhenCancelled_StopsWithoutWorkerErrorsAsync()
     {
+        // Arrange
         using var queue = GetQueue(retries: 0);
-        if (queue == null)
+        if (queue is null)
             return;
 
         try
@@ -1060,7 +1031,9 @@ public abstract class QueueTestBase : TestWithLoggingBase
             await AssertEmptyQueueAsync(queue);
 
             int handlerCalls = 0;
-            using var workerCancellationTokenSource = new CancellationTokenSource();
+            using var workerCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+
+            // Act
             await queue.StartWorkingAsync((_, _) =>
             {
                 Interlocked.Increment(ref handlerCalls);
@@ -1074,6 +1047,7 @@ public abstract class QueueTestBase : TestWithLoggingBase
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
             await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
 
+            // Assert
             Assert.Equal(0, handlerCalls);
             if (_assertStats)
             {
@@ -1084,6 +1058,48 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
         finally
         {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task StartWorkingAsync_WhenDequeueThrows_KeepsWorkingAsync()
+    {
+        // Arrange
+        using var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
+        if (queue is null)
+            return;
+
+        using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        cancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            int dequeuedCount = 0;
+            using var dequeuedHandler = queue.Dequeued.AddSyncHandler((_, _) =>
+            {
+                if (Interlocked.Increment(ref dequeuedCount) == 1)
+                    throw new InvalidOperationException("Simulated dequeue failure");
+            });
+
+            var processed = new AsyncManualResetEvent(false);
+            using var completedHandler = queue.Completed.AddSyncHandler((_, _) => processed.Set());
+
+            // Act
+            await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellationTokenSource.Token);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
+
+            await processed.WaitAsync(cancellationTokenSource.Token);
+
+            // Assert
+            Assert.True(dequeuedCount >= 2);
+        }
+        finally
+        {
+            await cancellationTokenSource.CancelAsync();
             await CleanupQueueAsync(queue);
         }
     }

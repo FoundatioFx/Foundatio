@@ -18,121 +18,9 @@ public class QueueWorkerTests : TestWithLoggingBase
     public QueueWorkerTests(ITestOutputHelper output) : base(output) { }
 
     [Fact]
-    public async Task StartWorker_WhenCancelledDuringSetup_LeavesEntryQueuedAsync()
-    {
-        using var timeout = CreateTimeout();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        using var queue = CreateQueue();
-        await queue.EnqueueAsync(new SimpleWorkItem());
-        int setupCalls = 0;
-        queue.EnsureCreated = _ => ++setupCalls == 2 ? cancellation.CancelAsync() : Task.CompletedTask;
-
-        await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellation.Token);
-        await queue.Worker.WaitAsync(timeout.Token);
-
-        var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(1, stats.Queued);
-        Assert.Equal(0, stats.Dequeued);
-        Assert.Equal(0, stats.Errors);
-    }
-
-    [Fact]
-    public async Task StartWorker_WhenBackoffTimerFails_PropagatesWorkerFaultAsync()
-    {
-        using var timeout = CreateTimeout();
-        using var queue = CreateQueue(new FailingTimeProvider());
-        queue.BeforeDequeue = () => throw new InvalidOperationException("Dequeue failed");
-
-        await queue.StartWorkingAsync((_, _) => Task.CompletedTask, cancellationToken: timeout.Token);
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => queue.Worker.WaitAsync(timeout.Token));
-        Assert.Equal("Timer unavailable", exception.Message);
-    }
-
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    public async Task StartWorker_WhenHandlerAlreadySettledEntry_DoesNotReenterOpenCircuitAsync(bool abandon, bool cancelHandler)
-    {
-        using var timeout = CreateTimeout();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        var circuitBreaker = new CircuitBreaker();
-        using var queue = CreateQueue(circuitBreaker: circuitBreaker);
-        await queue.EnqueueAsync(new SimpleWorkItem());
-
-        await queue.StartWorkingAsync(async (entry, token) =>
-        {
-            if (abandon)
-                await entry.AbandonAsync();
-            else
-                await entry.CompleteAsync();
-
-            circuitBreaker.Open();
-            await cancellation.CancelAsync();
-            if (cancelHandler)
-                token.ThrowIfCancellationRequested();
-        }, autoComplete: true, cancellationToken: cancellation.Token);
-        await queue.Worker.WaitAsync(timeout.Token);
-
-        var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(abandon ? 0 : 1, stats.Completed);
-        Assert.Equal(abandon ? 1 : 0, stats.Abandoned);
-        Assert.Equal(0, stats.Errors);
-        Assert.Equal(abandon ? 0 : 1, queue.CompleteAttempts);
-        Assert.Equal(abandon ? 1 : 0, queue.AbandonAttempts);
-        Assert.DoesNotContain(Log.LogEntries, entry => entry.LogLevel == LogLevel.Error);
-    }
-
-    [Fact]
-    public async Task StartWorker_WhenHandlerIsCancelled_AbandonsWithoutWorkerErrorAsync()
-    {
-        using var timeout = CreateTimeout();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        using var queue = CreateQueue();
-        var handlerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await queue.EnqueueAsync(new SimpleWorkItem());
-
-        await queue.StartWorkingAsync(async (_, token) =>
-        {
-            handlerEntered.SetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
-        }, autoComplete: true, cancellationToken: cancellation.Token);
-        await handlerEntered.Task.WaitAsync(timeout.Token);
-        await cancellation.CancelAsync();
-        await queue.Worker.WaitAsync(timeout.Token);
-
-        var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(1, stats.Abandoned);
-        Assert.Equal(0, stats.Completed);
-        Assert.Equal(0, stats.Working);
-        Assert.Equal(0, stats.Errors);
-        Assert.Equal(1, queue.AbandonAttempts);
-        Assert.Equal(0, queue.CompleteAttempts);
-    }
-
-    [Fact]
-    public async Task StartWorker_WhenSuccessfulHandlerCancelsWorker_CompletesEntryOnceAsync()
-    {
-        using var timeout = CreateTimeout();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        using var queue = CreateQueue();
-        await queue.EnqueueAsync(new SimpleWorkItem());
-
-        await queue.StartWorkingAsync((_, _) => cancellation.CancelAsync(), autoComplete: true, cancellationToken: cancellation.Token);
-        await queue.Worker.WaitAsync(timeout.Token);
-
-        var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(1, stats.Completed);
-        Assert.Equal(0, stats.Abandoned);
-        Assert.Equal(0, stats.Working);
-        Assert.Equal(0, stats.Errors);
-        Assert.Equal(1, queue.CompleteAttempts);
-    }
-
-    [Fact]
     public async Task StartWorker_WhenAbandonFailsBeforeSettlement_DoesNotCompleteFailedEntryAndKeepsWorkingAsync()
     {
+        // Arrange
         using var timeout = CreateTimeout();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
         using var queue = CreateQueue();
@@ -140,15 +28,17 @@ public class QueueWorkerTests : TestWithLoggingBase
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
 
+        // Act
         await queue.StartWorkingAsync((entry, _) =>
         {
-            if (entry.Value.Data == "First")
+            if (String.Equals(entry.Value.Data, "First", StringComparison.Ordinal))
                 throw new InvalidOperationException("Handler failed");
 
             return cancellation.CancelAsync();
         }, autoComplete: true, cancellationToken: cancellation.Token);
         await queue.Worker.WaitAsync(timeout.Token);
 
+        // Assert
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(1, stats.Completed);
         Assert.Equal(0, stats.Abandoned);
@@ -165,18 +55,21 @@ public class QueueWorkerTests : TestWithLoggingBase
     [InlineData(3)]
     public async Task StartWorker_WhenAutoCompleteFails_RetriesAndKeepsWorkingAsync(int failures)
     {
+        // Arrange
         using var timeout = CreateTimeout();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
         using var queue = CreateQueue();
         int firstEntryAttempts = 0;
-        queue.FailComplete = entry => entry.Value.Data == "First" && ++firstEntryAttempts <= failures;
+        queue.FailComplete = entry => String.Equals(entry.Value.Data, "First", StringComparison.Ordinal) && ++firstEntryAttempts <= failures;
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
 
-        await queue.StartWorkingAsync((entry, _) => entry.Value.Data == "Second" ? cancellation.CancelAsync() : Task.CompletedTask,
+        // Act
+        await queue.StartWorkingAsync((entry, _) => String.Equals(entry.Value.Data, "Second", StringComparison.Ordinal) ? cancellation.CancelAsync() : Task.CompletedTask,
             autoComplete: true, cancellationToken: cancellation.Token);
         await queue.Worker.WaitAsync(timeout.Token);
 
+        // Assert
         bool exhausted = failures == 3;
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(exhausted ? 1 : 2, stats.Completed);
@@ -185,124 +78,51 @@ public class QueueWorkerTests : TestWithLoggingBase
         Assert.Equal(0, stats.Abandoned);
         Assert.Equal(exhausted ? 3 : 2, firstEntryAttempts);
         Assert.Equal(firstEntryAttempts + 1, queue.CompleteAttempts);
-        Assert.Contains(queue.GetCompletedEntries(), entry => entry.Value.Data == "Second");
-    }
-
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(1, true)]
-    public async Task StartWorker_WhenSettlementFails_UsesConfiguredResiliencePolicyAsync(int maxAttempts, bool useInterface = false)
-    {
-        using var timeout = CreateTimeout();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        using var queue = useInterface
-            ? new WorkerQueue(new ProviderQueueOptions(new ResiliencePolicyProvider()
-                .WithPolicy<IQueue<SimpleWorkItem>>(new ResiliencePolicy { MaxAttempts = maxAttempts })))
-            : CreateQueue(maxAttempts: maxAttempts);
-        queue.FailComplete = entry => entry.Value.Data == "First";
-        await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
-        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
-
-        await queue.StartWorkingAsync((entry, _) => entry.Value.Data == "Second" ? cancellation.CancelAsync() : Task.CompletedTask,
-            autoComplete: true, cancellationToken: cancellation.Token);
-        await queue.Worker.WaitAsync(timeout.Token);
-
-        var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(maxAttempts + 1, queue.CompleteAttempts);
-        Assert.Equal(1, stats.Errors);
-        Assert.Equal(1, stats.Completed);
-        Assert.Equal(1, stats.Working);
-        Assert.Equal("Second", Assert.Single(queue.GetCompletedEntries()).Value.Data);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task StartWorker_WhenSettlementCallbackThrows_DoesNotRepeatSettlementAsync(bool abandon)
-    {
-        using var timeout = CreateTimeout();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        using var queue = CreateQueue();
-        int failedCallbacks = 0;
-        using var completedHandler = queue.Completed.AddSyncHandler((_, args) =>
-        {
-            if (!abandon && args.Entry.Value.Data == "First")
-            {
-                Interlocked.Increment(ref failedCallbacks);
-                throw new InvalidOperationException("Completion callback failed");
-            }
-        });
-        using var abandonedHandler = queue.Abandoned.AddSyncHandler((_, args) =>
-        {
-            if (abandon && args.Entry.Value.Data == "First")
-            {
-                Interlocked.Increment(ref failedCallbacks);
-                throw new InvalidOperationException("Abandonment callback failed");
-            }
-        });
-        await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
-        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
-
-        await queue.StartWorkingAsync((entry, _) =>
-        {
-            if (entry.Value.Data == "Second")
-                return cancellation.CancelAsync();
-            if (abandon)
-                throw new InvalidOperationException("Handler failed");
-
-            return Task.CompletedTask;
-        }, autoComplete: true, cancellationToken: cancellation.Token);
-        await queue.Worker.WaitAsync(timeout.Token);
-
-        var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(1, failedCallbacks);
-        Assert.Equal(abandon ? 1 : 2, stats.Completed);
-        Assert.Equal(abandon ? 1 : 0, stats.Abandoned);
-        Assert.Equal(abandon ? 1 : 0, stats.Errors);
-        Assert.Equal(0, stats.Working);
-        Assert.Equal(abandon ? 1 : 2, queue.CompleteAttempts);
-        Assert.Equal(abandon ? 1 : 0, queue.AbandonAttempts);
+        Assert.Contains(queue.GetCompletedEntries(), entry => String.Equals(entry.Value.Data, "Second", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task StartWorker_WhenDequeueKeepsFailing_JittersCappedDelayResetsAndCancelsAsync()
+    public async Task StartWorker_WhenBackoffTimerFails_PropagatesWorkerFaultAsync()
     {
+        // Arrange
+        using var timeout = CreateTimeout();
+        using var queue = CreateQueue(new FailingTimeProvider());
+        queue.BeforeDequeue = () => throw new InvalidOperationException("Dequeue failed");
+
+        // Act
+        await queue.StartWorkingAsync((_, _) => Task.CompletedTask, cancellationToken: timeout.Token);
+
+        // Assert
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => queue.Worker.WaitAsync(timeout.Token));
+        Assert.Equal("Timer unavailable", exception.Message);
+    }
+
+    [Fact]
+    public async Task StartWorker_WhenCancelledDuringSetup_LeavesEntryQueuedAsync()
+    {
+        // Arrange
         using var timeout = CreateTimeout();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        var timeProvider = new RecordingTimeProvider();
-        using var queue = CreateQueue(timeProvider);
-        int dequeueCalls = 0;
-        queue.Dequeue = _ => Interlocked.Increment(ref dequeueCalls) == 13
-            ? Task.FromResult<IQueueEntry<SimpleWorkItem>?>(null)
-            : Task.FromException<IQueueEntry<SimpleWorkItem>?>(new InvalidOperationException("Dequeue failed"));
-        await queue.StartWorkingAsync((_, _) => throw new InvalidOperationException("No entry should be processed"), cancellationToken: cancellation.Token);
+        using var queue = CreateQueue();
+        await queue.EnqueueAsync(new SimpleWorkItem());
+        int setupCalls = 0;
+        queue.EnsureCreated = _ => ++setupCalls == 2 ? cancellation.CancelAsync() : Task.CompletedTask;
 
-        var delays = new List<TimeSpan>();
-        for (int i = 0; i < 12; i++)
-        {
-            var delay = await timeProvider.Delays.Reader.ReadAsync(timeout.Token);
-            delays.Add(delay);
-            Assert.Equal(i + 1, Volatile.Read(ref dequeueCalls));
-            timeProvider.Advance(delay);
-        }
-
-        var resetDelay = await timeProvider.Delays.Reader.ReadAsync(timeout.Token);
-        await cancellation.CancelAsync();
+        // Act
+        await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellation.Token);
         await queue.Worker.WaitAsync(timeout.Token);
 
-        Assert.Equal(14, dequeueCalls);
-        Assert.Equal(13, (await queue.GetQueueStatsAsync()).Errors);
-        Assert.InRange(delays[0], TimeSpan.FromMilliseconds(750), TimeSpan.FromMilliseconds(1250));
-        Assert.InRange(delays[1], TimeSpan.FromMilliseconds(1500), TimeSpan.FromMilliseconds(2500));
-        Assert.All(delays, delay => Assert.InRange(delay, TimeSpan.FromMilliseconds(750), TimeSpan.FromSeconds(30)));
-        Assert.Contains(delays.GetRange(6, 6), delay => delay < TimeSpan.FromSeconds(30));
-        Assert.InRange(resetDelay, TimeSpan.FromMilliseconds(750), TimeSpan.FromMilliseconds(1250));
+        // Assert
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, stats.Queued);
+        Assert.Equal(0, stats.Dequeued);
+        Assert.Equal(0, stats.Errors);
     }
 
     [Fact]
     public async Task StartWorker_WhenDequeueInvalidatesQueueSetup_RecreatesQueueAndKeepsWorkingAsync()
     {
+        // Arrange
         using var timeout = CreateTimeout();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
         var timeProvider = new RecordingTimeProvider();
@@ -334,6 +154,7 @@ public class QueueWorkerTests : TestWithLoggingBase
             }
         };
 
+        // Act
         await queue.StartWorkingAsync((_, _) =>
         {
             handlerCalls++;
@@ -343,6 +164,7 @@ public class QueueWorkerTests : TestWithLoggingBase
         timeProvider.Advance(delay);
         await queue.Worker.WaitAsync(timeout.Token);
 
+        // Assert
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(3, setupCalls);
         Assert.Equal(2, dequeueCalls);
@@ -352,6 +174,216 @@ public class QueueWorkerTests : TestWithLoggingBase
         Assert.Equal(0, stats.Working);
     }
 
+    [Fact]
+    public async Task StartWorker_WhenDequeueKeepsFailing_JittersCappedDelayResetsAndCancelsAsync()
+    {
+        // Arrange
+        using var timeout = CreateTimeout();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var timeProvider = new RecordingTimeProvider();
+        using var queue = CreateQueue(timeProvider);
+        int dequeueCalls = 0;
+        queue.Dequeue = _ => Interlocked.Increment(ref dequeueCalls) == 13
+            ? Task.FromResult<IQueueEntry<SimpleWorkItem>?>(null)
+            : Task.FromException<IQueueEntry<SimpleWorkItem>?>(new InvalidOperationException("Dequeue failed"));
+
+        // Act
+        await queue.StartWorkingAsync((_, _) => throw new InvalidOperationException("No entry should be processed"), cancellationToken: cancellation.Token);
+
+        var delays = new List<TimeSpan>();
+        for (int i = 0; i < 12; i++)
+        {
+            var delay = await timeProvider.Delays.Reader.ReadAsync(timeout.Token);
+            delays.Add(delay);
+            Assert.Equal(i + 1, Volatile.Read(ref dequeueCalls));
+            timeProvider.Advance(delay);
+        }
+
+        var resetDelay = await timeProvider.Delays.Reader.ReadAsync(timeout.Token);
+        await cancellation.CancelAsync();
+        await queue.Worker.WaitAsync(timeout.Token);
+
+        // Assert
+        Assert.Equal(14, dequeueCalls);
+        Assert.Equal(13, (await queue.GetQueueStatsAsync()).Errors);
+        Assert.InRange(delays[0], TimeSpan.FromMilliseconds(750), TimeSpan.FromMilliseconds(1250));
+        Assert.InRange(delays[1], TimeSpan.FromMilliseconds(1500), TimeSpan.FromMilliseconds(2500));
+        Assert.All(delays, delay => Assert.InRange(delay, TimeSpan.FromMilliseconds(750), TimeSpan.FromSeconds(30)));
+        Assert.Contains(delays.GetRange(6, 6), delay => delay < TimeSpan.FromSeconds(30));
+        Assert.InRange(resetDelay, TimeSpan.FromMilliseconds(750), TimeSpan.FromMilliseconds(1250));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task StartWorker_WhenHandlerAlreadySettledEntry_DoesNotReenterOpenCircuitAsync(bool abandon, bool cancelHandler)
+    {
+        // Arrange
+        using var timeout = CreateTimeout();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var circuitBreaker = new CircuitBreaker();
+        using var queue = CreateQueue(circuitBreaker: circuitBreaker);
+        await queue.EnqueueAsync(new SimpleWorkItem());
+
+        // Act
+        await queue.StartWorkingAsync(async (entry, token) =>
+        {
+            if (abandon)
+                await entry.AbandonAsync();
+            else
+                await entry.CompleteAsync();
+
+            circuitBreaker.Open();
+            await cancellation.CancelAsync();
+            if (cancelHandler)
+                token.ThrowIfCancellationRequested();
+        }, autoComplete: true, cancellationToken: cancellation.Token);
+        await queue.Worker.WaitAsync(timeout.Token);
+
+        // Assert
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(abandon ? 0 : 1, stats.Completed);
+        Assert.Equal(abandon ? 1 : 0, stats.Abandoned);
+        Assert.Equal(0, stats.Errors);
+        Assert.Equal(abandon ? 0 : 1, queue.CompleteAttempts);
+        Assert.Equal(abandon ? 1 : 0, queue.AbandonAttempts);
+        Assert.DoesNotContain(Log.LogEntries, entry => entry.LogLevel == LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task StartWorker_WhenHandlerIsCancelled_AbandonsWithoutWorkerErrorAsync()
+    {
+        // Arrange
+        using var timeout = CreateTimeout();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        using var queue = CreateQueue();
+        var handlerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await queue.EnqueueAsync(new SimpleWorkItem());
+
+        // Act
+        await queue.StartWorkingAsync(async (_, token) =>
+        {
+            handlerEntered.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        }, autoComplete: true, cancellationToken: cancellation.Token);
+        await handlerEntered.Task.WaitAsync(timeout.Token);
+        await cancellation.CancelAsync();
+        await queue.Worker.WaitAsync(timeout.Token);
+
+        // Assert
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, stats.Abandoned);
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(0, stats.Working);
+        Assert.Equal(0, stats.Errors);
+        Assert.Equal(1, queue.AbandonAttempts);
+        Assert.Equal(0, queue.CompleteAttempts);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartWorker_WhenSettlementCallbackThrows_DoesNotRepeatSettlementAsync(bool abandon)
+    {
+        // Arrange
+        using var timeout = CreateTimeout();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        using var queue = CreateQueue();
+        int failedCallbacks = 0;
+        using var completedHandler = queue.Completed.AddSyncHandler((_, args) =>
+        {
+            if (!abandon && String.Equals(args.Entry.Value.Data, "First", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref failedCallbacks);
+                throw new InvalidOperationException("Completion callback failed");
+            }
+        });
+        using var abandonedHandler = queue.Abandoned.AddSyncHandler((_, args) =>
+        {
+            if (abandon && String.Equals(args.Entry.Value.Data, "First", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref failedCallbacks);
+                throw new InvalidOperationException("Abandonment callback failed");
+            }
+        });
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
+
+        // Act
+        await queue.StartWorkingAsync((entry, _) =>
+        {
+            if (String.Equals(entry.Value.Data, "Second", StringComparison.Ordinal))
+                return cancellation.CancelAsync();
+            if (abandon)
+                throw new InvalidOperationException("Handler failed");
+
+            return Task.CompletedTask;
+        }, autoComplete: true, cancellationToken: cancellation.Token);
+        await queue.Worker.WaitAsync(timeout.Token);
+
+        // Assert
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, failedCallbacks);
+        Assert.Equal(abandon ? 1 : 2, stats.Completed);
+        Assert.Equal(abandon ? 1 : 0, stats.Abandoned);
+        Assert.Equal(abandon ? 1 : 0, stats.Errors);
+        Assert.Equal(0, stats.Working);
+        Assert.Equal(abandon ? 1 : 2, queue.CompleteAttempts);
+        Assert.Equal(abandon ? 1 : 0, queue.AbandonAttempts);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(1, true)]
+    public async Task StartWorker_WhenSettlementFails_UsesConfiguredResiliencePolicyAsync(int maxAttempts, bool useInterface = false)
+    {
+        // Arrange
+        using var timeout = CreateTimeout();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        using var queue = CreateQueue(maxAttempts: maxAttempts, useInterface: useInterface);
+        queue.FailComplete = entry => String.Equals(entry.Value.Data, "First", StringComparison.Ordinal);
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
+
+        // Act
+        await queue.StartWorkingAsync((entry, _) => String.Equals(entry.Value.Data, "Second", StringComparison.Ordinal) ? cancellation.CancelAsync() : Task.CompletedTask,
+            autoComplete: true, cancellationToken: cancellation.Token);
+        await queue.Worker.WaitAsync(timeout.Token);
+
+        // Assert
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(maxAttempts + 1, queue.CompleteAttempts);
+        Assert.Equal(1, stats.Errors);
+        Assert.Equal(1, stats.Completed);
+        Assert.Equal(1, stats.Working);
+        Assert.Equal("Second", Assert.Single(queue.GetCompletedEntries()).Value.Data);
+    }
+
+    [Fact]
+    public async Task StartWorker_WhenSuccessfulHandlerCancelsWorker_CompletesEntryOnceAsync()
+    {
+        // Arrange
+        using var timeout = CreateTimeout();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        using var queue = CreateQueue();
+        await queue.EnqueueAsync(new SimpleWorkItem());
+
+        // Act
+        await queue.StartWorkingAsync((_, _) => cancellation.CancelAsync(), autoComplete: true, cancellationToken: cancellation.Token);
+        await queue.Worker.WaitAsync(timeout.Token);
+
+        // Assert
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, stats.Completed);
+        Assert.Equal(0, stats.Abandoned);
+        Assert.Equal(0, stats.Working);
+        Assert.Equal(0, stats.Errors);
+        Assert.Equal(1, queue.CompleteAttempts);
+    }
+
     private CancellationTokenSource CreateTimeout()
     {
         var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
@@ -359,18 +391,18 @@ public class QueueWorkerTests : TestWithLoggingBase
         return timeout;
     }
 
-    private WorkerQueue CreateQueue(TimeProvider? timeProvider = null, CircuitBreaker? circuitBreaker = null, int maxAttempts = 3)
+    private WorkerQueue CreateQueue(TimeProvider? timeProvider = null, CircuitBreaker? circuitBreaker = null, int maxAttempts = 3, bool useInterface = false)
     {
         var policy = new ResiliencePolicy { MaxAttempts = maxAttempts, Delay = TimeSpan.Zero, CircuitBreaker = circuitBreaker };
-        return new WorkerQueue(new InMemoryQueueOptions<SimpleWorkItem>
-        {
-            Retries = 0,
-            RetryDelay = TimeSpan.Zero,
-            WorkItemTimeout = TimeSpan.FromMinutes(5),
-            TimeProvider = timeProvider ?? TimeProvider.System,
-            LoggerFactory = Log,
-            ResiliencePolicyProvider = new ResiliencePolicyProvider().WithPolicy<IQueue<SimpleWorkItem>>(policy)
-        });
+        var provider = new ResiliencePolicyProvider().WithPolicy<IQueue<SimpleWorkItem>>(policy);
+        var options = useInterface
+            ? new ProviderQueueOptions(provider)
+            : new InMemoryQueueOptions<SimpleWorkItem> { ResiliencePolicyProvider = provider };
+        options.Retries = 0;
+        options.RetryDelay = TimeSpan.Zero;
+        options.TimeProvider = timeProvider ?? TimeProvider.System;
+        options.LoggerFactory = Log;
+        return new WorkerQueue(options);
     }
 
     private sealed class WorkerQueue(InMemoryQueueOptions<SimpleWorkItem> options) : InMemoryQueue<SimpleWorkItem>(options)
