@@ -925,8 +925,11 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
 
     private async Task CompactAsync()
     {
-        _logger.LogTrace("CompactAsync called. ShouldCompact={ShouldCompact}, CurrentMemory={CurrentMemory}, MaxMemory={MaxMemory}, Count={Count}",
-            ShouldCompact, _currentMemorySize, _maxMemorySize, _memory.Count);
+        if (_logger.IsEnabled(LogLevel.Trace))
+        {
+            _logger.LogTrace("CompactAsync called. ShouldCompact={ShouldCompact}, CurrentMemory={CurrentMemory}, MaxMemory={MaxMemory}, Count={Count}",
+                ShouldCompact, _currentMemorySize, _maxMemorySize, _memory.Count);
+        }
 
         if (!ShouldCompact)
             return;
@@ -965,8 +968,11 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
                 if (candidate is not { } entryToRemove)
                     break;
 
-                _logger.LogDebug("Removing cache entry {Key} due to cache exceeding limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0})",
-                    entryToRemove.Key, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("Removing cache entry {Key} due to cache exceeding limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0})",
+                        entryToRemove.Key, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
+                }
 
                 if (!TryRemoveEntry(entryToRemove.Key, entryToRemove.Value))
                 {
@@ -1056,7 +1062,8 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
         double worstRatio = Double.MinValue; // Start with minimum value so any score can win
         long currentTime = _timeProvider.GetUtcNow().Ticks;
 
-        _logger.LogTrace("FindWorstSizeToUsageRatio: Checking {Count} entries", _memory.Count);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("FindWorstSizeToUsageRatio: Checking {Count} entries", _memory.Count);
 
         foreach (var kvp in _memory)
         {
@@ -1087,7 +1094,8 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             }
         }
 
-        _logger.LogTrace("FindWorstSizeToUsageRatio: Selected {Key} with score {Score}", candidate?.Key, worstRatio);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("FindWorstSizeToUsageRatio: Selected {Key} with score {Score}", candidate?.Key, worstRatio);
         return candidate;
     }
 
@@ -1105,7 +1113,8 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
                 if (kvp.Value.ExpiresAt is not { } expiresAt || expiresAt >= utcNow || !TryRemoveEntry(kvp.Key, kvp.Value))
                     continue;
 
-                _logger.LogDebug("DoMaintenance: Removed expired key {Key}", kvp.Key);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                    _logger.LogDebug("DoMaintenance: Removed expired key {Key}", kvp.Key);
                 OnItemExpired(kvp.Key);
             }
         }

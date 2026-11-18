@@ -4580,6 +4580,38 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Empty(cache.Items);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Eviction_WithTraceLogging_PreservesMessages(bool traceEnabled)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
+        using var logger = new TestLogger(o => o.DefaultLogLevel = traceEnabled ? LogLevel.Trace : LogLevel.Information);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).WithFixedSizing(100, 100).LoggerFactory(logger));
+
+        // Act
+        Assert.True(await cache.SetAsync("first", 1));
+        Assert.True(await cache.SetAsync("second", 2));
+
+        // Assert
+        string[] prefixes = ["CompactAsync called.", "FindWorstSizeToUsageRatio: Checking", "Removing cache entry first", "FindWorstSizeToUsageRatio: Selected"];
+        var messages = logger.LogEntries
+            .Where(entry => prefixes.Any(prefix => entry.Message.StartsWith(prefix, StringComparison.Ordinal)))
+            .Select(entry => entry.Message)
+            .ToArray();
+        if (!traceEnabled)
+        {
+            Assert.Empty(messages);
+            return;
+        }
+
+        Assert.Contains(messages, m => m.StartsWith("CompactAsync called. ShouldCompact=True", StringComparison.Ordinal));
+        Assert.Contains(messages, m => m.StartsWith("FindWorstSizeToUsageRatio: Checking 2 entries", StringComparison.Ordinal));
+        Assert.Contains(messages, m => m.StartsWith("Removing cache entry first due to cache exceeding limit", StringComparison.Ordinal));
+        Assert.Contains(messages, m => m.StartsWith("FindWorstSizeToUsageRatio: Selected first with score", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task MemorySize_WithLoggerCallback_AllowsConcurrentClear()
     {
