@@ -56,8 +56,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _serializer = options.Serializer;
         options.Behaviors.ForEach(AttachBehavior);
 
-        _resiliencePolicy = ((IHaveResiliencePolicyProvider)options).ResiliencePolicyProvider
-            .GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
+        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
+        _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
         _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");
@@ -329,6 +329,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         int backoffSeconds = 1;
         while (!cancellationToken.IsCancellationRequested)
         {
+            if (_logger.IsEnabled(LogLevel.Trace))
+                _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
+
             IQueueEntry<T>? entry;
             try
             {
