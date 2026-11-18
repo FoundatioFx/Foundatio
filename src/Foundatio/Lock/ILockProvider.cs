@@ -290,7 +290,7 @@ public static class LockProviderExtensions
     {
         ArgumentNullException.ThrowIfNull(resources);
 
-        string[] resourceList = resources.Distinct().OrderBy(r => r).ToArray();
+        string[] resourceList = resources.Distinct(StringComparer.Ordinal).OrderBy(r => r, StringComparer.Ordinal).ToArray();
         if (resourceList.Length is 0)
             return EmptyLock.Empty;
 
@@ -304,77 +304,85 @@ public static class LockProviderExtensions
         logger.LogTrace("Acquiring {LockCount} locks {Resource} RenewTime={RenewTime:g}", resourceList.Length, resourceList, renewTime);
         var sw = Stopwatch.StartNew();
 
-        var acquiredLocks = new List<(ILock Lock, DateTimeOffset LastRenewed)>(resourceList.Length);
-        foreach (string resource in resourceList)
+        var timeProvider = provider.GetTimeProvider();
+        var acquiredLocks = new List<(ILock Lock, LeaseTimestamp LastRenewed)>(resourceList.Length);
+        bool acquiredAll = false;
+        try
         {
-            var l = await provider.TryAcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
-            if (l is null)
-            {
-                break;
-            }
-
-            // Renew any acquired locks, so they stay alive until we have all locks
-            if (acquiredLocks.Count > 0 && renewTime > TimeSpan.Zero)
-            {
-                var utcNow = provider.GetTimeProvider().GetUtcNow();
-                var locksToRenew = acquiredLocks.Where(al => al.LastRenewed < utcNow.Subtract(renewTime)).ToArray();
-                if (locksToRenew.Length > 0)
-                {
-                    try
-                    {
-                        await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
-                    }
-                    catch (Exception ex)
-                    {
-                        // A failed renewal can no longer be silent, so don't strand the locks already held until they expire.
-                        logger.LogWarning(ex, "Unable to renew acquired locks while acquiring {Resource}, releasing acquired locks", resource);
-                        await ReleaseAcquiredLocksAsync([.. acquiredLocks.Select(al => al.Lock), l], logger).AnyContext();
-                        if (ex is LockException)
-                            return null;
-
-                        throw;
-                    }
-
-                    locksToRenew.ForEach(al => al.LastRenewed = utcNow);
-
-                    logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(al => al.Lock.Resource), renewTime);
-                }
-            }
-
-            acquiredLocks.Add((l, provider.GetTimeProvider().GetUtcNow()));
-        }
-
-        sw.Stop();
-
-        var locks = acquiredLocks.Select(l => l.Lock).ToArray();
-        // if any lock is null, release any acquired and return null (all or nothing)
-        if (resourceList.Length > locks.Length)
-        {
-            var unacquiredResources = new List<string>(resourceList.Length);
-            string[] acquiredResources = locks.Select(l => l.Resource).ToArray();
-
             foreach (string resource in resourceList)
             {
-                // account for scoped lock providers with prefixes
-                if (!acquiredResources.Any(r => r.EndsWith(resource)))
-                    unacquiredResources.Add(resource);
+                var acquireStarted = LeaseTimestamp.Capture(timeProvider);
+                var l = await provider.TryAcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
+                if (l is null)
+                {
+                    logger.LogTrace("Unable to acquire lock {Resource}, releasing {LockCount} acquired locks", resource, acquiredLocks.Count);
+                    return null;
+                }
+
+                acquiredLocks.Add((l, acquireStarted));
+
+                // Include acquisition latency: even the newest lease may need renewal before it can be returned.
+                if (renewTime > TimeSpan.Zero && !await TryRenewAcquiredLocksAsync(acquiredLocks, timeUntilExpires, renewTime, timeProvider, logger).AnyContext())
+                    return null;
             }
 
-            if (unacquiredResources.Count > 0)
-            {
-                logger.LogTrace("Unable to acquire all {LockCount} locks {UnacquiredResources} releasing acquired locks: {Resource}", unacquiredResources.Count, unacquiredResources, acquiredResources);
+            sw.Stop();
+            var locks = acquiredLocks.Select(l => l.Lock).ToArray();
+            var result = new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), timeProvider.GetUtcNow().UtcDateTime, sw.Elapsed, logger);
+            logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", locks.Length, locks.Select(l => l.Resource), sw.Elapsed);
+            acquiredAll = true;
+            return result;
+        }
+        finally
+        {
+            if (!acquiredAll && acquiredLocks.Count > 0)
+                await ReleaseAcquiredLocksAsync([.. acquiredLocks.Select(l => l.Lock)], logger).AnyContext();
+        }
+    }
 
-                await Task.WhenAll(locks.Select(l => l.ReleaseAsync())).AnyContext();
+    /// <summary>
+    /// Renews locks whose renewal interval has elapsed and checks every acquired lease after awaiting renewal.
+    /// Returns <c>false</c> when a lease was lost or its conservative lifetime elapsed; provider errors propagate.
+    /// </summary>
+    private static async Task<bool> TryRenewAcquiredLocksAsync(List<(ILock Lock, LeaseTimestamp LastRenewed)> acquiredLocks, TimeSpan? timeUntilExpires, TimeSpan renewTime, TimeProvider timeProvider, ILogger logger)
+    {
+        var renewalStarted = LeaseTimestamp.Capture(timeProvider);
+        List<ILock>? locksToRenew = null;
+        for (int i = 0; i < acquiredLocks.Count; i++)
+        {
+            var (member, lastRenewed) = acquiredLocks[i];
+            if (lastRenewed.ElapsedUntil(renewalStarted, timeProvider) <= renewTime)
+                continue;
 
-                logger.LogTrace("Released {LockCount} locks {Resource}", acquiredResources.Length, acquiredResources);
-
-                return null;
-            }
+            (locksToRenew ??= []).Add(member);
+            acquiredLocks[i] = (member, renewalStarted);
         }
 
-        logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", resourceList.Length, resourceList, sw.Elapsed);
+        if (locksToRenew is null)
+            return true;
 
-        return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), provider.GetTimeProvider().GetUtcNow().UtcDateTime, sw.Elapsed, logger);
+        var renewal = Task.WhenAll(locksToRenew.Select(async l => await l.RenewAsync(timeUntilExpires).AnyContext()));
+
+        try
+        {
+            await renewal.AnyContext();
+        }
+        catch (Exception) when (renewal.Exception?.InnerExceptions.Any(ex => ex is LockException) is true)
+        {
+            logger.LogWarning(renewal.Exception, "Lost a lock while acquiring {Resource}, releasing acquired locks", acquiredLocks[^1].Lock.Resource);
+            return false;
+        }
+
+        var checkedAt = LeaseTimestamp.Capture(timeProvider);
+        var leaseDuration = timeUntilExpires ?? ILockProvider.DefaultLeaseDuration;
+        if (acquiredLocks.Any(l => l.LastRenewed.ElapsedUntil(checkedAt, timeProvider) >= leaseDuration))
+        {
+            logger.LogWarning("An acquired lease may have expired while renewing locks for {Resource}, releasing acquired locks", acquiredLocks[^1].Lock.Resource);
+            return false;
+        }
+
+        logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Count, locksToRenew.Select(l => l.Resource), renewTime);
+        return true;
     }
 
     private static async Task ReleaseAcquiredLocksAsync(IReadOnlyCollection<ILock> locks, ILogger logger)

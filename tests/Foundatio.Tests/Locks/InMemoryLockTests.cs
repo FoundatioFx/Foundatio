@@ -315,12 +315,26 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         return base.RenewAsync_WithMissingLock_ThrowsLockException();
     }
 
+    [Fact]
+    public override Task RenewAsync_WithMultipleResources_WhenOneLockReplaced_ThrowsLockExceptionAndPreservesCurrentOwner()
+    {
+        return base.RenewAsync_WithMultipleResources_WhenOneLockReplaced_ThrowsLockExceptionAndPreservesCurrentOwner();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public override Task RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(bool scoped)
     {
         return base.RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(scoped);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(bool scoped)
+    {
+        return base.TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(scoped);
     }
 
     [Fact]

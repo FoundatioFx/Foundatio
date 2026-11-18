@@ -249,8 +249,6 @@ Cache-backed renewal requires at least 5 milliseconds. For acquisition, zero req
 
 Cache-backed renewal throws `LockException` when the cache rejects the renewal, when the cache call fails, or when the response takes the whole lease lifetime. A cache error is the inner exception. In each case ownership is no longer assured, so stop the protected work.
 
-When multi-resource acquisition loses an acquired lease, it releases the locks it holds and returns `null` (`AcquireAsync` throws `LockAcquisitionTimeoutException`).
-
 ### Automatic renewal for a long operation
 
 When work has no batch boundary, renew the lease on a timer and pass a cancellation token to the operation. Start the timer before acquisition so a slow acquisition counts toward the first renewal interval.
@@ -290,6 +288,12 @@ async Task RunWorkAsync()
 ```
 
 A renewal failure cancels cooperative work. Finishing the work stops the timer, and both tasks finish before the lease is released. A paused process can still outlive its lease. Enforce ownership at the destination when a stale write must be rejected.
+
+### Acquiring multiple resources
+
+Resources are acquired in ordinal order. If workers use different cultures, coordinate their upgrade so they agree on the acquisition order. `TryAcquireAsync` returns `null` when any member is unavailable or a lease is lost before the whole set is acquired. `AcquireAsync` throws `LockAcquisitionTimeoutException` in that case. `CacheLockProvider` reports renewal cache errors as a lost lease. Other exceptions propagate after the acquired members are released.
+
+Cleanup attempts every acquired member. Failed releases are logged. A non-expiring lock needs explicit recovery if cleanup fails. During acquisition, loss of any member aborts the attempt even if another renewal also failed.
 
 ## Common Patterns
 
