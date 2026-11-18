@@ -27,7 +27,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
+        return CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(true).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ConditionalMutation_WithLiveIncompatibleValue_PreservesValueAndFaultsTaskAsync(bool replace, bool throwingEquality)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(false));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(false));
         var value = new ComparedValue("owner", () => throw new InvalidOperationException("Comparison failed"));
         object stored = throwingEquality ? value : new object();
         await cache.SetAsync("key", stored);
@@ -105,7 +105,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         await cache.SetAsync("key", 10L, TimeSpan.FromMinutes(1));
         TimeSpan? expiresIn = expirationMinutes.HasValue ? TimeSpan.FromMinutes(expirationMinutes.Value) : null;
 
@@ -261,7 +261,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
             async Task<long> MeasureAsync(bool cloneValues)
             {
-                using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues)
+                using var cache = CreateCacheClient(o => o.CloneValues(cloneValues)
                     .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).LoggerFactory(Log));
                 await cache.SetAsync("list", source);
                 await cache.GetListAsync<T>("list");
@@ -282,7 +282,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData("ClonedDictionary")]
     public async Task GetListAsync_WithSmallPages_AllocatesForTheRequestedPage(string storage)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(storage == "ClonedDictionary")
+        using var cache = CreateCacheClient(o => o.CloneValues(storage == "ClonedDictionary")
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).LoggerFactory(Log));
         var values = Enumerable.Range(0, 10_000).ToArray();
         if (storage is "Dictionary" or "ClonedDictionary")
@@ -322,7 +322,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task GetListAsync_WithPagedExpiringMembers_PreservesOrderAndHasValue(string storage)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(storage == "ClonedDictionary").TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(storage == "ClonedDictionary").TimeProvider(clock).LoggerFactory(Log));
         var now = clock.GetUtcNow().UtcDateTime;
         var source = Enumerable.Range(0, 257).ToDictionary(value => value, value => (DateTime?)now.AddSeconds(value % 3 == 0 ? 1 : 2));
         await cache.SetAsync("list", source);
@@ -370,7 +370,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task GetListAsync_WithClonedSafeKeys_PreservesReadStatistics(string state, bool hit, bool hasValue)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
         InMemoryCacheClient.CacheEntry? entry = null;
         if (state != "Missing")
         {
@@ -412,7 +412,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task GetListAsync_WithClonedSafeKeys_PreservesPagingAndArrayIsolation(int? page, int pageSize, int first, int count)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
         var source = Enumerable.Range(0, 5).ToDictionary(value => value, _ => (DateTime?)null);
         source[0] = clock.GetUtcNow().UtcDateTime.AddTicks(-1);
         await cache.SetAsync("list", source);
@@ -433,7 +433,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true)]
     public async Task GetListAsync_WithNonListValues_PreservesErrorHandling(bool shouldThrow)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).ShouldThrowOnSerializationError(shouldThrow).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).ShouldThrowOnSerializationError(shouldThrow).LoggerFactory(Log));
         await cache.SetAsync("wrong", 1);
         await cache.SetAsync<string?>("null", null);
         cache.ResetStats();
@@ -459,7 +459,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task GetListAsync_WithDictionarySubclass_EnumeratesAClonedDictionary()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = new EnumerationCountingListDictionary { [1] = null };
         await cache.SetAsync("list", source);
         var stored = Assert.IsType<EnumerationCountingListDictionary>(GetEntry(cache, "list").StoredValue);
@@ -511,7 +511,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
             async Task<long> MeasureAsync(bool cloneValues)
             {
-                using var cache = new InMemoryCacheClient(o =>
+                using var cache = CreateCacheClient(o =>
                 {
                     o.CloneValues(cloneValues).TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).LoggerFactory(Log);
                     return sizing switch
@@ -538,7 +538,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithOwnedSafeKeys_PreservesFutureCloneOnRead(int sizing)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log);
             return sizing switch
@@ -616,7 +616,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
             .SizeCalculator(value => Convert.ToInt64(value)).MaxEntrySize(10)
             .ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).LoggerFactory(Log));
         await cache.SetAsync("key", 9L, TimeSpan.FromMinutes(1));
@@ -653,7 +653,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.MaxItems(2).TimeProvider(timeProvider).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.MaxItems(2).TimeProvider(timeProvider).LoggerFactory(Log));
         await cache.SetAsync("first", "1");
         timeProvider.Advance(TimeSpan.FromMilliseconds(100));
         await cache.SetAsync("second", "2");
@@ -674,7 +674,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task Items_WithCachedValue_ReturnsValueNotInternalEntry()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log));
         await cache.SetAsync("key", "value");
 
         // Act
@@ -691,7 +691,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task Items_WithMutableValue_HonorsCloneValues(bool cloneValues)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
         var original = new SimpleModel { Data1 = "original" };
         await cache.SetAsync("key", original);
 
@@ -713,7 +713,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task Items_WithNullValue_ReturnsCachedNull()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log));
         await cache.SetAsync<string?>("key", null);
 
         // Act
@@ -754,7 +754,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithActualLargeListUpdates_DoesNotCopyEntireList(bool fixedSizing)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).LoggerFactory(Log);
             return fixedSizing ? o.WithFixedSizing(1000000, 64) : o;
@@ -799,7 +799,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithUnchangedFirstAddition_DoesNotAllocateInProportionToListSize(int sizing, bool finiteExpiration)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log);
             return sizing switch
@@ -845,7 +845,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithUnchangedKey_RefreshesExpirationAndPrunesExpiredMembers(int sizing)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log);
             return sizing switch
@@ -874,7 +874,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithFirstLargeListUpdate_BoundsStorageAllocation(bool dynamicSizing)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log);
             return dynamicSizing ? o.WithDynamicSizing(100_000_000, Log) : o;
@@ -915,8 +915,8 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithLargeReadOnlyList_AvoidsDuplicateStorage(int count, bool finiteExpiration)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var shared = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithFixedSizing(100_000_000, 64));
-        using var concrete = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).MaxMemorySize(100_000_000).SizeCalculator(_ => 64));
+        using var shared = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithFixedSizing(100_000_000, 64));
+        using var concrete = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).MaxMemorySize(100_000_000).SizeCalculator(_ => 64));
         int[] values = Enumerable.Range(0, count).ToArray();
         TimeSpan? ttl = finiteExpiration ? TimeSpan.FromMinutes(1) : null;
         await shared.ListAddAsync("warm", Enumerable.Range(0, 64), ttl);
@@ -949,7 +949,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         using var calculator = new SizeCalculator(Log);
         int[] values = Enumerable.Range(0, 10_000).ToArray();
         long size = calculator.CalculateSize(values.ToDictionary(value => value, _ => (DateTime?)null));
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock)
             .WithDynamicSizing(100_000_000, Log).MaxEntrySize(size));
         await cache.ListAddAsync("list", values);
         var previous = GetEntry(cache, "list");
@@ -969,7 +969,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(10_000)]
     public async Task ListUpdate_WithLargeIntegerList_KeepsOneDictionaryOfStorage(int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
         int[] values = Enumerable.Range(0, count).ToArray();
         long dictionaryStorage = GetStorageArraySize(values.ToDictionary(value => value, _ => (DateTime?)null));
@@ -1000,7 +1000,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(clock);
             return dynamicSizing ? o.WithDynamicSizing(100_000_000, Log) : o;
@@ -1036,7 +1036,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
         int[] values = Enumerable.Range(0, 1024).ToArray();
         var ttl = TimeSpan.FromMinutes(1);
         var updatedTtl = refreshExpiration ? TimeSpan.FromMinutes(2) : ttl;
@@ -1063,7 +1063,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithEqualSizeCaseEquivalentBatch_PreservesStoredComparerAndKeys()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         string[] values = Enumerable.Range(0, 128).Select(value => $"ITEM-{value:D4}").ToArray();
         var expected = values.ToDictionary(value => value, _ => (DateTime?)null, StringComparer.OrdinalIgnoreCase);
         await cache.SetAsync("list", expected);
@@ -1105,7 +1105,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WhenPrivateListIsRemovedDuringUpdate_PreparesANewEntryOnRetry(bool hashSetInput, int sizing)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(clock);
             return sizing switch
@@ -1165,7 +1165,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithExpirationDuringInputEnumeration_PreservesStoredValues(int count)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, count));
         var previous = cache.UpdateEntry("list", current => (current, current));
         int enumerations = 0;
@@ -1205,7 +1205,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task ListRemoveAsync_WithDefaultHashSetInput_AllocatesOnlyAPrivateSnapshot()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
         var values = new HashSet<int>(Enumerable.Range(0, 10_000).ToArray());
         await cache.ListRemoveAsync("missing", values);
@@ -1308,7 +1308,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithEmptyDefaultHashSetInput_DoesNotSizeOrWrite(bool cloneValues, bool containsNull)
     {
         int sizingCalls = 0;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).SizeCalculator(_ =>
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).SizeCalculator(_ =>
         {
             sizingCalls++;
             return 1;
@@ -1336,7 +1336,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             values.Clear();
             values.Add(new(99));
         };
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues)
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues)
             .SizeCalculator(value => ((ICollection)value).Count));
 
         Assert.Equal(2, await cache.ListAddAsync("list", values));
@@ -1374,7 +1374,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true)]
     public async Task ListUpdate_WithManyDuplicateInputs_BoundsDeduplicationAllocation(bool remove)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
         await cache.SetAsync("warm", 0);
         int[] values = Enumerable.Repeat(42, 100_000).ToArray();
@@ -1391,7 +1391,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task ListUpdate_WithNullsAndDuplicates_EnumeratesInputOnce()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        using var cache = CreateCacheClient(o => o.CloneValues(false));
         int enumerations = 0;
 
         Assert.Equal(2, await cache.ListAddAsync("list", GetValues()));
@@ -1417,7 +1417,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task ListUpdate_WithNullableValues_PreservesNullFiltering()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        using var cache = CreateCacheClient(o => o.CloneValues(false));
         int?[] values = [null, 0, 0, 1, 2, null];
 
 #pragma warning disable CS8714 // Preserve the existing handling of nullable inputs despite the notnull annotation.
@@ -1432,7 +1432,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithCollidingHeadMiddleAndTail_PreservesMembersAndComparer()
     {
         var comparer = new ListIndexComparer(true);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
         var expected = new Dictionary<int, DateTime?>(comparer);
         for (int i = 0; i < 128; i++)
@@ -1466,7 +1466,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         int[] values = Enumerable.Range(1, 1_000_000).Where(value => (HashCode.Combine(value) & 127) == 0).Take(194).ToArray();
         var comparer = new CountingListComparer();
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
         var dictionary = new Dictionary<int, DateTime?>(comparer);
         foreach (int value in values.Take(192))
@@ -1495,7 +1495,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_AfterExpirationUpdateAtPageBoundary_PreservesReservedPages(int count)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, count));
         var previous = (await cache.GetListAsync<int>("list")).Value;
 
@@ -1553,7 +1553,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                     foreach (var child in array)
                         Visit(child);
             }
-            else if (item is IDictionary || item.GetType().FullName!.StartsWith(typeof(InMemoryCacheClient).FullName + "+CacheList", StringComparison.Ordinal))
+            else if (item is IDictionary or ICacheList)
             {
                 foreach (var field in item.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                     Visit(field.GetValue(item));
@@ -1565,7 +1565,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithBoundaryExpirations_PreservesValuesAndDateTimeKinds()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero));
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         DateTime?[] expirations =
         [
             null,
@@ -1603,7 +1603,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task GetListAsync_WithExpirationAtCurrentTick_FiltersOnlyAfterTheBoundary(bool indexed)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         var now = clock.GetUtcNow().UtcDateTime;
         var values = Enumerable.Range(0, 97).ToDictionary(value => value, _ => (DateTime?)null);
         values[1] = now;
@@ -1642,7 +1642,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var now = DateTimeOffset.UtcNow;
         var clock = new CallbackTimeProvider(now);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, 100));
         if (indexed)
         {
@@ -1691,7 +1691,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithPruningAtBlockBoundary_PreservesPermanentMembers()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, 63), TimeSpan.FromMinutes(1));
         await cache.ListAddAsync("list", [-1]);
         var previous = (await cache.GetListAsync<int>("list")).Value;
@@ -1708,7 +1708,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_WithRepeatedExpirationGroups_UsesLatestRemainingExpiration()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         var shorterTtl = TimeSpan.FromMinutes(5);
         var longerTtl = TimeSpan.FromMinutes(10);
         var shorter = clock.GetUtcNow().UtcDateTime.Add(shorterTtl);
@@ -1743,7 +1743,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             var firstExpiration = clock.GetUtcNow().UtcDateTime.AddHours(1);
             var ttl = TimeSpan.FromHours(1) + TimeSpan.FromTicks(groups - 1);
             var source = Enumerable.Range(0, 10_000).ToDictionary(key => key, key => (DateTime?)firstExpiration.AddTicks(key % groups));
-            using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+            using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
             await cache.SetAsync("list", source, ttl);
             int[] added = [-1];
 
@@ -1769,7 +1769,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.MinValue);
         var now = clock.GetUtcNow().UtcDateTime;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         var source = Enumerable.Range(0, 2048).ToDictionary(key => key, key => (DateTime?)now.AddMinutes(key switch
         {
             < 32 => 100,
@@ -1809,7 +1809,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithFirstFiniteMemberAtGroupBoundary_PreservesPermanentMembers(int count)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.MinValue);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, count));
         var previous = (await cache.GetListAsync<int>("list")).Value;
         int changed = count - 1;
@@ -1836,7 +1836,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithChangingMaximumExpiration_PreservesLatestRemainingGroup(bool indexed)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         var now = clock.GetUtcNow().UtcDateTime;
         var values = Enumerable.Range(0, 128).ToDictionary(key => key, key => (DateTime?)now.AddMinutes(key + 1));
         await cache.SetAsync("list", values, TimeSpan.FromMinutes(128));
@@ -1869,7 +1869,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithPermanentMembers_PreservesLatestExpirationThroughPruning(int count)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, count), TimeSpan.FromMinutes(10));
         Assert.Equal(1, await cache.ListAddAsync("list", [0]));
         Assert.Null(await cache.GetExpirationAsync("list"));
@@ -1895,7 +1895,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithChangedMaximumExpiration_PreservesTheStrictExpiryBoundary(bool expose)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, 64), TimeSpan.FromSeconds(10));
         await cache.ListAddAsync("list", [-1], TimeSpan.FromSeconds(20));
         if (expose)
@@ -1924,7 +1924,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithHashCollisionsAndGrowth_PreservesValuesAndComparer(bool constantHash)
     {
         var comparer = new ListIndexComparer(constantHash);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).WithFixedSizing(100_000_000, 64).LoggerFactory(Log));
         var initial = new Dictionary<int, DateTime?>(comparer);
         for (int i = 0; i < 64; i++)
@@ -1965,7 +1965,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         int initialCount = growIntoCollisions ? 1000 : 10_000;
         int finalCount = growIntoCollisions ? 1800 : initialCount;
         var comparer = new ListIndexComparer(!growIntoCollisions, growIntoCollisions ? initialCount : null);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).WithFixedSizing(100_000_000, 64).LoggerFactory(Log));
         var initial = new Dictionary<int, DateTime?>(initialCount, comparer);
         for (int i = 0; i < initialCount; i++)
@@ -2016,7 +2016,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithBatchCrossingBlocks_PreservesValuesAndSnapshots()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(false));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(false));
         await cache.ListAddAsync("set", Enumerable.Range(0, 64));
         var previous = (await cache.GetListAsync<int>("set")).Value!;
 
@@ -2038,7 +2038,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithCloneValues_StoresCopiesOfAddedValues()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         await cache.ListAddAsync("set", new[] { new SimpleModel { Data1 = "first" } });
         var added = new SimpleModel { Data1 = "second" };
 
@@ -2060,7 +2060,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(100, true)]
     public async Task ListAddAsync_WithReferenceHoldingStructs_HonorsCloneValues(int count, bool cloneValues)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
         var original = Enumerable.Range(0, count).Select(id => new ReferenceHoldingListItem(id, [id])).ToArray();
         await cache.ListAddAsync("set", original);
         var added = new ReferenceHoldingListItem(-1, [-1]);
@@ -2090,7 +2090,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRead_WithReferenceHoldingStructs_HonorsCloneValues(int count, string read, bool cloneValues)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).LoggerFactory(Log));
         await cache.ListAddAsync("set", Enumerable.Range(0, count).Select(id => new ReferenceHoldingListItem(id, [id])));
         await cache.SetExpirationAsync("set", TimeSpan.FromMinutes(1));
 
@@ -2112,7 +2112,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true)]
     public async Task GetAsync_WithReferenceHashedStructKeys_PreservesLookupAndCycles(bool cloneValues)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
         var source = new Dictionary<ReferenceHashedListItem, object>();
         var key = new ReferenceHashedListItem([1]);
         source.Add(key, source);
@@ -2135,7 +2135,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(33, 1)]
     public async Task ListRead_WithMutableClassKeys_IsolatesStoredAndReturnedValues(int count, int? page)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = Enumerable.Range(0, count).Select(id => new SizingListItem(id)).ToArray();
         await cache.ListAddAsync("list", source);
 
@@ -2154,7 +2154,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task GetAsync_WithReferenceHashedClassKeys_PreservesLookupAndCycles()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = new Dictionary<ReferenceHashedListClass, object>();
         var key = new ReferenceHashedListClass([1]);
         source.Add(key, source);
@@ -2172,7 +2172,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task IncrementAsync_AfterReferenceHoldingDictionaryWrite_ReturnsNumericValue()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         await cache.ListAddAsync("key", [new ReferenceHoldingListItem(1, [1])]);
 
         Assert.Equal(1, await cache.IncrementAsync("key"));
@@ -2198,7 +2198,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithConcurrentLargeListUpdates_PreservesUnrelatedValues(bool cloneValues)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
         var original = Enumerable.Range(0, 1000).ToArray();
         await cache.ListAddAsync("set", original);
 
@@ -2239,7 +2239,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithCustomComparer_PreservesComparerAcrossUpdates(bool cloneValues, int dictionaryType)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
         IDictionary<string, DateTime?> values = dictionaryType switch
         {
             0 => new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
@@ -2267,7 +2267,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithExistingClonedValues_PreservesIndependentGraphs()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(true));
         await cache.ListAddAsync("set", new[] { new SimpleModel { Data1 = "first" } });
         var before = Assert.IsType<Dictionary<SimpleModel, DateTime?>>(GetEntry(cache, "set").PeekValue());
         var original = Assert.Single(before.Keys);
@@ -2294,7 +2294,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithExistingList_DoesNotMutatePreviouslyReadValue()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log));
         await cache.ListAddAsync("set", new[] { "a" });
         var previouslyRead = (await cache.GetAsync<IDictionary<string, DateTime?>>("set")).Value;
 
@@ -2318,7 +2318,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithExposedDictionary_PreservesDirectMutationsAndPriorSnapshot()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(false));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(false));
         await cache.ListAddAsync("set", Enumerable.Range(0, 64));
         await cache.ListAddAsync("set", new[] { 64 });
         var exposed = (await cache.GetAsync<Dictionary<int, DateTime?>>("set")).Value!;
@@ -2346,7 +2346,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         bool reject = false;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log).MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log).MaxMemorySize(1000)
             .SizeCalculator(value =>
             {
                 int size = ((ICollection)value).Count;
@@ -2383,7 +2383,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task GetAsync_WithListReadThroughViews_IsolatesReturnedDictionaryFromLaterUpdates(bool cloneValues, int count)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
         await cache.ListAddAsync("list", Enumerable.Range(0, count));
         Assert.Equal(count, (await cache.GetListAsync<int>("list")).Value.Count);
         var returned = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value!;
@@ -2407,7 +2407,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(1000)]
     public async Task SetAsync_WithCachedDictionaryViews_IsolatesStoredAndReturnedValues(int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = Enumerable.Range(0, count).ToDictionary(key => key, _ => (DateTime?)DateTime.UnixEpoch);
         _ = source.Keys;
         _ = source.Values;
@@ -2439,7 +2439,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         Dictionary<int, DateTime?>? retained = null;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(100_000).SizeCalculator(value =>
             {
                 retained = Assert.IsType<Dictionary<int, DateTime?>>(value);
@@ -2472,7 +2472,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(1000)]
     public async Task GetAsync_WithCachedDictionaryViews_PreservesRootCyclesAndClonesPayloads(int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = Enumerable.Range(0, count).ToDictionary(key => key, _ => (object)new List<int> { 1 });
         source[0] = source;
         _ = source.Keys;
@@ -2508,7 +2508,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true, 33)]
     public async Task ListUpdate_WithCachedDictionaryViews_PreservesCustomComparer(bool cloneValues, int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
         var source = new Dictionary<string, DateTime?>(new CaseInsensitiveListComparer());
         foreach (int index in Enumerable.Range(0, count))
             source.Add($"item-{index}", null);
@@ -2541,7 +2541,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(1000)]
     public async Task SetAsync_WithSparseDictionary_DoesNotCopyUnusedCapacity(int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true)
+        using var cache = CreateCacheClient(o => o.CloneValues(true)
             .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).LoggerFactory(Log));
         var warm = Enumerable.Range(0, 32).ToDictionary(key => key, _ => (DateTime?)DateTime.UnixEpoch);
         _ = warm.Keys;
@@ -2584,7 +2584,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(1000, true)]
     public async Task GetAsync_WithMutableComparer_PreservesOwnedDictionaryGraph(int count, bool sparse)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var comparer = new StatefulListComparer();
         var source = new Dictionary<string, DateTime?>(sparse ? 100_000 : count, comparer);
         foreach (int index in Enumerable.Range(0, count))
@@ -2667,7 +2667,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(4, 1000)]
     public async Task GetAsync_WithOtherMutableComparers_PreservesOwnedDictionaryGraph(int dictionaryType, int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var comparer = new SizingGraphListComparer(instanceHash: true);
         var source = CreateListDictionary(dictionaryType, comparer);
         foreach (int index in Enumerable.Range(0, count))
@@ -2727,7 +2727,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(4)]
     public async Task GetAsync_WithOtherDictionaryPayloadCycles_IsolatesPayloads(int dictionaryType)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var comparer = new SizingGraphListComparer(instanceHash: true);
         IDictionary<string, object> source = dictionaryType switch
         {
@@ -2768,7 +2768,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(4)]
     public async Task GetAsync_WithOtherSafeComparers_PreservesComparerIdentity(int dictionaryType)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var comparer = StringComparer.OrdinalIgnoreCase;
         IDictionary<string, DateTime?> source = dictionaryType switch
         {
@@ -2792,7 +2792,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task GetAsync_WithDefaultComparerSortedDictionary_ClonesWithoutRebuilding()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = new SortedDictionary<int, int>(Enumerable.Range(0, 1000).ToDictionary(i => i, i => i));
         await cache.SetAsync("dictionary", source);
         for (int i = 0; i < 4; i++)
@@ -2823,7 +2823,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(4)]
     public async Task GetAsync_WithoutCloning_PreservesDictionaryAndComparerIdentity(int dictionaryType)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
         var comparer = new SizingGraphListComparer();
         var source = CreateListDictionary(dictionaryType, comparer);
         source.Add("one", DateTime.UnixEpoch);
@@ -2845,7 +2845,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(10000)]
     public async Task GetAsync_WithLargeSafeDictionary_AvoidsUnpooledCloneTracking(int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = Enumerable.Range(0, count).ToDictionary(key => key, _ => (DateTime?)DateTime.UnixEpoch);
         _ = source.Keys;
         _ = source.Values;
@@ -2882,7 +2882,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(1000)]
     public async Task ListUpdate_WithComparerUsingInstanceIdentity_PreservesLookup(int count)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         var source = new Dictionary<string, DateTime?>(new InstanceHashListComparer());
         foreach (int index in Enumerable.Range(0, count))
             source.Add($"item-{index}", null);
@@ -2947,7 +2947,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var previous = ConverterListItemConverter.OnWrite.Value;
         ConverterListItemConverter.OnWrite.Value = value => retained = value;
         using var restore = new DisposableAction(() => ConverterListItemConverter.OnWrite.Value = previous);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
 
         await cache.ListAddAsync("list", [new ConverterListItem { Id = 1, Values = [1] }]);
         Assert.NotNull(retained);
@@ -2988,7 +2988,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         bool reject = false;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).MaxEntrySize(10).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).SizeCalculator(value =>
             {
                 var dictionary = Assert.IsType<Dictionary<ReferenceHoldingListItem, DateTime?>>(value);
@@ -3045,7 +3045,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var previousCallback = SizingListItem.OnSizing.Value;
         SizingListItem.OnSizing.Value = OnSizing;
         using var restoreCallback = new DisposableAction(() => SizingListItem.OnSizing.Value = previousCallback);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
             .WithDynamicSizing(100_000_000, Log).MaxEntrySize(2048));
         var values = Enumerable.Range(1, 3).Select(id => new SizingListItem(id)).ToArray();
         var ttl = TimeSpan.FromMinutes(1);
@@ -3077,7 +3077,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         RetainingSizingListDictionary? retained = null;
         var previousCallback = RetainingSizingListDictionary.OnEnumerating.Value;
         using var restoreCallback = new DisposableAction(() => RetainingSizingListDictionary.OnEnumerating.Value = previousCallback);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
         var source = new RetainingSizingListDictionary { [1] = null, [2] = null, [3] = null };
         await cache.SetAsync("list", source);
         RetainingSizingListDictionary.OnEnumerating.Value = dictionary => retained = dictionary;
@@ -3115,7 +3115,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         SizingListItem? retained = null;
         Task<bool>? removal = null;
         InMemoryCacheClient? cache = null;
-        cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
+        cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(100_000).SizeCalculator(value =>
             {
                 var dictionary = (Dictionary<SizingListItem, DateTime?>)value;
@@ -3173,7 +3173,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithBuiltInDynamicSizing_DoesNotCopyEntireList()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock)
             .WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
         await cache.ListAddAsync("small", Enumerable.Range(0, 1000));
         await cache.ListAddAsync("large", Enumerable.Range(0, 10_000));
@@ -3210,7 +3210,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
         var values = Enumerable.Range(0, 64).Select(id => new ConverterListItem { Id = id, Values = [id] }).ToArray();
         await cache.ListAddAsync("list", values, TimeSpan.FromMinutes(1));
         var added = new ConverterListItem { Id = 100, Values = [100] };
@@ -3265,7 +3265,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         string[] values = Enumerable.Range(0, 100).Select(id => id < 50 ? $"item-{id:D4}" : $"{new string('x', 1000)}-{id:D4}").ToArray();
         var stored = values.ToDictionary(value => value, _ => (DateTime?)null);
         long size = calculator.CalculateSize(stored);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(clock).MaxEntrySize(size).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow);
             return dynamicSizing ? o.WithDynamicSizing(100_000_000, Log) : o.WithFixedSizing(100_000_000, size + 1);
@@ -3312,7 +3312,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock)
             .WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
         var expected = Enumerable.Range(0, count).ToDictionary(value => value, _ => (DateTime?)null);
         await cache.ListAddAsync("list", expected.Keys);
@@ -3336,7 +3336,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock)
             .WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
         await cache.ListAddAsync("list", Enumerable.Range(0, 64), TimeSpan.FromSeconds(5));
         await cache.ListAddAsync("list", [64, 65], TimeSpan.FromSeconds(30));
@@ -3369,7 +3369,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             ? Enumerable.Range(0, 100).Select(i => i < 50 ? $"item-{i:D4}" : $"{new string('x', 1000)}-{i:D4}").ToArray()
             : Enumerable.Range(0, 64).Select(i => $"item-{i:D4}").ToArray();
         long size = calculator.CalculateSize(items.ToDictionary(item => item, _ => (DateTime?)expiresAt));
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock)
             .WithDynamicSizing(100_000_000, Log).MaxEntrySize(size).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).LoggerFactory(Log));
         await cache.ListAddAsync("list", items, ttl);
         var previous = GetEntry(cache, "list");
@@ -3397,7 +3397,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithBuiltInDynamicSizing_PreservesExposedDictionaryMutations()
     {
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+        using var cache = CreateCacheClient(o => o.CloneValues(false)
             .WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
         await cache.ListAddAsync("list", Enumerable.Range(0, 64));
         await cache.ListAddAsync("list", [64]);
@@ -3426,7 +3426,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Func<object, long> calculateSize = mode == 2 ? value => calculator.CalculateSize(value) : calculator.CalculateSize;
         if (mode == 1)
             calculateSize += ((SizeCalculator)calculator).CalculateSize;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).MaxMemorySize(100_000_000)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).MaxMemorySize(100_000_000)
             .SizeCalculator(calculateSize).LoggerFactory(Log));
         var expected = Enumerable.Range(0, 1000).ToDictionary(value => value, _ => (DateTime?)null);
         await cache.ListAddAsync("list", expected.Keys);
@@ -3501,7 +3501,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithOverriddenFixedSizer_ValidatesReplacement()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).WithFixedSizing(1000, 1)
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).WithFixedSizing(1000, 1)
             .SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count).MaxEntrySize(64));
         await cache.ListAddAsync("set", Enumerable.Range(0, 64));
 
@@ -3524,7 +3524,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         bool reject = false;
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
             .SizeCalculator(value => reject && ((IDictionary<string, DateTime?>)value).Count == (remove ? 1 : 3) ? 20 : 10)
             .MaxEntrySize(15).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).LoggerFactory(Log));
         await cache.ListAddAsync("key", new[] { "a", "b" }, TimeSpan.FromMinutes(1));
@@ -3553,7 +3553,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         bool advance = false;
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
             .SizeCalculator(value =>
             {
                 if (advance && value is IDictionary<string, DateTime?> { Count: 1 } input && input.ContainsKey("new"))
@@ -3596,7 +3596,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithRepeatedMixedBatches_MatchesSetModel(bool fixedSizing)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => fixedSizing ? o.LoggerFactory(Log).WithFixedSizing(1000000, 64) : o.LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => fixedSizing ? o.LoggerFactory(Log).WithFixedSizing(1000000, 64) : o.LoggerFactory(Log));
         var expected = new HashSet<int>(Enumerable.Range(0, 1000));
         await cache.ListAddAsync("set", expected);
         var random = new Random(570);
@@ -3640,7 +3640,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider).CloneValues(false).WithFixedSizing(10_000, 50));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider).CloneValues(false).WithFixedSizing(10_000, 50));
         var original = new ReadOnlyDictionary<string, DateTime?>(new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
         {
             ["first"] = null
@@ -3669,7 +3669,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_WhenLastValueRemoved_RemovesKeyAndReleasesMemory()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
         await cache.ListAddAsync("set", new[] { "a" });
         Assert.Equal(50, cache.CurrentMemorySize);
 
@@ -3695,7 +3695,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
         await cache.ListAddAsync("list", Enumerable.Range(0, 1024), TimeSpan.FromSeconds(1));
         await cache.ListAddAsync("list", [-1]);
         await cache.ListAddAsync("list", [0], TimeSpan.FromSeconds(2 + remainingSeconds));
@@ -3718,7 +3718,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WhenExpiredSlotsPrecedePermanentMember_PreservesReuseOrder()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         await cache.ListAddAsync("list", Enumerable.Range(0, 1024), TimeSpan.FromSeconds(1));
         await cache.ListAddAsync("list", [-1]);
         var previous = (await cache.GetListAsync<int>("list")).Value;
@@ -3736,7 +3736,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_WithUserStructHashCallback_PreservesCompetingWrite()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         var previousCallback = ExpiringListKey.OnHash.Value;
         using var restoreCallback = new DisposableAction(() => ExpiringListKey.OnHash.Value = previousCallback);
         await cache.ListAddAsync("list", Enumerable.Range(0, 1024).Select(value => new ExpiringListKey(value)), TimeSpan.FromSeconds(1));
@@ -3780,7 +3780,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
         var ttl = TimeSpan.FromMinutes(5);
         int[] values = Enumerable.Range(0, count).ToArray();
         await cache.ListAddAsync("list", values, ttl);
@@ -3807,7 +3807,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var calculator = new SizeCalculator(Log);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).WithDynamicSizing(100_000_000, Log));
         await cache.ListAddAsync("list", Enumerable.Range(0, 10_000), TimeSpan.FromSeconds(1));
         await cache.ListAddAsync("list", [-1]);
         var previous = (await cache.GetListAsync<int>("list")).Value;
@@ -3832,7 +3832,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_WithIncrementalShrink_ReclaimsSparseStorage()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log));
         var ttl = TimeSpan.FromMinutes(5);
         await cache.ListAddAsync("shrunk", Enumerable.Range(0, 10_000), ttl);
         var previous = (await cache.GetAsync<IDictionary<int, DateTime?>>("shrunk")).Value!;
@@ -3872,7 +3872,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_WithIncrementalShrink_PreservesComparerAndExpirations(bool dynamicSizing)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o =>
+        using var cache = CreateCacheClient(o =>
         {
             o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log);
             return dynamicSizing ? o.WithDynamicSizing(100_000_000, Log) : o;
@@ -3914,7 +3914,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_WithMissingValue_DoesNotAllocateInProportionToListSize(bool cloneValues, int keyType)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues).TimeProvider(clock));
         var ttl = keyType >= 4 ? TimeSpan.FromMinutes(1) : (TimeSpan?)null;
         DateTime? expiresAt = ttl.HasValue ? clock.GetUtcNow().UtcDateTime.Add(ttl.Value) : null;
         if (keyType == 0)
@@ -3975,7 +3975,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         bool reject = false;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).SizeCalculator(value => reject ? -1 : ((IDictionary<string, DateTime?>)value).Count));
         var comparer = ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var source = new Dictionary<string, DateTime?>(comparer)
@@ -4037,7 +4037,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         const int expiredCount = 10_000;
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
         var expiredAt = clock.GetUtcNow().UtcDateTime.AddTicks(-1);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
         var source = Enumerable.Range(0, expiredCount).ToDictionary(key => key, _ => (DateTime?)expiredAt);
         source[expiredCount] = null;
         int[] missing = [-1];
@@ -4069,7 +4069,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
             .SizeCalculator(value => ((IDictionary<string, DateTime?>)value).Count));
         await cache.ListAddAsync("set", new[] { "permanent" });
         await cache.ListAddAsync("set", new[] { "expired" }, TimeSpan.FromMilliseconds(5));
@@ -4092,7 +4092,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(false).TimeProvider(timeProvider));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(false).TimeProvider(timeProvider));
         await cache.ListAddAsync("set", new[] { "permanent" });
         await cache.ListAddAsync("set", Enumerable.Range(0, expiringCount).Select(index => $"first-{index}"), TimeSpan.FromSeconds(10));
         await cache.ListAddAsync("set", new[] { "last" }, TimeSpan.FromSeconds(20));
@@ -4118,7 +4118,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithDictionaryExpirations_PreservesBoundaryMembers(int expiredIndex, bool remove)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(100_000).SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count));
         var source = Enumerable.Range(0, 41).ToDictionary(index => index, _ => (DateTime?)clock.GetUtcNow().UtcDateTime.AddMinutes(1));
         source[20] = null;
@@ -4172,7 +4172,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         {
             var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
             var now = clock.GetUtcNow().UtcDateTime;
-            using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+            using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock));
             var source = new Dictionary<T, DateTime?>(comparer)
             {
                 [keys[0]] = null,
@@ -4210,7 +4210,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListUpdate_WithEqualMaximumExpirations_PreservesFirstDateTimeKind(bool remove, DateTimeKind firstKind)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
         var maximum = clock.GetUtcNow().UtcDateTime.AddMinutes(10);
         var first = DateTime.SpecifyKind(maximum, firstKind);
         var second = DateTime.SpecifyKind(maximum, firstKind == DateTimeKind.Utc ? DateTimeKind.Local : DateTimeKind.Utc);
@@ -4252,7 +4252,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1));
         var expiredAt = clock.GetUtcNow().UtcDateTime.AddMinutes(-1);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
         await cache.SetAsync("list", new ExpirationMutationListDictionary(expiredAt)
         {
             [0] = null,
@@ -4296,7 +4296,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1));
         var expiredAt = clock.GetUtcNow().UtcDateTime.AddMinutes(-1);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
         var comparer = new ExpirationMutationListComparer();
         var source = new Dictionary<int, DateTime?>(comparer) { [0] = null, [1] = expiredAt, [2] = expiredAt };
         comparer.Dictionary = source;
@@ -4331,7 +4331,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddDays(1));
         var expiredAt = clock.GetUtcNow().UtcDateTime.AddTicks(-1);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(clock));
         var source = new Dictionary<SnapshotExpirationListKey, DateTime?>();
         source.Add(new SnapshotExpirationListKey(0, source), null);
         source.Add(new SnapshotExpirationListKey(1, source), expiredAt);
@@ -4530,7 +4530,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         const int workerCount = 8;
         const int iterations = 20_000;
         var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).MaxItems(null).TimeProvider(clock)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).MaxItems(null).TimeProvider(clock)
             .WithFixedSizing(1_000_000_000, 100));
         bool runMaintenance = maintenance != "None";
         using var start = new Barrier(workerCount + (runMaintenance ? 1 : 0));
@@ -4582,7 +4582,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
         using var logger = new TestLogger(o => o.DefaultLogLevel = traceEnabled ? LogLevel.Trace : LogLevel.Information);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).CloneValues(false).LoggerFactory(logger));
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).CloneValues(false).LoggerFactory(logger));
 
         Assert.True(await cache.SetAsync("scalar", 1));
         Assert.True(await cache.ReplaceIfEqualAsync("scalar", 2, 1));
@@ -4626,7 +4626,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
         using var logger = new TestLogger(o => o.DefaultLogLevel = traceEnabled ? LogLevel.Trace : LogLevel.Information);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).WithFixedSizing(100, 100).LoggerFactory(logger));
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).WithFixedSizing(100, 100).LoggerFactory(logger));
 
         // Act
         Assert.True(await cache.SetAsync("first", 1));
@@ -4656,7 +4656,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
         using var logger = new TestLogger(o => o.DefaultLogLevel = LogLevel.Trace);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).WithFixedSizing(10_000, 100).LoggerFactory(logger));
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).WithFixedSizing(10_000, 100).LoggerFactory(logger));
         using var cleared = new ManualResetEventSlim();
         int callbacks = 0;
         bool completedDuringCallback = false;
@@ -4692,7 +4692,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).WithFixedSizing(10_000, 100));
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).WithFixedSizing(10_000, 100));
         await cache.SetAsync("first", 1);
         await cache.SetAsync("second", 2);
         Assert.Equal(200, cache.CurrentMemorySize);
@@ -4709,7 +4709,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task MemorySize_AfterSaturation_RecoversRemainingEntrySizes()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.MinValue);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).MaxMemorySize(Int64.MaxValue)
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).MaxMemorySize(Int64.MaxValue)
             .SizeCalculator(value => (long)value));
         await cache.SetAsync("large", Int64.MaxValue);
         await cache.SetAsync("small", 42L);
@@ -4725,7 +4725,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         Publish(cache, "live", CreateEntry("live", timeProvider));
         Publish(cache, "expired", CreateEntry("expired", timeProvider, TimeSpan.FromMinutes(1)));
         timeProvider.Advance(TimeSpan.FromMinutes(2));
@@ -4749,7 +4749,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         // Comparing the current value is part of deciding the write, not a read, so it must not change eviction order.
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).CloneValues(true).LoggerFactory(Log));
         await cache.SetAsync("lease", "owner");
         long lastAccess = GetEntry(cache, "lease").LastAccessTicks;
         timeProvider.Advance(TimeSpan.FromMinutes(1));
@@ -4778,7 +4778,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         // A lease that expires while its value is being compared must not be renewed or released by the stale owner
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
         var owner = new ComparedValue("owner", () => timeProvider.Advance(TimeSpan.FromMinutes(2)));
         Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
 
@@ -4809,7 +4809,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             ? new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100)
             : DateTimeOffset.UtcNow;
         var timeProvider = new FakeTimeProvider(start);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
         var duration = recentMaintenance ? TimeSpan.FromMilliseconds(5) : TimeSpan.FromMinutes(1);
@@ -4838,7 +4838,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
         InMemoryCacheClient.CacheEntry? newOwner = null;
         var owner = new ComparedValue("owner", () =>
         {
@@ -4865,7 +4865,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider).WithFixedSizing(10_000, 50));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider).WithFixedSizing(10_000, 50));
         var owner = new ComparedValue("owner", () => throw new InvalidOperationException("Comparison failed"));
         var entry = CreateEntry(owner, timeProvider);
         Publish(cache, "lease", entry);
@@ -4892,7 +4892,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
         int comparisons = 0;
         var value = new ComparedValue("owner", () =>
         {
@@ -4920,7 +4920,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider));
         if (removeList)
             await cache.ListAddAsync("key", new[] { "value" }, TimeSpan.FromMinutes(1));
         else
@@ -4993,7 +4993,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         int sizingCalls = 0;
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).CloneValues(false).SizeCalculator(_ =>
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).CloneValues(false).SizeCalculator(_ =>
         {
             sizingCalls++;
             timeProvider.Advance(TimeSpan.FromMinutes(2));
@@ -5019,7 +5019,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         int sizingCalls = 0;
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).CloneValues(false)
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).CloneValues(false)
             .MaxMemorySize(10_000).SizeCalculator(_ =>
             {
                 sizingCalls++;
@@ -5053,7 +5053,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ReplaceIfEqualAsync_WithCloneValues_IsolatesReplacementFromCaller()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         await cache.SetAsync<object>("key", 1);
         var replacement = new List<int> { 1 };
 
@@ -5078,7 +5078,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
         Publish(cache, "lease", CreateEntry("owner", timeProvider, TimeSpan.FromMinutes(1)));
         timeProvider.Advance(TimeSpan.FromMinutes(2));
 
@@ -5112,7 +5112,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ReplaceIfEqualAsync_WithMismatchedOversizedValue_ReturnsFalseWithoutThrowing()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o
+        using var cache = CreateCacheClient(o => o
             .WithDynamicSizing(10000, Log)
             .MaxEntrySize(50)
             .ShouldThrowOnMaxEntrySizeExceeded()
@@ -5306,7 +5306,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // run in a tight loop so that the code is warmed up and we can catch timing issues
         for (int x = 0; x < 5; x++)
         {
-            var cache = new InMemoryCacheClient(o => o.MaxItems(10).CloneValues(true));
+            var cache = CreateCacheClient(o => o.MaxItems(10).CloneValues(true));
             using (cache)
             {
                 await cache.RemoveAllAsync();
@@ -5342,7 +5342,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         await cache.SetAsync("key", "expired", TimeSpan.FromMilliseconds(100));
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         await cache.SetAsync("key", "fresh", TimeSpan.FromMinutes(5));
@@ -5363,7 +5363,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
         await cache.SetAsync("key", "value", TimeSpan.FromMilliseconds(100));
@@ -5385,7 +5385,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var timeProvider = new FakeTimeProvider();
         timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
-        var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
         using (cache)
         {
             await cache.RemoveAllAsync();
@@ -5410,7 +5410,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
         const string key = "cached-with-max-expiration";
         await cache.SetAsync(key, "value", TimeSpan.MaxValue);
         timeProvider.Advance(TimeSpan.FromDays(365));
@@ -5442,7 +5442,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // timezone offset. If that offset is positive, the conversion fails.
 
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
         using (cache)
         {
             await cache.RemoveAllAsync();
@@ -5475,7 +5475,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         // An unspecified minimum date must be compared as UTC, not converted using the local timezone.
         var entry = new InMemoryCacheClient.CacheEntry("value", DateTime.MinValue, timeProvider, shouldClone: false, size: 50);
         Publish(cache, "key", entry);
@@ -5494,7 +5494,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         var boundary = CreateEntry("boundary", timeProvider, TimeSpan.FromMinutes(2));
         var future = CreateEntry("future", timeProvider, TimeSpan.FromMinutes(3));
         var permanent = CreateEntry("permanent", timeProvider);
@@ -5528,7 +5528,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider).WithFixedSizing(10_000, 50));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).TimeProvider(timeProvider).WithFixedSizing(10_000, 50));
         var entry = CreateEntry("value", timeProvider, TimeSpan.FromMilliseconds(expiresInMilliseconds));
         Publish(cache, "key", entry);
 
@@ -5546,7 +5546,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange - Use a memory limit that allows for testing eviction
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(200, Log).CloneValues(false).TimeProvider(timeProvider).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(200, Log).CloneValues(false).TimeProvider(timeProvider).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5596,7 +5596,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5618,7 +5618,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithBothLimits_RespectsMemoryAndItemLimits()
     {
         // Arrange - Test that both limits work together
-        var cache = new InMemoryCacheClient(o => o.MaxItems(5).WithDynamicSizing(512, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.MaxItems(5).WithDynamicSizing(512, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5641,7 +5641,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task MemorySize_WithRemoveIfEqualOperation_FreesMemoryImmediately()
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
         await cache.SetAsync("key", "value");
         Assert.Equal(50, cache.CurrentMemorySize);
 
@@ -5659,7 +5659,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         await cache.SetAsync("key", "value", TimeSpan.FromMinutes(1));
         await cache.SetAsync("persistent", "value", TimeSpan.FromMinutes(1));
 
@@ -5678,7 +5678,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task MemorySize_WithoutMaxMemorySize_DoesNotTrack()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5695,7 +5695,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task MemorySize_WithAddOperation_TracksCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5714,7 +5714,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task MemorySize_WithUpdateOperation_TracksCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5733,7 +5733,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task MemorySize_WithRemoveOperation_FreesMemory()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5752,7 +5752,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task MemorySize_WithRemoveAllOperation_FreesAllMemory()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5772,7 +5772,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithWithFixedSizing_ReturnsFixedSizeForAllObjects()
     {
         const long fixedSize = 100;
-        var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10000, fixedSize).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithFixedSizing(10000, fixedSize).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5803,7 +5803,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithWithDynamicSizing_CalculatesSizesDynamically()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5831,7 +5831,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithCustomSizeCalculator_UsesCustomCalculator()
     {
         int callCount = 0;
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .MaxMemorySize(10000)
             .SizeCalculator(_ =>
             {
@@ -5859,7 +5859,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).LoggerFactory(Log));
 
         using (cache)
         {
@@ -5893,7 +5893,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task CompactAsync_WithExpiredItems_EvictsExpiredItemsFirst()
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .WithFixedSizing(100, 50)
             .TimeProvider(timeProvider)
             .LoggerFactory(Log));
@@ -5928,7 +5928,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         // Use a tight memory limit that will force eviction
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .WithDynamicSizing(300, Log)
             .TimeProvider(timeProvider)
             .LoggerFactory(Log));
@@ -5980,7 +5980,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task CompactAsync_WithMaxItems_EvictsLeastRecentlyUsedItems()
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .MaxItems(3)
             .TimeProvider(timeProvider)
             .LoggerFactory(Log));
@@ -6044,7 +6044,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task SetAsync_WithNegativeSizeFromCalculator_SkipsEntry()
     {
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .MaxMemorySize(10000)
             .SizeCalculator(_ => -1) // Always returns negative size
             .LoggerFactory(Log));
@@ -6065,7 +6065,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task IncrementAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -6099,7 +6099,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task IncrementAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -6140,7 +6140,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetIfHigherAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -6186,7 +6186,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetIfHigherAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -6230,7 +6230,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetIfHigherAsync_WithNumericConversion_TracksReplacementSize(bool lower, bool useDouble)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.MaxMemorySize(1000)
             .SizeCalculator(value => value is string ? 100 : 8).LoggerFactory(Log));
         await cache.SetAsync("key", "10");
 
@@ -6253,7 +6253,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetIfLowerAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -6287,7 +6287,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetIfLowerAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -6326,7 +6326,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task ReplaceIfEqualAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = CreateCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -6374,7 +6374,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).MaxMemorySize(1000)
             .SizeCalculator(value => ((string)value).Length).MaxEntrySize(5)
             .ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).LoggerFactory(Log));
         await cache.SetAsync("key", "old", TimeSpan.FromMinutes(1));
@@ -6396,7 +6396,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithOversizedEntry_LogsWarningAndReturnsFalse()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .WithDynamicSizing(10000, Log)
             .MaxEntrySize(50) // Very small limit
             .LoggerFactory(Log));
@@ -6422,7 +6422,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithOversizedCalculatorFallback_PreservesEntry(bool shouldThrow, bool stringValue)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).MaxMemorySize(1000)
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).MaxMemorySize(1000)
             .SizeCalculator(value => value is "old" ? 3 : throw new InvalidOperationException("Sizing failed"))
             .MaxEntrySize(10).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow));
         await cache.SetAsync("key", "old", TimeSpan.FromMinutes(1));
@@ -6442,7 +6442,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithOversizedEntryAndThrowEnabled_ThrowsMaxEntrySizeExceededCacheException()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .WithDynamicSizing(10000, Log)
             .MaxEntrySize(50) // Very small limit
             .ShouldThrowOnMaxEntrySizeExceeded()
@@ -6467,7 +6467,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public void Constructor_WithMaxEntrySizeGreaterThanMaxMemorySize_ThrowsArgumentOutOfRangeException()
     {
         // Arrange & Act & Assert
-        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryCacheClient(o => o
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => CreateCacheClient(o => o
             .WithDynamicSizing(1000) // 1000 bytes total limit
             .MaxEntrySize(2000))); // 2000 bytes per entry - INVALID
 
@@ -6479,7 +6479,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task AddAsync_WithOversizedEntry_ReturnsFalse()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .WithDynamicSizing(10000, Log)
             .MaxEntrySize(50)
             .LoggerFactory(Log));
@@ -6500,7 +6500,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithEntryUnderLimit_CachesSuccessfully()
     {
         // Arrange
-        var cache = new InMemoryCacheClient(o => o
+        var cache = CreateCacheClient(o => o
             .WithDynamicSizing(10000, Log)
             .MaxEntrySize(1000) // 1KB limit
             .LoggerFactory(Log));
@@ -6527,7 +6527,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task WriteAsync_WithExpirationDuringSizing_PreservesLiveEntry(string operation)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).SizeCalculator(_ =>
             {
                 clock.Advance(TimeSpan.FromSeconds(1));
@@ -6559,7 +6559,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task WriteAsync_WithExpirationDuringSizing_ReclaimsExpiredEntry(string operation)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).SizeCalculator(_ =>
             {
                 clock.Advance(TimeSpan.FromSeconds(1));
@@ -6601,7 +6601,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         int sizingCalls = 0;
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).SizeCalculator(_ =>
             {
                 if (++sizingCalls == expireOnSizingCall)
@@ -6641,7 +6641,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         int sizingCalls = 0;
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).SizeCalculator(_ =>
             {
                 if (++sizingCalls == expireOnSizingCall)
@@ -6671,7 +6671,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         bool observedMissing = false;
         InMemoryCacheClient? client = null;
-        using var cache = client = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+        using var cache = client = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
             .MaxMemorySize(1000).SizeCalculator(value =>
             {
                 if (Convert.ToDouble(value) == 101)
@@ -6711,7 +6711,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ConditionalNumericUpdate_WhenStoredEntryExpiresDuringConversion_StartsFromMissing(bool higher, bool changesValue, bool useDouble)
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).WithFixedSizing(1000, 8));
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).WithFixedSizing(1000, 8));
         bool observedMissing = false;
         var number = new ConvertedNumber(() =>
         {
@@ -6746,7 +6746,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         bool observedMissing = false;
         InMemoryCacheClient? client = null;
-        using var cache = client = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).CloneValues(false)
+        using var cache = client = CreateCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).CloneValues(false)
             .MaxMemorySize(1000).SizeCalculator(value =>
             {
                 var dictionary = (IDictionary<string, DateTime?>)value;
@@ -6791,7 +6791,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange: an expired entry that maintenance has not removed yet must behave as if the key were absent
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
         var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
         Publish(cache, "key", CreateEntry(operation is "SetIfLower" ? 1L : 100L, timeProvider, TimeSpan.FromMinutes(1)));
@@ -6834,7 +6834,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange: the list's values never expire, but the key itself expired through SetExpirationAsync
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
         Publish(cache, "set", CreateEntry(new Dictionary<string, DateTime?> { ["old"] = null }, timeProvider, TimeSpan.FromMinutes(1)));
         timeProvider.Advance(TimeSpan.FromMinutes(2));
 
@@ -6855,6 +6855,131 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return new InMemoryCacheClient.CacheEntry(value, expiresAt, timeProvider, shouldClone: false, size: 50);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DoMaintenanceAsync_WithMoreEntriesThanPassBudget_CompactsAcrossBoundedPasses(bool useMemoryLimit)
+    {
+        // Arrange
+        const int entryCount = 1101;
+        const int maximumRemovalsPerPass = 1000;
+        const long entrySize = 50;
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = CreateCacheClient(o =>
+        {
+            o.TimeProvider(timeProvider).LoggerFactory(Log);
+            return useMemoryLimit ? o.WithFixedSizing(entrySize, entrySize) : o.MaxItems(1);
+        });
+
+        // Seed directly so normal writes do not compact the cache before the pass under test.
+        for (int i = 0; i < entryCount; i++)
+        {
+            var entry = new InMemoryCacheClient.CacheEntry("value", null, timeProvider, shouldClone: false, size: entrySize);
+            cache.UpdateEntry<bool>(i.ToString(), _ => (entry, true));
+        }
+
+        // Act
+        await cache.DoMaintenanceAsync().WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+        int countAfterFirstPass = cache.Count;
+        long sizeAfterFirstPass = cache.CurrentMemorySize;
+        await cache.DoMaintenanceAsync().WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(entryCount - maximumRemovalsPerPass, countAfterFirstPass);
+        Assert.Equal(useMemoryLimit ? countAfterFirstPass * entrySize : 0, sizeAfterFirstPass);
+        Assert.Equal(1, cache.Count);
+        Assert.Equal(useMemoryLimit ? entrySize : 0, cache.CurrentMemorySize);
+        Assert.Equal("value", Assert.Single(cache.Items).Value);
+        Assert.DoesNotContain(Log.LogEntries, entry => entry.LogLevel >= LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task SetAsync_WithEntryFarAboveMemoryLimit_CompactsImmediately()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.MinValue);
+        using var cache = CreateCacheClient(o => o.TimeProvider(clock).WithFixedSizing(1, 250_000_000));
+
+        Assert.True(await cache.SetAsync("large", 1));
+
+        Assert.False(await cache.ExistsAsync("large"));
+        Assert.Equal(0, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public async Task DoMaintenanceAsync_WhenEvictionCandidateIsReplaced_DoesNotSpendRemovalBudget()
+    {
+        // Arrange: 10 entries over the limit, so the pass's budget is 20 removals. The oldest entry is replaced
+        // after compaction selects it, 15 times. Losing those races frees nothing, so the pass must still make the
+        // 10 removals it needs instead of stopping after 20 attempts.
+        const int maxItems = 100;
+        const int replacementsDuringSelection = 15;
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).MaxItems(maxItems).LoggerFactory(Log));
+        int replacements = 0;
+        var oldestClock = new ReadHookTimeProvider(timeProvider);
+        oldestClock.OnRead = () =>
+        {
+            // Keep the replacement's age and instance number (WithExpiration), so it stays the next candidate
+            if (replacements < replacementsDuringSelection)
+                cache.UpdateEntry<bool>("oldest", current => current is null ? (current, false) : (current.WithExpiration(current.ExpiresAt!.Value.AddTicks(1)), true));
+            replacements++;
+        };
+        var oldest = new InMemoryCacheClient.CacheEntry("value", DateTime.MaxValue.AddDays(-1), oldestClock, shouldClone: false);
+        cache.UpdateEntry<bool>("oldest", _ => (oldest, true));
+        for (int i = 1; i < maxItems + 10; i++)
+        {
+            var entry = new InMemoryCacheClient.CacheEntry("value", null, timeProvider, shouldClone: false);
+            cache.UpdateEntry<bool>(i.ToString(), _ => (entry, true));
+        }
+
+        // Act
+        oldestClock.Armed = true;
+        await cache.DoMaintenanceAsync().WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+        oldestClock.Armed = false;
+
+        // Assert
+        Assert.True(replacements > replacementsDuringSelection, $"Expected {replacementsDuringSelection} lost races, saw {replacements}");
+        Assert.Equal(maxItems, cache.Count);
+    }
+
+    /// <summary>
+    /// A clock for one entry that runs <see cref="OnRead"/> when the entry checks its expiration, which compaction
+    /// does while choosing what to evict. That lets a test replace the entry between selection and removal.
+    /// </summary>
+    private sealed class ReadHookTimeProvider(TimeProvider inner) : TimeProvider
+    {
+        private bool _inHook;
+
+        public bool Armed { get; set; }
+        public Action? OnRead { get; set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Armed && !_inHook && OnRead is { } onRead)
+            {
+                _inHook = true;
+                try
+                {
+                    onRead();
+                }
+                finally
+                {
+                    _inHook = false;
+                }
+            }
+
+            return inner.GetUtcNow();
+        }
+    }
+
+    /// <summary>
+    /// Creates a client that logs to this test's output, for tests that need options of their own. The in-memory
+    /// client stores objects instead of serializing them and runs no resilience policy, so neither is set here.
+    /// </summary>
+    protected InMemoryCacheClient CreateCacheClient(Builder<InMemoryCacheClientOptionsBuilder, InMemoryCacheClientOptions> config)
+    {
+        return new InMemoryCacheClient(o => config(o.LoggerFactory(Log)));
+    }
     private static InMemoryCacheClient.CacheEntry GetEntry(InMemoryCacheClient cache, string key)
     {
         return cache.UpdateEntry(key, current => (current, current)) ?? throw new InvalidOperationException($"Missing cache key: {key}");
@@ -6865,7 +6990,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         InMemoryCacheClient? cache = null;
         bool reenter = false;
-        cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log).MaxMemorySize(1_000).SizeCalculator(value =>
+        cache = CreateCacheClient(o => o.CloneValues(false).LoggerFactory(Log).MaxMemorySize(1_000).SizeCalculator(value =>
         {
             if (value is IDictionary<int, DateTime?> members && members.ContainsKey(1) && members.ContainsKey(2) && reenter)
             {
@@ -6893,7 +7018,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true)]
     public async Task ListAddAsync_WhenComparerThrowsPartwayThroughABatch_LeavesTheListUnchanged(bool cloneValues)
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
         await cache.SetAsync("list", new Dictionary<int, DateTime?>(new ThrowingComparer(3)) { [0] = null });
         Assert.Equal(1, await cache.ListAddAsync("list", [1]));
 
@@ -6908,7 +7033,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListAddAsync_WithCloneValuesAndARetainedSizerArgument_StoresAPrivateList()
     {
         IDictionary<int, DateTime?>? retained = null;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log).MaxMemorySize(1_000).SizeCalculator(value =>
+        using var cache = CreateCacheClient(o => o.CloneValues(true).LoggerFactory(Log).MaxMemorySize(1_000).SizeCalculator(value =>
         {
             retained ??= value as IDictionary<int, DateTime?>;
             return value is ICollection<KeyValuePair<int, DateTime?>> pairs ? pairs.Count : 1;
@@ -6928,7 +7053,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task ListRemoveAsync_WhenRejectedWithACaseInsensitiveComparer_KeepsTheStoredSpelling(bool cloneValues)
     {
         bool reject = false;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log).MaxMemorySize(1_000)
+        using var cache = CreateCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log).MaxMemorySize(1_000)
             .SizeCalculator(_ => reject ? -1 : 1));
         await cache.SetAsync("list", new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { ["first"] = null, ["second"] = null });
         Assert.Equal(1, await cache.ListAddAsync("list", ["third"]));
@@ -6944,7 +7069,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         bool advance = false;
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log).MaxMemorySize(1_000)
+        using var cache = CreateCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log).MaxMemorySize(1_000)
             .SizeCalculator(value =>
             {
                 if (advance && value is IDictionary<int, DateTime?> members && members.ContainsKey(1))
@@ -6970,7 +7095,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task GetListAsync_WithAdoptedReferenceEqualityDictionary_ReadsItsOwnMembers()
     {
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
         string first = new('a', 3);
         string second = new('a', 3);
         var source = new ConcurrentDictionary<string, DateTime?>(ReferenceEqualityComparer.Instance);
@@ -6986,6 +7111,31 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var secondPage = (await cache.GetListAsync<string>("list", 2, 2)).Value;
         Assert.Equal(2, firstPage.Count);
         Assert.Equal(members.Order(StringComparer.Ordinal), firstPage.Concat(secondPage).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ListRemoveAsync_WhenRejectedWithPartialStructEquality_KeepsTheStoredMember()
+    {
+        bool reject = false;
+        using var cache = CreateCacheClient(o => o.CloneValues(false).LoggerFactory(Log).MaxMemorySize(1_000)
+            .SizeCalculator(_ => reject ? -1 : 1));
+        Assert.Equal(2, await cache.ListAddAsync("list", [new IdOnlyMember(1, "stored"), new IdOnlyMember(2, "other")]));
+        reject = true;
+
+        Assert.Equal(0, await cache.ListRemoveAsync("list", [new IdOnlyMember(1, "supplied")]));
+
+        var members = (await cache.GetListAsync<IdOnlyMember>("list")).Value;
+        Assert.Contains(members, member => member.Id is 1 && member.Name is "stored");
+        Assert.DoesNotContain(members, member => member.Name is "supplied");
+    }
+
+    private readonly struct IdOnlyMember(int id, string name) : IEquatable<IdOnlyMember>
+    {
+        public int Id { get; } = id;
+        public string Name { get; } = name;
+        public bool Equals(IdOnlyMember other) => Id == other.Id;
+        public override bool Equals(object? obj) => obj is IdOnlyMember other && Equals(other);
+        public override int GetHashCode() => Id;
     }
 
     private sealed class ThrowingComparer(int throwOn) : IEqualityComparer<int>
@@ -7054,7 +7204,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true)]
     public async Task GetAsync_WithObjectType_ReturnsValueDirectly(bool cloneValues)
     {
-        var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
+        var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
         using (cache)
         {
             var data = new MyData("hello", 42);
@@ -7107,7 +7257,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true).TimeProvider(timeProvider));
+        using var cache = CreateCacheClient(o => o.LoggerFactory(Log).CloneValues(true).TimeProvider(timeProvider));
         await cache.SetAsync("key", new SimpleModel { Data1 = "original" });
         var before = GetEntry(cache, "key");
         timeProvider.Advance(TimeSpan.FromMilliseconds(1));
@@ -7133,7 +7283,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Reproduces the production race deterministically: maintenance observes an expired entry, another
         // writer replaces it, then maintenance tries to remove the entry it observed.
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         var observed = CreateEntry("expired", timeProvider, TimeSpan.FromMilliseconds(100));
         Publish(cache, "key", observed);
         timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -7155,7 +7305,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         var competing = CreateEntry("competing", timeProvider);
         int attempts = 0;
 
@@ -7180,7 +7330,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         Publish(cache, "key", CreateEntry("expected", timeProvider));
         var replacement = CreateEntry("replaced", timeProvider);
         int attempts = 0;
@@ -7206,7 +7356,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         Publish(cache, "key", CreateEntry(1L, timeProvider));
         int attempts = 0;
 
@@ -7234,7 +7384,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // The key disappears between the read and the publish, so the retry must take the add path and report
         // it. Reporting the discarded update's result is how AddAsync used to leave lock keys with no owner.
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        using var cache = CreateCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
         Publish(cache, "key", CreateEntry("old", timeProvider));
         int attempts = 0;
 
@@ -7287,7 +7437,7 @@ public class InMemoryCacheClientWithFixedSizingTests : InMemoryCacheClientTests
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new InMemoryCacheClient(o => o
+        return CreateCacheClient(o => o
             .LoggerFactory(Log)
             .CloneValues(true)
             .ShouldThrowOnSerializationError(shouldThrowOnSerializationError)
@@ -7307,7 +7457,7 @@ public class InMemoryCacheClientWithDynamicSizingTests : InMemoryCacheClientTest
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new InMemoryCacheClient(o => o
+        return CreateCacheClient(o => o
             .LoggerFactory(Log)
             .CloneValues(true)
             .ShouldThrowOnSerializationError(shouldThrowOnSerializationError)

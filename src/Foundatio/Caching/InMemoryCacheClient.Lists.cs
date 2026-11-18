@@ -84,9 +84,9 @@ public partial class InMemoryCacheClient
             entry.RecordAccess();
             var now = _timeProvider.GetUtcNow().UtcDateTime;
             if (page.HasValue)
-                return ReadListPage(stored, now, page.Value, pageSize);
+                return CacheList<T>.ReadPage(stored, now, page.Value, pageSize);
 
-            var keys = ReadListValues(stored, now);
+            var keys = CacheList<T>.ReadValues(stored, now);
             return new CacheValue<ICollection<T>>(keys, keys.Length > 0);
         }
 
@@ -398,90 +398,5 @@ public partial class InMemoryCacheClient
         foreach (var item in items)
             clones.Add(item.DeepClone()!);
         return clones;
-    }
-
-    private static CacheValue<ICollection<T>> ReadListPage<T>(Dictionary<T, DateTime?> dictionary, DateTime utcNow, int page, int pageSize, bool checkExpiration = true) where T : notnull
-    {
-        var result = new ListPage<T>(dictionary.Count, page, pageSize);
-        foreach (var pair in dictionary)
-        {
-            if (checkExpiration && pair.Value < utcNow)
-                continue;
-            if (result.TrySkip())
-                continue;
-            result.Add(pair.Key);
-            if (result.IsFull)
-                break;
-        }
-        return result.ToCacheValue();
-    }
-
-    private struct ListPage<T> where T : notnull
-    {
-        private int _skip;
-        private readonly int _initialSkip;
-        private readonly int _capacity;
-        private T[]? _values;
-        private int _count;
-        private bool _hasValue;
-
-        public ListPage(int count, int page, int pageSize)
-        {
-            _skip = Math.Max(0, unchecked((page - 1) * pageSize));
-            _initialSkip = _skip;
-            _capacity = Math.Min(Math.Max(0, pageSize), Math.Max(0, count - _skip));
-        }
-
-        public bool IsFull => _hasValue && _count == _capacity;
-        public bool CanSkip(int count) => _capacity > 0 && _skip >= count;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySkip(int count = 1)
-        {
-            if (!CanSkip(count))
-                return false;
-
-            _skip -= count;
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Add(T value)
-        {
-            _hasValue = true;
-            if (_capacity is 0)
-                return;
-
-            _values ??= new T[_capacity];
-            _values[_count++] = value;
-        }
-
-        public CacheValue<ICollection<T>> ToCacheValue()
-        {
-            var values = _values ?? [];
-            if (_count != values.Length)
-                Array.Resize(ref values, _count);
-            return new CacheValue<ICollection<T>>(values, _hasValue || _skip < _initialSkip);
-        }
-    }
-
-    private static T[] ReadListValues<T>(Dictionary<T, DateTime?> dictionary, DateTime utcNow, bool checkExpiration = true) where T : notnull
-    {
-        var result = new T[dictionary.Count];
-        int count = 0;
-        if (checkExpiration)
-        {
-            foreach (var pair in dictionary)
-                if (pair.Value is null || pair.Value >= utcNow)
-                    result[count++] = pair.Key;
-        }
-        else
-        {
-            dictionary.Keys.CopyTo(result, 0);
-            count = result.Length;
-        }
-        if (count != result.Length)
-            Array.Resize(ref result, count);
-        return result;
     }
 }

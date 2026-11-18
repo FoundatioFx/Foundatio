@@ -1279,7 +1279,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(1, await cache.ListAddAsync(key, [3]));
             Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(50)));
 
-            await Task.Delay(200, TestCancellationToken);
+            await WaitUntilAsync(async () => !(await cache.GetListAsync<int>(key)).Value?.Contains(2) ?? true);
             var cacheValue = await cache.GetListAsync<int>(key);
             Assert.True(cacheValue.HasValue);
             Assert.Single(cacheValue.Value);
@@ -1289,7 +1289,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // Verify whole-key expiration on a new list, without relying on shortening a permanent key's TTL.
             Assert.Equal(1, await cache.ListRemoveAsync(key, [3]));
             Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(50)));
-            await Task.Delay(200, TestCancellationToken);
+            await WaitUntilAsync(async () => !await cache.ExistsAsync(key));
             Assert.False(await cache.ExistsAsync(key));
 
             // Null expiration: should succeed and remove expiration
@@ -1308,6 +1308,28 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(3, listValue.Value.Count);
             expiration = await cache.GetExpirationAsync("list-null-exp");
             Assert.Null(expiration);
+
+            // Re-adding an unchanged member leaves a separately set key TTL in place, matching Redis ZADD.
+            Assert.Equal(1, await cache.ListAddAsync("list-unchanged-ttl", [1]));
+            await cache.SetExpirationAsync("list-unchanged-ttl", TimeSpan.FromHours(1));
+            await cache.ListAddAsync("list-unchanged-ttl", [1]);
+            expiration = await cache.GetExpirationAsync("list-unchanged-ttl");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+        }
+    }
+
+    /// <summary>
+    /// Polls instead of sleeping a fixed time, so expiration tests finish as soon as the provider expires the value
+    /// and still tolerate a slow scheduler.
+    /// </summary>
+    private async Task WaitUntilAsync(Func<Task<bool>> condition)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (!await condition())
+        {
+            Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), "Timed out waiting for the cache value to expire.");
+            await Task.Delay(10, TestCancellationToken);
         }
     }
 
