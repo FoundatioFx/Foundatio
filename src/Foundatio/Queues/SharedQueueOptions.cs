@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using Foundatio.Utility;
 
 namespace Foundatio.Queues;
 
-public class SharedQueueOptions<T> : SharedOptions where T : class
+public class SharedQueueOptions<T> : SharedOptions, IHaveResiliencePolicyProvider where T : class
 {
     public string Name { get; set; } = typeof(T).Name;
     public int Retries { get; set; } = 2;
