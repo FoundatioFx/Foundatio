@@ -177,6 +177,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
+        prefix ??= String.Empty;
+
         await EnsureSubscribedAsync().AnyContext();
 
         int removed = await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();

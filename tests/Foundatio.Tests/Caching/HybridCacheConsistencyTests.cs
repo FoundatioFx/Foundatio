@@ -73,6 +73,7 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
     [Theory]
     [InlineData("key", false)]
     [InlineData("prefix", false)]
+    [InlineData("null-prefix", false)]
     [InlineData("all", false)]
     [InlineData("member", false)]
     [InlineData("key", true)]
@@ -93,6 +94,7 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
             "key" => remover.RemoveAsync(key),
             "member" => remover.ListRemoveAsync(key, [1]),
             "prefix" => remover.RemoveByPrefixAsync("pending:"),
+            "null-prefix" => remover.RemoveByPrefixAsync(null!),
             "all" => remover.RemoveAllAsync(),
             _ => throw new ArgumentOutOfRangeException(nameof(removal))
         });
