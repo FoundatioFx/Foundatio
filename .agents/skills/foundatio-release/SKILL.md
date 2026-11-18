@@ -21,9 +21,9 @@ Scripts live in [scripts/](scripts/) (PowerShell 7, run from any directory). Det
 ## Version mechanics (MinVer)
 
 - Push to `main`: CI computes `<next>-preview.0.N` and publishes it to GitHub Packages and Feedz ("nightly"). This is how dependents consume unreleased core.
-- Push tag `vX.Y.Z`: CI computes stable `X.Y.Z`, publishes to GitHub and Feedz, uploads the `nuget-packages` artifact, and the caller's `publish` job pushes it to **nuget.org** via trusted publishing (`.github/actions/nuget-publish`). Repos not yet migrated still push with `NUGET_KEY` in the build job's "Publish Release Packages (API key)" step.
+- Push tag `vX.Y.Z`: CI computes stable `X.Y.Z`, publishes to GitHub, Feedz and **nuget.org** ("Publish Release Packages").
 - Branch pushes also publish nightlies. Releases come only from tags.
-- "Publish Release Packages: success" (in the `publish` job, or the API key step for unmigrated repos) means nuget.org accepted the push (`Created`). For a **leaf** release that nothing else restores (all providers) that is the end of verification; do **not** poll nuget.org.
+- "Publish Release Packages: success" means nuget.org accepted the push (`Created`). For a **leaf** release that nothing else restores (all providers) that is the end of verification; do **not** poll nuget.org.
 - Only wait for nuget.org indexing when a **downstream commit or tag must restore the package first**: core `Foundatio` before bumping any dependent, and Parsers before Repositories (staggered flow). The flat container can lag >5 min (seen for `Foundatio` in 13.0.5), so there gate on [scripts/wait-nuget.ps1](scripts/wait-nuget.ps1) before committing the bump. Restoring from a pinned stable that is not yet listed fails with NU1102.
 
 ## Workflow
