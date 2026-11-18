@@ -34,6 +34,7 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// <item>Must return a non-negative value representing the estimated size in bytes</item>
     /// <item>Negative return values will cause the entry to be skipped (not cached) with a warning logged</item>
     /// <item>Should be thread-safe as it may be called concurrently</item>
+    /// <item>Treat the value as read-only. List updates can hold the list lock during sizing, so estimate from the supplied value and avoid waiting for other cache operations.</item>
     /// <item>Should handle null values gracefully (typically return 8 bytes for a null reference)</item>
     /// </list>
     /// </para>

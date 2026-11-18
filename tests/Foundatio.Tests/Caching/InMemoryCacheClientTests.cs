@@ -773,6 +773,36 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task ListAddAsync_WhenAccountingLoggerAppends_KeepsBothWritesAndTheirSize(bool useWorker)
+    {
+        // Arrange
+        Log.DefaultLogLevel = LogLevel.Trace;
+        using var cache = CreateCacheClient(o => o.MaxMemorySize(1_000)
+            .SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count));
+        await cache.ListAddAsync("list", [1]);
+        long nestedCount = 0;
+        Log.Options.WriteLogEntryFunc = entry =>
+        {
+            if (!entry.Message.StartsWith("UpdateMemorySize:", StringComparison.Ordinal))
+                return;
+
+            Log.Options.WriteLogEntryFunc = null;
+            var nested = useWorker
+                ? Task.Run(() => cache.ListAddAsync("list", [3]), TestCancellationToken)
+                : cache.ListAddAsync("list", [3]);
+            nestedCount = nested.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken).GetAwaiter().GetResult();
+        };
+
+        // Act & Assert
+        Assert.Equal(1, await cache.ListAddAsync("list", [2]));
+        Assert.Equal(1, nestedCount);
+        Assert.Equal([1, 2, 3], (await cache.GetListAsync<int>("list")).Value.Order());
+        Assert.Equal(3, cache.CurrentMemorySize);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task ListAddAsync_WhenComparerThrowsPartwayThroughABatch_LeavesTheListUnchanged(bool cloneValues)
     {
         // Arrange

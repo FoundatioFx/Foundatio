@@ -36,7 +36,7 @@ public class InMemoryListBenchmarks
             return Sizing switch
             {
                 SizingMode.Fixed => o.WithFixedSizing(100000000, 100),
-                SizingMode.Custom => o.MaxMemorySize(100000000).SizeCalculator(_ => 100),
+                SizingMode.Custom => o.MaxMemorySize(100000000).SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count),
                 SizingMode.Dynamic => o.WithDynamicSizing(100000000),
                 _ => o
             };
