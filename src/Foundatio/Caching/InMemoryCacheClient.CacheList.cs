@@ -377,7 +377,7 @@ public partial class InMemoryCacheClient
                     return false;
                 }
 
-                return expiration == Latest && --_latestCount == 0;
+                return expiration == Latest && --_latestCount is 0;
             }
         }
     }

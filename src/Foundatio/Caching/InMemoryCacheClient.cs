@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -369,7 +370,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
     private bool TryPublish(string key, CacheEntry? current, CacheEntry? desired)
     {
         long delta = (desired?.Size ?? 0) - (current?.Size ?? 0);
-        if (!_shouldTrackMemory || delta == 0)
+        if (!_shouldTrackMemory || delta is 0)
             return TryPublishValue(key, current, desired);
 
         long before;
@@ -1311,10 +1312,35 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
                 )
                 return value.DeepClone();
 
-            return _dictionaryCloners.GetOrAdd(type, static dictionaryType => typeof(CacheEntry)
+            // The key and value types are only known at runtime here. Without dynamic code the vendored cloner,
+            // which instantiates the same dictionary types itself, handles the value on its own.
+            if (!RuntimeFeature.IsDynamicCodeSupported)
+                return value.DeepClone();
+
+            if (!_dictionaryCloners.TryGetValue(type, out var cloner))
+                cloner = _dictionaryCloners.GetOrAdd(type, CreateDictionaryCloner(type));
+            return cloner(value, forceDictionaryRebuild);
+        }
+
+        [RequiresDynamicCode("Instantiates CloneDictionary for the runtime key and value types.")]
+        private static Func<object, bool, object> CreateDictionaryCloner(Type dictionaryType)
+        {
+            return typeof(CacheEntry)
                 .GetMethod(nameof(CloneDictionary), BindingFlags.NonPublic | BindingFlags.Static)!
                 .MakeGenericMethod(dictionaryType.GenericTypeArguments)
-                .CreateDelegate<Func<object, bool, object>>())(value, forceDictionaryRebuild);
+                .CreateDelegate<Func<object, bool, object>>();
+        }
+
+        /// <summary>
+        /// Whether a comparer can be shared with a clone. The default comparers keep no state, but the vendored cloner
+        /// does not know all of their framework types and copies them, which would make every later clone rebuild.
+        /// </summary>
+        private static bool IsSafeComparer<TKey>(object comparer)
+        {
+            var type = comparer.GetType();
+            return type == EqualityComparer<TKey>.Default.GetType()
+                || type == Comparer<TKey>.Default.GetType()
+                || FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(type);
         }
 
         private static object CloneDictionary<TKey, TValue>(object value, bool forceDictionaryRebuild) where TKey : notnull
@@ -1322,7 +1348,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             if (value is ConcurrentDictionary<TKey, TValue> concurrentValues
                 && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(TKey))
                 && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(TValue))
-                && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(concurrentValues.Comparer.GetType()))
+                && IsSafeComparer<TKey>(concurrentValues.Comparer))
                 return new ConcurrentDictionary<TKey, TValue>(concurrentValues.ToArray(), concurrentValues.Comparer);
 
             if (value is not Dictionary<TKey, TValue> dictionary)
@@ -1337,7 +1363,7 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
 #endif
                     _ => null
                 };
-                return comparer is not null && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(comparer.GetType())
+                return comparer is not null && !IsSafeComparer<TKey>(comparer)
                     ? CloneDictionaryWithComparer((IDictionary<TKey, TValue>)value)
                     : value.DeepClone();
             }
@@ -1348,18 +1374,18 @@ public partial class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider
             if ((dictionary.Count <= 32 || dictionary.Count <= capacity / 2 || capacity > MaxPooledDictionaryCloneCapacity)
                 && !forceDictionaryRebuild
                 && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(TValue))
-                && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(dictionary.Comparer.GetType()))
+                && IsSafeComparer<TKey>(dictionary.Comparer))
                 return new Dictionary<TKey, TValue>(dictionary, dictionary.Comparer);
 
             // The vendored cloner rebuilds small dictionaries, preserving their comparer and discarding
             // cached views and unused capacity. Mutable keys or comparers need the tracked adapter below.
             if (!forceDictionaryRebuild && dictionary.Count <= 32
-                && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(dictionary.Comparer.GetType()))
+                && IsSafeComparer<TKey>(dictionary.Comparer))
                 return dictionary.DeepClone();
 
             // Track the dictionary root so cached Keys and Values views belong to the clone.
             var clone = FastCloner.FastCloner.DeepCloneTo(dictionary, FastCloner.FastCloner.ShallowClone(dictionary))!;
-            if (!forceDictionaryRebuild && ReferenceEquals(dictionary.Comparer, clone.Comparer))
+            if (!forceDictionaryRebuild && (ReferenceEquals(dictionary.Comparer, clone.Comparer) || IsSafeComparer<TKey>(dictionary.Comparer)))
                 return clone;
 
             RehashClonedDictionary(clone);

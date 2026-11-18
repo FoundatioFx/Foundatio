@@ -2777,6 +2777,32 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Single((await cache.GetAsync<IDictionary<string, DateTime?>>("dictionary")).Value);
     }
 
+    [Fact]
+    public async Task GetAsync_WithDefaultComparerSortedDictionary_ClonesWithoutRebuilding()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var source = new SortedDictionary<int, int>(Enumerable.Range(0, 1000).ToDictionary(i => i, i => i));
+        await cache.SetAsync("dictionary", source);
+        for (int i = 0; i < 4; i++)
+        {
+            _ = source.DeepClone();
+            _ = await cache.GetAsync<SortedDictionary<int, int>>("dictionary");
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        GC.KeepAlive(source.DeepClone());
+        long cloneSize = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        var returned = (await cache.GetAsync<SortedDictionary<int, int>>("dictionary")).Value;
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Rebuilding under a copied default comparer would allocate every node a second time.
+        Assert.True(allocated <= cloneSize + 4_096, $"Read allocated {allocated} bytes; a plain clone allocates {cloneSize} bytes.");
+        Assert.Equal(source, returned);
+        Assert.NotSame(source, returned);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

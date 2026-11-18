@@ -2863,6 +2863,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(await cache.SetAsync("test5", 1));
             Assert.Null(await cache.GetExpirationAsync("test5"));
 
+            // A null expiration on an existing key removes its expiration.
+            Assert.True(await cache.SetAsync("test6", 1, TimeSpan.FromMinutes(5)));
+            Assert.NotNull(await cache.GetExpirationAsync("test6"));
+            Assert.True(await cache.SetAsync("test6", 2));
+            Assert.Equal(2, (await cache.GetAsync<int>("test6")).Value);
+            Assert.Null(await cache.GetExpirationAsync("test6"));
+
             // Expire time right now
             Assert.False(await cache.SetAsync("test9", 1, utcNow));
             Assert.False(await cache.ExistsAsync("test9"));

@@ -399,7 +399,7 @@ public partial class InMemoryCacheClient
         public void Add(T value)
         {
             _hasValue = true;
-            if (_capacity == 0)
+            if (_capacity is 0)
                 return;
 
             _values ??= new T[_capacity];
