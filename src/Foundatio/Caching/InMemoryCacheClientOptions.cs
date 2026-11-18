@@ -38,7 +38,23 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// </list>
     /// </para>
     /// </remarks>
-    public Func<object, long>? SizeCalculator { get; set; }
+    public Func<object, long>? SizeCalculator
+    {
+        get;
+        set
+        {
+            field = value;
+            UsesFixedSizing = false;
+        }
+    }
+
+    internal bool UsesFixedSizing { get; private set; }
+
+    internal void SetFixedSize(long size)
+    {
+        SizeCalculator = _ => size;
+        UsesFixedSizing = true;
+    }
 
     /// <summary>
     /// The maximum size in bytes for individual cache entries. Entries larger than this will be skipped (not cached) and a warning will be logged.
@@ -101,7 +117,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     public InMemoryCacheClientOptionsBuilder WithFixedSizing(long maxMemorySize, long averageEntrySize)
     {
         Target.MaxMemorySize = maxMemorySize;
-        Target.SizeCalculator = _ => averageEntrySize;
+        Target.SetFixedSize(averageEntrySize);
         return this;
     }
 

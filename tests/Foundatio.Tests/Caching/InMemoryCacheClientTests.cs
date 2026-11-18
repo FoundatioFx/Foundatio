@@ -1628,6 +1628,26 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ListUpdate_AfterReplacingFixedSizeCalculator_SizesTheCompleteDictionary()
+    {
+        var options = new InMemoryCacheClientOptionsBuilder().WithFixedSizing(1_000, 64).CloneValues(true).Build();
+        var counts = new List<int>();
+        options.SizeCalculator += value =>
+        {
+            var dictionary = Assert.IsType<Dictionary<int, DateTime?>>(value);
+            counts.Add(dictionary.Count);
+            return dictionary.Count;
+        };
+        using var cache = new InMemoryCacheClient(options);
+
+        Assert.Equal(2, await cache.ListAddAsync("list", [1, 2]));
+        Assert.Equal(1, await cache.ListAddAsync("list", [3]));
+        Assert.Equal(1, await cache.ListRemoveAsync("list", [1]));
+        Assert.Equal([2, 1, 3, 2], counts);
+        Assert.Equal(2, cache.CurrentMemorySize);
+    }
+
+    [Fact]
     public async Task ListUpdate_WithNullableValues_PreservesNullFiltering()
     {
         // Arrange
