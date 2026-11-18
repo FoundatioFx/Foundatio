@@ -389,7 +389,7 @@ await queue.StartWorkingAsync(
 
 Because entries can be redelivered after a failed complete or abandon, handlers should be idempotent.
 
-The worker checks queue setup before each dequeue so providers can recover after invalidating cached queue state. Settlement uses the policy resolved from the queue's `ResiliencePolicyProvider`; already completed or abandoned entries skip the policy.
+`StartWorkingAsync` performs the initial queue setup before starting the worker. If that setup fails, the exception reaches the caller. Once running, the worker checks setup before each dequeue so providers can recover after invalidating cached queue state. Settlement uses the policy from the queue options, including an explicit `IHaveResiliencePolicyProvider` implementation. Already completed or abandoned entries skip the policy.
 
 ## Queue Entry Options
 

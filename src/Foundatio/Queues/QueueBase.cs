@@ -59,7 +59,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _serializer = options.Serializer;
         options.Behaviors.ForEach(AttachBehavior);
 
-        var resiliencePolicyProvider = _options.ResiliencePolicyProvider;
+        var resiliencePolicyProvider = options.GetResiliencePolicyProvider() ?? options.ResiliencePolicyProvider;
         _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
@@ -313,8 +313,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _logger.LogTrace("Queue {QueueName} start working", _options.Name);
 
         var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-        return Task.Run(() => RunWorkerAsync(handler, autoComplete, linkedCancellationTokenSource.Token), linkedCancellationTokenSource.Token)
-            .ContinueWith(_ => linkedCancellationTokenSource.Dispose(), TaskScheduler.Default);
+        return Task.Run(async () =>
+        {
+            using (linkedCancellationTokenSource)
+                await RunWorkerAsync(handler, autoComplete, linkedCancellationTokenSource.Token).AnyContext();
+        });
     }
 
     private async Task RunWorkerAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)
@@ -328,6 +331,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             try
             {
                 await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+
                 entry = await DequeueImplAsync(cancellationToken).AnyContext();
                 consecutiveDequeueErrors = 0;
             }

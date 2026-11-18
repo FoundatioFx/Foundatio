@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Resilience;
+using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -15,6 +16,37 @@ namespace Foundatio.Tests.Queue;
 public class QueueWorkerTests : TestWithLoggingBase
 {
     public QueueWorkerTests(ITestOutputHelper output) : base(output) { }
+
+    [Fact]
+    public async Task StartWorker_WhenCancelledDuringSetup_LeavesEntryQueuedAsync()
+    {
+        using var timeout = CreateTimeout();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        using var queue = CreateQueue();
+        await queue.EnqueueAsync(new SimpleWorkItem());
+        int setupCalls = 0;
+        queue.EnsureCreated = _ => ++setupCalls == 2 ? cancellation.CancelAsync() : Task.CompletedTask;
+
+        await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellation.Token);
+        await queue.Worker.WaitAsync(timeout.Token);
+
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, stats.Queued);
+        Assert.Equal(0, stats.Dequeued);
+        Assert.Equal(0, stats.Errors);
+    }
+
+    [Fact]
+    public async Task StartWorker_WhenBackoffTimerFails_PropagatesWorkerFaultAsync()
+    {
+        using var timeout = CreateTimeout();
+        using var queue = CreateQueue(new FailingTimeProvider());
+        queue.BeforeDequeue = () => throw new InvalidOperationException("Dequeue failed");
+
+        await queue.StartWorkingAsync((_, _) => Task.CompletedTask, cancellationToken: timeout.Token);
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => queue.Worker.WaitAsync(timeout.Token));
+        Assert.Equal("Timer unavailable", exception.Message);
+    }
 
     [Theory]
     [InlineData(false, false)]
@@ -159,11 +191,15 @@ public class QueueWorkerTests : TestWithLoggingBase
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    public async Task StartWorker_WhenSettlementFails_UsesConfiguredResiliencePolicyAsync(int maxAttempts)
+    [InlineData(1, true)]
+    public async Task StartWorker_WhenSettlementFails_UsesConfiguredResiliencePolicyAsync(int maxAttempts, bool useInterface = false)
     {
         using var timeout = CreateTimeout();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        using var queue = CreateQueue(maxAttempts: maxAttempts);
+        using var queue = useInterface
+            ? new WorkerQueue(new ProviderQueueOptions(new ResiliencePolicyProvider()
+                .WithPolicy<IQueue<SimpleWorkItem>>(new ResiliencePolicy { MaxAttempts = maxAttempts })))
+            : CreateQueue(maxAttempts: maxAttempts);
         queue.FailComplete = entry => entry.Value.Data == "First";
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
@@ -381,6 +417,17 @@ public class QueueWorkerTests : TestWithLoggingBase
 
             return base.AbandonAsync(queueEntry);
         }
+    }
+
+    private sealed class ProviderQueueOptions(IResiliencePolicyProvider provider) : InMemoryQueueOptions<SimpleWorkItem>, IHaveResiliencePolicyProvider
+    {
+        IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => provider;
+    }
+
+    private sealed class FailingTimeProvider : TimeProvider
+    {
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+            => throw new NotSupportedException("Timer unavailable");
     }
 
     private sealed class RecordingTimeProvider : FakeTimeProvider
