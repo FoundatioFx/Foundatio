@@ -63,7 +63,7 @@ internal static class TaskExtensions
     {
         try
         {
-            await timeProvider.Delay(delay, cancellationToken);
+            await Task.Delay(delay, timeProvider, cancellationToken);
         }
         catch (OperationCanceledException)
         {

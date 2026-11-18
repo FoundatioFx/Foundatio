@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Resilience;
@@ -19,7 +19,7 @@ public static class Run
         return Task.Run(async () =>
         {
             if (delay.Ticks > 0)
-                await timeProvider.Delay(delay, cancellationToken).AnyContext();
+                await Task.Delay(delay, timeProvider, cancellationToken).AnyContext();
 
             if (cancellationToken.IsCancellationRequested)
                 return;

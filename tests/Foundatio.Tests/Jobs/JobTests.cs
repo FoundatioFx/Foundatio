@@ -27,7 +27,7 @@ public class JobTests : TestWithLoggingBase
         var sp = new ServiceCollection().BuildServiceProvider();
         using var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
         var resultTask = new JobRunner(job, sp, Log).RunAsync(timeoutCancellationTokenSource.Token);
-        await TimeProvider.System.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(2), TimeProvider.System, TestCancellationToken);
         Assert.True(await resultTask);
     }
 

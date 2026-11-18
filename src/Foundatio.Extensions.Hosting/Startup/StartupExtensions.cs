@@ -215,7 +215,7 @@ public static partial class StartupExtensions
             while (result.Status == HealthStatus.Unhealthy && !t.IsCancellationRequested)
             {
                 logger.LogDebug("Last health check was unhealthy. Waiting 1s until next health check");
-                await timeProvider.Delay(TimeSpan.FromSeconds(1), t).AnyContext();
+                await Task.Delay(TimeSpan.FromSeconds(1), timeProvider, t).AnyContext();
                 result = await healthCheckService.CheckHealthAsync(c => c.Name != CheckForStartupActionsName && shouldWaitForHealthCheck(c), t).AnyContext();
             }
         }, -100);

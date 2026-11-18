@@ -180,7 +180,7 @@ public class ScheduledTimer : IDisposable
             if (_minimumInterval > TimeSpan.Zero)
             {
                 _logger.LogTrace("Sleeping for minimum interval: {Interval:g}", _minimumInterval);
-                await _timeProvider.Delay(_minimumInterval, _disposedCancellationTokenSource.Token).AnyContext();
+                await Task.Delay(_minimumInterval, _timeProvider, _disposedCancellationTokenSource.Token).AnyContext();
                 _logger.LogTrace("Finished sleeping");
             }
 

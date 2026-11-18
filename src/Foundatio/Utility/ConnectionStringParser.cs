@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace Foundatio.Utility;
 
-public static class ConnectionStringParser
+public static partial class ConnectionStringParser
 {
     // borrowed from https://github.com/dotnet/corefx/blob/release/2.2/src/Common/src/System/Data/Common/DbConnectionOptions.Common.cs
     private const string ConnectionStringPattern =                  // may not contain embedded null except trailing last value
@@ -28,20 +28,21 @@ public static class ConnectionStringParser
             + "[\\s;]*[\u0000\\s]*"                                     // trailing whitespace/semicolons (DataSourceLocator), embedded nulls are allowed only in the end
         ;
 
-    private static readonly Regex _connectionStringRegex = new(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace);
+    [GeneratedRegex(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.IgnorePatternWhitespace)]
+    private static partial Regex ConnectionStringRegex();
 
     private static Dictionary<string, string?> Parse(string? connectionString, IDictionary<string, string>? synonyms, string? defaultKey = null)
     {
         var parseTable = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         const int keyIndex = 1, valueIndex = 2;
-        Debug.Assert(keyIndex == _connectionStringRegex.GroupNumberFromName("key"), "wrong key index");
-        Debug.Assert(valueIndex == _connectionStringRegex.GroupNumberFromName("value"), "wrong value index");
+        Debug.Assert(keyIndex == ConnectionStringRegex().GroupNumberFromName("key"), "wrong key index");
+        Debug.Assert(valueIndex == ConnectionStringRegex().GroupNumberFromName("value"), "wrong value index");
 
         if (String.IsNullOrEmpty(connectionString))
             return parseTable;
 
-        var match = _connectionStringRegex.Match(connectionString);
+        var match = ConnectionStringRegex().Match(connectionString);
         if (!match.Success || (match.Length != connectionString.Length))
         {
             if (defaultKey != null)

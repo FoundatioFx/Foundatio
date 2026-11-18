@@ -34,7 +34,7 @@ public class JobManager : IJobManager
     private readonly ICacheClient _cacheClient;
     private readonly List<ScheduledJobInstance> _jobs = [];
     private ScheduledJobInstance[] _jobsArray;
-    private readonly object _lock = new();
+    private readonly System.Threading.Lock _lock = new();
 
     public JobManager(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
     {

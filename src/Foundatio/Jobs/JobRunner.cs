@@ -230,7 +230,7 @@ public class JobRunner
 
     private static CancellationTokenSource? _jobShutdownCancellationTokenSource;
     private static FileSystemWatcher? _shutdownFileWatcher;
-    private static readonly object _lock = new();
+    private static readonly System.Threading.Lock _lock = new();
     public static CancellationToken GetShutdownCancellationToken(ILogger? logger = null)
     {
         if (_jobShutdownCancellationTokenSource != null)

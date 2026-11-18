@@ -64,6 +64,11 @@ docs                                  # Documentation site
 - Run `dotnet format` to auto-format code
 - Match existing file style; minimize diffs
 - No code comments unless necessary—code should be self-explanatory
+- **Field naming**: private and internal fields, including `static` and `static readonly` fields, use `_camelCase`. Never use an `s_` prefix.
+- **No `partial` classes**: keep a type in one file. Don't split a class across files to organize it. Extract a separate internal type instead.
+- **Loops**: prefer a loop with an explicit exit condition. Use `while (true)` only for a compare-and-swap retry loop whose iterations only repeat when another writer made progress, and document that.
+- **Log messages**: write one string literal per message (no `+` concatenation), with no trailing punctuation and no sentences joined by periods. Join clauses with commas.
+- **Naming in comments and APIs**: avoid "publish" for in-memory state changes; that word means the message bus in Foundatio. Use "store", "swap" or "replace".
 
 ### Architecture Patterns
 
@@ -284,6 +289,12 @@ public async Task SetAsync_WithInvalidKey_ThrowsArgumentException(string key)
 - Mirror the main code structure (e.g., `Caching/` tests for `src/Foundatio/Caching/`)
 - Use constructors and `IDisposable` for setup/teardown
 - Inject `ITestOutputHelper` for test logging
+- **Derive from the test base classes**: test classes inherit `TestWithLoggingBase` (or the feature base such as `CacheClientTestsBase`), take `ITestOutputHelper`, and use `Log` and `TestCancellationToken`. Never write a bare test class.
+- **Every new test uses `// Arrange`, `// Act`, `// Assert` comments**, combined as `// Arrange & Act` or `// Act & Assert` when steps can't be separated.
+- **Order tests alphabetically by method name** within a class. Insert new tests at their alphabetical position instead of grouping them at the end or by topic. Put private helper methods and nested helper types at the bottom of the class.
+- **Create clients through one factory** that applies the test's `Log`, serializer and resilience policy provider, then the test's own options. Don't construct clients ad hoc.
+- **Don't change existing tests to make new code pass.** Keep timing-based tests' staged checks (for example, verifying a TTL is not cleared early). If one is flaky, fix the cause or ask first.
+- **Only add tests that pin a real behavior or a bug fix.** Don't add tests for internal data structure details, allocation micro-pins, or adversarial callbacks without a reported bug. Prefer extending an existing test.
 
 ### Integration Testing
 
@@ -330,6 +341,7 @@ The following skills are available in this repository under `.agents/skills/`:
 | ----- | ----------- |
 | [foundatio](.agents/skills/foundatio/SKILL.md) | Foundatio infrastructure abstractions — caching, queuing, messaging, file storage, locking, jobs, resilience |
 | [cross-repo-validation](.agents/skills/cross-repo-validation/SKILL.md) | Build and test provider repos against local core in parallel, emulator setup, preview bumps and PR updates. Use automatically for core or TestHarness changes |
+| [foundatio-release](.agents/skills/foundatio-release/SKILL.md) | Staged, verified release of core and provider repos: CI on exact commits, API compat gate, nuget.org restorability, stable version bumps, tagging order |
 | [analyzing-dotnet-performance](.agents/skills/analyzing-dotnet-performance/SKILL.md) | Scans .NET code for ~50 performance anti-patterns across async, memory, strings, collections, LINQ, regex, serialization, and I/O |
 | [microbenchmarking](.agents/skills/microbenchmarking/SKILL.md) | Creating, running, configuring, or reviewing BenchmarkDotNet benchmarks |
 | [dotnet-trace-collect](.agents/skills/dotnet-trace-collect/SKILL.md) | Capturing diagnostic artifacts to diagnose production .NET performance issues |

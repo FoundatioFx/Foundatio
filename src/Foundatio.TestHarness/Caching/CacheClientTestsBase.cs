@@ -55,6 +55,46 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task AddAsync_WithConcurrentAcquireAndRelease_OnlyOneOwnerAtATime()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Mirrors CacheLockProvider: AddAsync acquires and RemoveIfEqualAsync releases. An AddAsync that stores
+            // the key must report success, otherwise the key is left behind with no owner to release it.
+            const string cacheKey = "lock";
+            int owners = 0;
+            int overlaps = 0;
+            int failedReleases = 0;
+
+            // Act
+            await Parallel.ForEachAsync(Enumerable.Range(0, 1000), TestCancellationToken, async (i, _) =>
+            {
+                string owner = i.ToString();
+                if (!await cache.AddAsync(cacheKey, owner))
+                    return;
+
+                if (Interlocked.Increment(ref owners) > 1)
+                    Interlocked.Increment(ref overlaps);
+
+                Interlocked.Decrement(ref owners);
+                if (!await cache.RemoveIfEqualAsync(cacheKey, owner))
+                    Interlocked.Increment(ref failedReleases);
+            });
+
+            // Assert
+            Assert.Equal(0, overlaps);
+            Assert.Equal(0, failedReleases);
+            Assert.False(await cache.ExistsAsync(cacheKey));
+        }
+    }
+
     public virtual async Task AddAsync_WithConcurrentRequests_OnlyOneSucceeds()
     {
         var cache = GetCacheClient();
@@ -698,6 +738,28 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task IncrementAsync_WithConcurrentRequests_DoesNotLoseUpdates()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const int increments = 1000;
+
+            // Act
+            await Parallel.ForEachAsync(Enumerable.Range(0, increments), TestCancellationToken,
+                async (_, _) => await cache.IncrementAsync("counter", 1));
+
+            // Assert
+            Assert.Equal(increments, (await cache.GetAsync<long>("counter")).Value);
+        }
+    }
+
     public virtual async Task IncrementAsync_WithExpiration_SetsExpirationCorrectly()
     {
         var cache = GetCacheClient();
@@ -928,6 +990,31 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // The first call returns its full value and each later increase returns the delta, so the
+            // differences of every successful update add up to the final maximum.
+            long total = 0;
+
+            // Act
+            await Parallel.ForEachAsync(Enumerable.Range(1, 1000), TestCancellationToken,
+                async (i, _) => Interlocked.Add(ref total, await cache.SetIfHigherAsync("set-if-higher", (long)i)));
+
+            // Assert
+            Assert.Equal(1000, (await cache.GetAsync<long>("set-if-higher")).Value);
+            Assert.Equal(1000, total);
+        }
+    }
+
     public virtual async Task SetIfHigherAsync_WithFloatingPointDecimals_ComparesCorrectly()
     {
         var cache = GetCacheClient();
@@ -997,6 +1084,30 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            await cache.SetAsync("set-if-lower", 1001L);
+
+            long total = 0;
+
+            // Act
+            await Parallel.ForEachAsync(Enumerable.Range(1, 1000), TestCancellationToken,
+                async (i, _) => Interlocked.Add(ref total, await cache.SetIfLowerAsync("set-if-lower", (long)i)));
+
+            // Assert
+            Assert.Equal(1, (await cache.GetAsync<long>("set-if-lower")).Value);
+            Assert.Equal(1000, total);
+        }
+    }
+
     public virtual async Task SetIfLowerAsync_WithFloatingPointDecimals_ComparesCorrectly()
     {
         var cache = GetCacheClient();
@@ -1063,6 +1174,29 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             longResult = await cache.SetIfLowerAsync("negative-low-long", -100L);
             Assert.Equal(50L, longResult); // difference: -50 - (-100) = 50
             Assert.Equal(-100L, (await cache.GetAsync<long>("negative-low-long")).Value);
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithConcurrentRequests_DoesNotLoseValues()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const int values = 1000;
+
+            // Act
+            await Parallel.ForEachAsync(Enumerable.Range(0, values), TestCancellationToken,
+                async (i, _) => await cache.ListAddAsync("set", new[] { i }));
+            var result = await cache.GetListAsync<int>("set");
+
+            // Assert
+            Assert.Equal(values, result.Value.Count);
         }
     }
 
@@ -1181,6 +1315,14 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(3, listValue.Value.Count);
             expiration = await cache.GetExpirationAsync("list-null-exp");
             Assert.Null(expiration);
+
+            // Re-adding an unchanged member leaves a separately set key TTL in place, matching Redis ZADD.
+            Assert.Equal(1, await cache.ListAddAsync("list-unchanged-ttl", [1]));
+            await cache.SetExpirationAsync("list-unchanged-ttl", TimeSpan.FromHours(1));
+            await cache.ListAddAsync("list-unchanged-ttl", [1]);
+            expiration = await cache.GetExpirationAsync("list-unchanged-ttl");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
         }
     }
 
@@ -2736,6 +2878,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(await cache.SetAsync("test5", 1));
             Assert.Null(await cache.GetExpirationAsync("test5"));
 
+            // A null expiration on an existing key removes its expiration.
+            Assert.True(await cache.SetAsync("test6", 1, TimeSpan.FromMinutes(5)));
+            Assert.NotNull(await cache.GetExpirationAsync("test6"));
+            Assert.True(await cache.SetAsync("test6", 2));
+            Assert.Equal(2, (await cache.GetAsync<int>("test6")).Value);
+            Assert.Null(await cache.GetExpirationAsync("test6"));
+
             // Expire time right now
             Assert.False(await cache.SetAsync("test9", 1, utcNow));
             Assert.False(await cache.ExistsAsync("test9"));
@@ -3147,6 +3296,58 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(200L, (await cache.GetAsync<long>("set-if-higher-null-exp-long")).Value);
             expiration = await cache.GetExpirationAsync("set-if-higher-null-exp-long");
             Assert.Null(expiration); // Null expiration removes TTL
+        }
+    }
+
+    public virtual async Task SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            await cache.SetAsync("set-if-higher-lower", 10L, TimeSpan.FromHours(1));
+
+            // Act
+            long lowerDifference = await cache.SetIfHigherAsync("set-if-higher-lower", 5L, TimeSpan.FromMinutes(5));
+            long equalDifference = await cache.SetIfHigherAsync("set-if-higher-lower", 10L);
+
+            // Assert
+            Assert.Equal(0, lowerDifference);
+            Assert.Equal(0, equalDifference);
+            Assert.Equal(10, (await cache.GetAsync<long>("set-if-higher-lower")).Value);
+            var expiration = await cache.GetExpirationAsync("set-if-higher-lower");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+        }
+    }
+
+    public virtual async Task SetIfLowerAsync_WithHigherOrEqualValue_LeavesValueAndExpirationUnchanged()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            await cache.SetAsync("set-if-lower-higher", 10L, TimeSpan.FromHours(1));
+
+            // Act
+            long higherDifference = await cache.SetIfLowerAsync("set-if-lower-higher", 15L, TimeSpan.FromMinutes(5));
+            long equalDifference = await cache.SetIfLowerAsync("set-if-lower-higher", 10L);
+
+            // Assert
+            Assert.Equal(0, higherDifference);
+            Assert.Equal(0, equalDifference);
+            Assert.Equal(10, (await cache.GetAsync<long>("set-if-lower-higher")).Value);
+            var expiration = await cache.GetExpirationAsync("set-if-lower-higher");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
         }
     }
 

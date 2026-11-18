@@ -113,7 +113,7 @@ public class ScheduledJobService : BackgroundService
         }
 
         // delay until right after next minute starts to sync with cron schedules
-        await _timeProvider.Delay(TimeSpan.FromMinutes(1) - TimeSpan.FromSeconds(_timeProvider.GetUtcNow().Second) - TimeSpan.FromMilliseconds(_timeProvider.GetUtcNow().Millisecond), stoppingToken).AnyContext();
+        await Task.Delay(TimeSpan.FromMinutes(1) - TimeSpan.FromSeconds(_timeProvider.GetUtcNow().Second) - TimeSpan.FromMilliseconds(_timeProvider.GetUtcNow().Millisecond), _timeProvider, stoppingToken).AnyContext();
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -149,7 +149,7 @@ public class ScheduledJobService : BackgroundService
             }
 
             // shortest cron schedule is 1 minute so only check every minute
-            await _timeProvider.Delay(TimeSpan.FromMinutes(1) - TimeSpan.FromSeconds(_timeProvider.GetUtcNow().Second) - TimeSpan.FromMilliseconds(_timeProvider.GetUtcNow().Millisecond), stoppingToken).AnyContext();
+            await Task.Delay(TimeSpan.FromMinutes(1) - TimeSpan.FromSeconds(_timeProvider.GetUtcNow().Second) - TimeSpan.FromMilliseconds(_timeProvider.GetUtcNow().Millisecond), _timeProvider, stoppingToken).AnyContext();
         }
     }
 }

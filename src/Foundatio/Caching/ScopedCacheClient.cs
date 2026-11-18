@@ -32,7 +32,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 {
     private string _keyPrefix;
     private bool _isLocked;
-    private readonly object _lock = new();
+    private readonly System.Threading.Lock _lock = new();
     private readonly bool _shouldDispose;
 
     /// <summary>

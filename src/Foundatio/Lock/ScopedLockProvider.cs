@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Resilience;
@@ -11,7 +11,7 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory
 {
     private string _keyPrefix;
     private bool _isLocked;
-    private readonly object _lock = new();
+    private readonly System.Threading.Lock _lock = new();
 
     public ScopedLockProvider(ILockProvider lockProvider, string? scope = null)
     {

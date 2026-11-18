@@ -50,11 +50,7 @@ internal static class ClonerCache<T>
         public FastClonerCache.TypeCloneMetadata? Metadata { get; } = metadata;
     }
 
-#if NET10_0_OR_GREATER
     private static readonly System.Threading.Lock sync = new System.Threading.Lock();
-#else
-    private static readonly object sync = new object();
-#endif
     private static Func<T, FastCloneState, T>? cloner;
     private static bool isSafe;
     private static bool canUseNoTrackingState;
