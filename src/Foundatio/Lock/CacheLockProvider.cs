@@ -113,6 +113,9 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
     private async Task<ILock?> TryAcquireImplAsync(string resource, TimeSpan? timeUntilExpires, bool releaseOnDispose, CancellationToken cancellationToken)
     {
+        if (timeUntilExpires is { } duration && duration != TimeSpan.Zero && duration < CacheClientExtensions.MinimumExpiration)
+            throw new ArgumentOutOfRangeException(nameof(timeUntilExpires), timeUntilExpires, "Lock duration must be zero or at least 5 milliseconds.");
+
         bool shouldWait = !cancellationToken.IsCancellationRequested;
         string lockId = GenerateNewLockId();
         timeUntilExpires ??= TimeSpan.FromMinutes(20);
@@ -126,6 +129,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         {
             do
             {
+                var attemptStarted = LeaseTimestamp.Capture(_timeProvider);
                 try
                 {
                     if (timeUntilExpires.Value == TimeSpan.Zero) // no lock timeout
@@ -139,7 +143,24 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
                 }
 
                 if (gotLock)
+                {
+                    if (timeUntilExpires.Value > TimeSpan.Zero &&
+                        attemptStarted.ElapsedUntil(LeaseTimestamp.Capture(_timeProvider), _timeProvider) >= timeUntilExpires.Value)
+                    {
+                        gotLock = false;
+                        _logger.LogWarning("Lock {Resource} ({LockId}) may have expired before acquisition completed", resource, lockId);
+                        try
+                        {
+                            await ReleaseAsync(resource, lockId).AnyContext();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Unable to release expired acquisition of lock {Resource} ({LockId})", resource, lockId);
+                        }
+                    }
+
                     break;
+                }
 
                 _logger.LogDebug("Failed to acquire lock {Resource} ({LockId})", resource, lockId);
                 if (cancellationToken.IsCancellationRequested)
@@ -244,13 +265,25 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _logger.LogDebug("Released lock: {Resource}", resource);
     }
 
-    public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+    /// <inheritdoc />
+    /// <exception cref="LockException">The cache rejected renewal or the response consumed the renewed lease duration.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The supplied duration is less than 5 milliseconds.</exception>
+    public async Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
-        if (!timeUntilExpires.HasValue)
-            timeUntilExpires = TimeSpan.FromMinutes(20);
+        if (timeUntilExpires < CacheClientExtensions.MinimumExpiration)
+            throw new ArgumentOutOfRangeException(nameof(timeUntilExpires), timeUntilExpires, "Lock renewal duration must be at least 5 milliseconds.");
 
-        _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
-        return _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value)).AsTask();
+        var duration = timeUntilExpires ?? TimeSpan.FromMinutes(20);
+        _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, duration);
+        var started = await _resiliencePolicy.ExecuteAsync<LeaseTimestamp?>(async _ =>
+        {
+            var attempt = LeaseTimestamp.Capture(_timeProvider);
+            bool renewed = await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, duration).AnyContext();
+            return renewed ? attempt : null;
+        }).AnyContext();
+
+        if (started is null || started.Value.ElapsedUntil(LeaseTimestamp.Capture(_timeProvider), _timeProvider) >= duration)
+            throw new LockException($"Unable to renew lock {resource} ({lockId}): ownership is no longer assured.");
     }
 
     private class ResetEventWithRefCount

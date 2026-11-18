@@ -227,58 +227,25 @@ await using var lck = await locker.TryAcquireAsync(
 );
 ```
 
-### Renewing Locks
+### Renewing a cache-backed lock between batches
 
-For long-running operations, renew the lock:
+For a long-running import, renew before starting each batch. If renewal throws, the loop exits before the next batch starts.
 
 ```csharp
-await using var lck = await locker.TryAcquireAsync(
-    "my-resource",
-    timeUntilExpires: TimeSpan.FromMinutes(1)
-);
+var leaseDuration = TimeSpan.FromMinutes(1);
+await using var lease = await locker.AcquireAsync("import", leaseDuration, cancellationToken: stoppingToken);
 
-if (lck is not null)
+foreach (var batch in batches)
 {
-    // Do some work
-    await DoPartOneAsync();
-
-    // Renew lock for more time
-    await lck.RenewAsync(TimeSpan.FromMinutes(1));
-
-    // Continue work
-    await DoPartTwoAsync();
+    stoppingToken.ThrowIfCancellationRequested();
+    await lease.RenewAsync(leaseDuration);
+    await ProcessBatchAsync(batch, stoppingToken);
 }
 ```
 
-### Automatic Renewal
+Choose a lease long enough for renewal latency, one batch, and scheduling delays. A process pause can still outlast the lease. For writes that must reject a stale owner, enforce ownership at the destination.
 
-For very long operations, set up automatic renewal:
-
-```csharp
-await using var lck = await locker.TryAcquireAsync("my-resource");
-if (lck is null) return;
-
-using var cts = new CancellationTokenSource();
-
-// Start renewal task
-var renewTask = Task.Run(async () =>
-{
-    while (!cts.Token.IsCancellationRequested)
-    {
-        await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
-        await lck.RenewAsync(TimeSpan.FromMinutes(1));
-    }
-});
-
-try
-{
-    await VeryLongRunningOperationAsync();
-}
-finally
-{
-    cts.Cancel();
-}
-```
+Cache-backed renewal requires at least 5 milliseconds. For acquisition, zero requests a non-expiring lock. Other durations below 5 milliseconds throw before touching the cache. When a successful acquisition response takes the whole lease lifetime, `TryAcquireAsync` returns `null` and `AcquireAsync` throws `LockAcquisitionTimeoutException`.
 
 ## Common Patterns
 

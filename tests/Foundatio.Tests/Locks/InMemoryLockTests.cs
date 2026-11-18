@@ -30,6 +30,18 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         return new CacheLockProvider(_cache, _messageBus, null, null, Log);
     }
 
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(-1, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(4, false)]
+    [InlineData(4, true)]
+    public override Task AcquireAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds, bool tryAcquire)
+    {
+        return base.AcquireAsync_WithInvalidDuration_PreservesCurrentOwner(milliseconds, tryAcquire);
+    }
+
     [Fact]
     public override Task CanAcquireAndReleaseLockAsync()
     {
@@ -82,6 +94,35 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     public override Task CanAcquireMultipleScopedResources()
     {
         return base.CanAcquireMultipleScopedResources();
+    }
+
+    [Fact]
+    public override Task RenewAsync_AfterRelease_ThrowsLockExceptionAndDoesNotRecreateLock()
+    {
+        return base.RenewAsync_AfterRelease_ThrowsLockExceptionAndDoesNotRecreateLock();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(4)]
+    public override Task RenewAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds)
+    {
+        return base.RenewAsync_WithInvalidDuration_PreservesCurrentOwner(milliseconds);
+    }
+
+    [Fact]
+    public override Task RenewAsync_WithMissingLock_ThrowsLockException()
+    {
+        return base.RenewAsync_WithMissingLock_ThrowsLockException();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(bool scoped)
+    {
+        return base.RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(scoped);
     }
 
     [Fact]
