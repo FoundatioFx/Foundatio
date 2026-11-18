@@ -473,11 +473,14 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     {
         // Arrange
         var provider = new ResiliencePolicyProvider();
+        var initialDefault = provider.GetDefaultPolicy();
         var queuePolicy = new ResiliencePolicy { MaxAttempts = 2 };
         IResiliencePolicy Resolve() => provider.GetPolicy<IQueue<string>, IQueue>(b => b.WithMaxAttempts(7));
 
         // Act
         var fallback = Resolve();
+        provider.WithDefaultPolicy(initialDefault);
+        var explicitlySelected = Resolve();
         provider.WithDefaultPolicy(b => b.WithMaxAttempts(1));
         var unmatched = Resolve();
         provider.WithPolicy<IQueue>(queuePolicy);
@@ -485,7 +488,10 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         // Assert
         Assert.Equal(7, Assert.IsType<ResiliencePolicy>(fallback).MaxAttempts);
+        Assert.Same(initialDefault, explicitlySelected);
+        Assert.NotSame(initialDefault, unmatched);
         Assert.Same(provider.GetDefaultPolicy(), unmatched);
+        Assert.Same(unmatched, provider.GetPolicy("missing"));
         Assert.Same(queuePolicy, matched);
     }
 
