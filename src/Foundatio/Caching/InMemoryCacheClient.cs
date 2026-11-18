@@ -412,11 +412,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return true;
     }
 
-    private void LogMemorySizeChange(MemorySizeChange change)
+    private void LogMemorySizeChange(in MemorySizeChange change)
     {
-        if (change.Delta is 0)
-            return;
-
         if (change.Overflowed)
             _logger.LogWarning("Memory size counter would overflow, clamping to {MaxValue} (Current={Current}, Delta={Delta})",
                 Int64.MaxValue, change.Before, change.Delta);
@@ -764,8 +761,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 }
 
                 // A logger can write to the same key. Finish the journal and release the list lock first.
-                LogMemorySizeChange(updateLog.SizeChange);
-                LogExpiredListValues(key, updateLog.ExpiredMembers);
+                if (updateLog.SizeChange.Delta != 0)
+                    LogMemorySizeChange(updateLog.SizeChange);
+                if (updateLog.ExpiredMembers > 0)
+                    LogExpiredListValues(key, updateLog.ExpiredMembers);
+
                 return count;
             }
 
@@ -843,7 +843,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return TrySwapEntry(key, stored, desired);
     }
 
-    private readonly record struct ListUpdateLog(MemorySizeChange SizeChange, int ExpiredMembers);
+    private struct ListUpdateLog
+    {
+        public MemorySizeChange SizeChange;
+        public int ExpiredMembers;
+    }
 
     /// <summary>
     /// Updates a stored list while holding its lock. Returns <c>false</c> when the entry was replaced before the
@@ -903,14 +907,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             desired = current.WithValue(list, list.ExpiresAt, size);
         }
 
-        if (!TrySwapEntry(key, current, desired, out var sizeChange))
+        if (!TrySwapEntry(key, current, desired, out updateLog.SizeChange))
         {
             list.Rollback();
             return false;
         }
 
         list.Commit();
-        updateLog = new(sizeChange, expired);
+        updateLog.ExpiredMembers = expired;
         return true;
     }
 
@@ -944,10 +948,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         var desired = candidate.Count is 0 ? null : current.WithValue(candidate, candidate.ExpiresAt, size);
-        if (!TrySwapEntry(key, current, desired, out var sizeChange))
+        if (!TrySwapEntry(key, current, desired, out updateLog.SizeChange))
             return false;
 
-        updateLog = new(sizeChange, expired);
+        updateLog.ExpiredMembers = expired;
         return true;
     }
 
