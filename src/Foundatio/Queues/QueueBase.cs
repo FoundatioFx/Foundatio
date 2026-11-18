@@ -291,7 +291,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected void ResetWorkerErrorCount() => Interlocked.Exchange(ref _workerErrorCount, 0);
 
     /// <summary>
-    /// Starts a background worker that ensures queue setup before dequeuing entries with <see cref="DequeueImplAsync"/> and runs <paramref name="handler"/>
+    /// Starts a background worker that rechecks queue setup after failed receives and dequeues entries with <see cref="DequeueImplAsync"/> and runs <paramref name="handler"/>
     /// for each one until <paramref name="cancellationToken"/> is cancelled or the queue is disposed.
     /// Providers call this from <see cref="StartWorkingImpl"/> so every implementation handles worker errors the same way.
     /// </summary>
@@ -326,7 +326,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     {
         _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
-        int backoffSeconds = 1;
+        int backoffSeconds = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
             if (_logger.IsEnabled(LogLevel.Trace))
@@ -335,12 +335,15 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             IQueueEntry<T>? entry;
             try
             {
-                await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
-                if (cancellationToken.IsCancellationRequested)
-                    break;
+                if (backoffSeconds > 0)
+                {
+                    await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
+                    if (cancellationToken.IsCancellationRequested)
+                        break;
+                }
 
                 entry = await DequeueImplAsync(cancellationToken).AnyContext();
-                backoffSeconds = 1;
+                backoffSeconds = 0;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -349,8 +352,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             catch (Exception ex)
             {
                 IncrementWorkerErrorCount();
+                backoffSeconds = Math.Clamp(backoffSeconds * 2, 1, 30);
                 var delay = TimeSpan.FromSeconds(backoffSeconds * (1 - 0.25 * Random.Shared.NextDouble()));
-                backoffSeconds = Math.Min(30, backoffSeconds * 2);
                 _logger.LogError(ex, "Error dequeuing from {QueueName}, retrying in {Delay:g}: {Message}", _options.Name, delay, ex.Message);
                 await _timeProvider.SafeDelay(delay, cancellationToken).AnyContext();
                 continue;

@@ -107,6 +107,7 @@ public class QueueWorkerTests : TestWithLoggingBase
         await queue.EnqueueAsync(new SimpleWorkItem());
         int setupCalls = 0;
         queue.EnsureCreated = _ => ++setupCalls == 2 ? cancellation.CancelAsync() : Task.CompletedTask;
+        queue.BeforeDequeue = () => throw new InvalidOperationException("Dequeue failed");
 
         // Act
         await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellation.Token);
@@ -116,7 +117,7 @@ public class QueueWorkerTests : TestWithLoggingBase
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(1, stats.Queued);
         Assert.Equal(0, stats.Dequeued);
-        Assert.Equal(0, stats.Errors);
+        Assert.Equal(1, stats.Errors);
     }
 
     [Fact]
@@ -166,7 +167,7 @@ public class QueueWorkerTests : TestWithLoggingBase
 
         // Assert
         var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(3, setupCalls);
+        Assert.Equal(2, setupCalls);
         Assert.Equal(2, dequeueCalls);
         Assert.Equal(1, handlerCalls);
         Assert.Equal(1, stats.Errors);

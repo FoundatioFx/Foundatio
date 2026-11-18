@@ -389,7 +389,7 @@ await queue.StartWorkingAsync(
 
 Because entries can be redelivered after a failed complete or abandon, handlers should be idempotent.
 
-`StartWorkingAsync` performs the initial queue setup before starting the worker. If that setup fails, the exception reaches the caller. Once running, the worker checks setup before each dequeue so providers can recover after invalidating cached queue state. Settlement uses the policy from the queue options, including an explicit `IHaveResiliencePolicyProvider` implementation. Already completed or abandoned entries skip the policy.
+`StartWorkingAsync` performs the initial queue setup before starting the worker. If that setup fails, the exception reaches the caller. Once running, the worker rechecks setup after a failed dequeue so providers can recover after invalidating cached queue state. Settlement uses the policy from the queue options, including an explicit `IHaveResiliencePolicyProvider` implementation. Already completed or abandoned entries skip the policy.
 
 ## Queue Entry Options
 
@@ -895,7 +895,7 @@ var entry = await queue.DequeueAsync(cts.Token);
 
 If you are writing a custom `IQueue<T>` implementation by extending `QueueBase<T>`:
 
-- **`EnsureQueueCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.). The shared worker calls it before each dequeue, so return immediately when setup is current.
+- **`EnsureQueueCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.). The shared worker calls it again after a failed dequeue and retries if setup itself fails.
 - **`DequeueImplAsync`** receives a linked token (caller + disposal). Respect it for the wait/poll operation.
 - **`EnqueueImplAsync`** does not receive a cancellation token — keep enqueue fast and non-blocking.
 - **`StartWorkingImpl`** should call `StartWorker(handler, autoComplete, cancellationToken)` to use the shared loop (see [Worker Error Handling](#worker-error-handling)). Report `WorkerErrorCount` as `QueueStats.Errors` and call `ResetWorkerErrorCount()` when stats are reset. Provider-specific workers can record errors with `IncrementWorkerErrorCount()`.
