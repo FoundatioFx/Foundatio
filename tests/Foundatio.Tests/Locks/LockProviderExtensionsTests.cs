@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Locks;
 public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLoggingBase(output)
 {
     [Fact]
-    public async Task TryAcquireAsync_WithMultipleResources_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
+    public async Task TryAcquireAsync_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
