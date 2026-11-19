@@ -103,6 +103,8 @@ The codebase has NRT enabled. Follow these patterns:
 - Always dispose resources: use `using` statements or `IAsyncDisposable`
 - Handle cancellation tokens properly: check `token.IsCancellationRequested`, pass through call chains
 
+Use `Exceptionless.DateTimeExtensions` for date arithmetic. Use the injected `TimeProvider` for clock reads and elapsed-time measurements.
+
 ### Common Patterns
 
 - **Async suffix**: All async methods end with `Async` (e.g., `GetAsync`, `SetAsync`)

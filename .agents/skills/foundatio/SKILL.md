@@ -23,3 +23,5 @@ Start with the guide for the abstraction you are using. When working from a chec
 Use the in-memory implementations for local tests. Before relying on ordering, deduplication, visibility timeouts, or retry delays in production, check the section for the actual provider. [Provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps)
 
 For reusable provider contract tests, start in [Foundatio.TestHarness](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.TestHarness). For logging in xUnit v3 tests, use the [xUnit v3 logging fixtures](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Xunit.v3/Logging).
+
+Use `Exceptionless.DateTimeExtensions` for date arithmetic, including `SafeAdd` and `SafeSubtract` for deadlines. Use the injected `TimeProvider` for the current time and its monotonic timestamps for measuring elapsed time.
