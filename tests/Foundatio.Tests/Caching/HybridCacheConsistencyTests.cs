@@ -7,21 +7,64 @@ using Foundatio.Caching;
 using Foundatio.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Moq;
 using Xunit;
 
 namespace Foundatio.Tests.Caching;
 
 public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCacheClientTestBase(output)
 {
-    [Fact]
-    public async Task GetAsync_WhenSameClientWritesDuringReadThrough_DoesNotCacheStaleValue()
+    [Theory]
+    [InlineData("scalar")]
+    [InlineData("bulk")]
+    [InlineData("list")]
+    public async Task GetAsync_WhenKeyExpiresBeforeTtlLookup_DoesNotCacheExpiredResult(string operation)
+    {
+        // Arrange
+        const string key = "expires-during-read";
+        var clock = new FakeTimeProvider();
+        var ttl = TimeSpan.FromSeconds(1);
+        using var distributed = new DelayedCache(Log, clock);
+        using var cache = CreateCache(new InMemoryCacheClientOptions { TimeProvider = clock, LoggerFactory = Log }, distributed);
+        if (String.Equals(operation, "list", StringComparison.Ordinal))
+            await distributed.ListAddAsync(key, [1], ttl);
+        else
+            await distributed.SetAsync(key, 1, ttl);
+
+        distributed.AfterNextRead(() =>
+        {
+            clock.Advance(ttl + TimeSpan.FromSeconds(1));
+            return Task.CompletedTask;
+        });
+
+        // Act
+        bool found = operation switch
+        {
+            "scalar" => (await cache.GetAsync<int>(key)).HasValue,
+            "bulk" => (await cache.GetAllAsync<int>([key]))[key].HasValue,
+            "list" => (await cache.GetListAsync<int>(key)).HasValue,
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
+        };
+
+        // Assert
+        Assert.True(found);
+        Assert.False(await distributed.ExistsAsync(key));
+        Assert.False(await cache.ExistsAsync(key));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetAsync_WhenWriteOverlapsReadThrough_DoesNotCacheStaleValue(bool usePeer)
     {
         // Arrange
         const string key = "read-through-race";
-        using var distributed = new DelayedListCache(Log);
+        using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
+        using var peer = CreateCache(distributedCache: distributed);
+        var writer = usePeer ? peer : cache;
         await distributed.SetAsync(key, 1);
-        distributed.AfterNextRead(async () => Assert.True(await cache.SetAsync(key, 2)));
+        distributed.AfterNextRead(async () => Assert.True(await writer.SetAsync(key, 2)));
 
         // Act
         var staleRead = await cache.GetAsync<int>(key).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
@@ -31,6 +74,8 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         Assert.Equal(1, staleRead.Value);
         Assert.Equal(2, nextRead.Value);
         Assert.Equal(2, (await distributed.GetAsync<int>(key)).Value);
+        if (usePeer)
+            Assert.Equal(1, cache.LocalCacheHits);
     }
 
     [Fact]
@@ -50,15 +95,19 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         Assert.Equal([1, 2, 3], fullList.Value.Order());
     }
 
-    [Fact]
-    public async Task GetListAsync_WhenSameClientAddsDuringReadThrough_NextReadIncludesNewMember()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetListAsync_WhenWriteOverlapsReadThrough_NextReadIncludesNewMember(bool usePeer)
     {
         // Arrange
         const string key = "list-read-through-race";
-        using var distributed = new DelayedListCache(Log);
+        using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
+        using var peer = CreateCache(distributedCache: distributed);
+        var writer = usePeer ? peer : cache;
         await distributed.ListAddAsync(key, [1]);
-        distributed.AfterNextRead(async () => Assert.Equal(1, await cache.ListAddAsync(key, [2])));
+        distributed.AfterNextRead(async () => Assert.Equal(1, await writer.ListAddAsync(key, [2])));
 
         // Act
         var staleRead = await cache.GetListAsync<int>(key).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
@@ -67,6 +116,8 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         // Assert
         Assert.Equal([1], staleRead.Value);
         Assert.Equal([1, 2], nextRead.Value.Order());
+        if (usePeer)
+            Assert.Equal(1, cache.LocalCacheHits);
     }
 
     [Theory]
@@ -76,7 +127,7 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
     {
         // Arrange
         const string key = "overlapping-cold-adds";
-        using var distributed = new DelayedListCache(Log);
+        using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
         var secondWriter = useSecondClient ? peer : cache;
@@ -85,6 +136,24 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
 
         // Act
         long added = await cache.ListAddAsync(key, [1]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        // Assert
+        Assert.Equal(1, added);
+        Assert.Equal([1, 2], (await cache.GetListAsync<int>(key)).Value.Order());
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WhenLocalScalarWasReplacedByDistributedList_ReloadsAllMembers()
+    {
+        // Arrange
+        const string key = "changed-list-type";
+        using var cache = CreateCache();
+        Assert.True(await cache.SetAsync(key, "old"));
+        Assert.True(await _distributedCache.RemoveAsync(key));
+        Assert.Equal(1, await _distributedCache.ListAddAsync(key, [1]));
+
+        // Act
+        long added = await cache.ListAddAsync(key, [2]);
 
         // Assert
         Assert.Equal(1, added);
@@ -114,16 +183,18 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
     [InlineData("prefix", false)]
     [InlineData("null-prefix", false)]
     [InlineData("all", false)]
+    [InlineData("empty-keys", false)]
     [InlineData("member", false)]
     [InlineData("key", true)]
     [InlineData("prefix", true)]
     [InlineData("all", true)]
+    [InlineData("empty-keys", true)]
     [InlineData("member", true)]
     public async Task ListAddAsync_WhenRemovedBeforeResponse_KeepsLocalEntryEvicted(string removal, bool useSecondClient)
     {
         // Arrange
         const string key = "pending:list";
-        using var distributed = new DelayedListCache(Log);
+        using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
 
@@ -135,6 +206,7 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
             "prefix" => remover.RemoveByPrefixAsync("pending:"),
             "null-prefix" => remover.RemoveByPrefixAsync(null!),
             "all" => remover.RemoveAllAsync(),
+            "empty-keys" => remover.RemoveAllAsync(Array.Empty<string>()),
             _ => throw new ArgumentOutOfRangeException(nameof(removal))
         });
 
@@ -152,7 +224,7 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
     {
         // Arrange
         const string key = "pending:replacement";
-        using var distributed = new DelayedListCache(Log);
+        using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         distributed.AfterNextWrite(() => setMultiple
             ? cache.SetAllAsync(new Dictionary<string, string> { [key] = "replacement" })
@@ -173,7 +245,7 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         // Arrange
         const string key = "pending:expiration";
         var clock = new FakeTimeProvider();
-        using var distributed = new DelayedListCache(Log, clock);
+        using var distributed = new DelayedCache(Log, clock);
         using var cache = CreateCache(new InMemoryCacheClientOptions { TimeProvider = clock, LoggerFactory = Log }, distributed);
         var ttl = TimeSpan.FromSeconds(5);
         distributed.AfterNextWrite(() => setMultiple
@@ -242,6 +314,61 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         Assert.Equal(expected, (await _distributedCache.GetListAsync<string>(key)).Value!.Order());
         Assert.Equal(expected, (await cache.GetListAsync<string>(key)).Value!.Order());
         Assert.Equal(expected, (await peer.GetListAsync<string>(key)).Value!.Order());
+    }
+
+    [Fact]
+    public async Task SetAllAsync_WhenDistributedBatchPartiallyCommitsBeforeThrowing_InvalidatesBothClients()
+    {
+        // Arrange
+        const string key = "accepted";
+        using var distributed = new InMemoryCacheClient(o => o.LoggerFactory(Log).MaxMemorySize(1000)
+            .MaxEntrySize(10).ShouldThrowOnMaxEntrySizeExceeded(true).SizeCalculator(value => ((string)value).Length));
+        using var cache = CreateCache(distributedCache: distributed);
+        using var peer = CreateCache(distributedCache: distributed);
+        Assert.True(await cache.SetAsync(key, "old"));
+        Assert.Equal("old", (await peer.GetAsync<string>(key)).Value);
+        var values = new Dictionary<string, string> { [key] = "new", ["rejected"] = "exceeds the size limit" };
+
+        // Act
+        await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAllAsync(values));
+
+        // Assert
+        Assert.Equal("new", (await distributed.GetAsync<string>(key)).Value);
+        Assert.Equal("new", (await cache.GetAsync<string>(key)).Value);
+        Assert.Equal("new", (await peer.GetAsync<string>(key)).Value);
+    }
+
+    [Fact]
+    public async Task SetAsync_WhenEvictionThrowsAfterLocalWriteFailure_StillInvalidatesPeer()
+    {
+        // Arrange
+        const string key = "failed-eviction";
+        var clock = new Mock<TimeProvider> { CallBase = true };
+        using var cache = CreateCache(new InMemoryCacheClientOptions
+        {
+            LoggerFactory = Log,
+            TimeProvider = clock.Object,
+            MaxMemorySize = 1000,
+            MaxEntrySize = 10,
+            ShouldThrowOnMaxEntrySizeExceeded = true,
+            SizeCalculator = value =>
+            {
+                if (value is "old")
+                    return 3;
+
+                clock.Setup(c => c.GetUtcNow()).Throws(new InvalidOperationException("Eviction clock failed"));
+                return 11;
+            }
+        });
+        using var peer = CreateCache();
+        Assert.True(await cache.SetAsync(key, "old", TimeSpan.FromMinutes(1)));
+        Assert.Equal("old", (await peer.GetAsync<string>(key)).Value);
+
+        // Act
+        await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAsync(key, "exceeds the size limit"));
+
+        // Assert
+        Assert.Equal("exceeds the size limit", (await peer.GetAsync<string>(key)).Value);
     }
 
     [Fact]
@@ -386,7 +513,7 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         return new HybridCacheClient(distributedCache ?? _distributedCache, messageBus ?? _messageBus, options, Log);
     }
 
-    private sealed class DelayedListCache(ILoggerFactory loggerFactory, TimeProvider? clock = null) : InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).TimeProvider(clock ?? TimeProvider.System)), ICacheClient
+    private sealed class DelayedCache(ILoggerFactory loggerFactory, TimeProvider? clock = null) : InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).TimeProvider(clock ?? TimeProvider.System)), ICacheClient
     {
         private Func<Task>? _afterNextRead;
         private Func<Task>? _afterNextWrite;
@@ -394,6 +521,13 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         public void AfterNextRead(Func<Task> action) => _afterNextRead = action;
 
         public void AfterNextWrite(Func<Task> action) => _afterNextWrite = action;
+
+        async Task<IDictionary<string, CacheValue<T>>> ICacheClient.GetAllAsync<T>(IEnumerable<string> keys)
+        {
+            var values = await GetAllAsync<T>(keys);
+            await RunOnceAsync(ref _afterNextRead);
+            return values;
+        }
 
         async Task<CacheValue<T>> ICacheClient.GetAsync<T>(string key)
         {

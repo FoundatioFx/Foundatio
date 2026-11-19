@@ -148,12 +148,11 @@ This architecture is similar to Microsoft's `HybridCache` (.NET 9+) and other di
 2. **Conditional local update**: L1 (local cache) is only updated if L2 succeeds
 3. **Cross-instance invalidation**: Message bus notifies other instances to clear affected keys
 
-This ensures that:
-- L2 is always the **source of truth**
-- L1 never contains data that doesn't exist in L2
-- Failed distributed writes don't leave stale data in local cache
+L2 is the source of truth. An in-flight read can return the value it fetched before a concurrent write. If an invalidation arrives during a single-key read and leaves L1 empty, the client can fetch the key once more to warm L1 with a current value. Overlapping writes on the same client discard uncertain local values. The next cache miss reads L2.
 
-Concurrent operations on the same instance can't leave an older value in L1. A read-through or write only stores its result locally if no other write, removal or expiration change on that instance touched the key while it was in flight; otherwise the key is evicted and the next read loads it from L2. An invalidation from another instance has the same effect on a write that's in flight. A read-through that overlaps another instance's write can still cache the value it read until the entry expires or the next invalidation arrives, so use expirations for data that must converge quickly.
+Other clients can serve an existing local value until their invalidation arrives. Set a TTL to bound how long a missed message can leave an entry stale.
+
+On a cold scalar or unpaged list read, L2 reports the same null TTL for a persistent key and a missing key. The client checks existence in that case so an entry that expired during the read cannot acquire a permanent local copy. Bulk reads get existence and TTL from the same expiration lookup.
 
 ::: info TTL Skew Between L1 and L2
 When setting expiration times, there is a small timing skew between L1 and L2:

@@ -780,7 +780,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             if (current is not null && current.StoredValue is not IDictionary<T, DateTime?>)
             {
-                if (remove)
+                if (remove || requireExistingList)
                     return 0;
                 throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
             }
