@@ -119,7 +119,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private async Task<ILock?> TryAcquireImplAsync(string resource, TimeSpan? timeUntilExpires, bool releaseOnDispose, CancellationToken cancellationToken)
     {
         var duration = timeUntilExpires ?? ILockProvider.DefaultLeaseDuration;
-        if (duration.Ticks is not 0 && duration < CacheClientExtensions.MinimumExpiration)
+        if (duration != TimeSpan.Zero && duration < CacheClientExtensions.MinimumExpiration)
             throw new ArgumentOutOfRangeException(nameof(timeUntilExpires), timeUntilExpires, "Lock duration must be zero or at least 5 milliseconds.");
 
         bool shouldWait = !cancellationToken.IsCancellationRequested;
@@ -227,7 +227,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     /// </summary>
     private async Task<bool> TryAddLeaseAsync(string resource, string lockId, TimeSpan duration)
     {
-        if (duration.Ticks is 0) // no lock timeout
+        if (duration == TimeSpan.Zero) // no lock timeout
             return await _cacheClient.AddAsync(resource, lockId).AnyContext();
 
         var started = LeaseTimestamp.Capture(_timeProvider);
@@ -283,10 +283,10 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     /// <exception cref="ArgumentOutOfRangeException">The supplied duration is less than 5 milliseconds.</exception>
     public async Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
-        if (timeUntilExpires < CacheClientExtensions.MinimumExpiration)
+        var duration = timeUntilExpires ?? ILockProvider.DefaultLeaseDuration;
+        if (duration < CacheClientExtensions.MinimumExpiration)
             throw new ArgumentOutOfRangeException(nameof(timeUntilExpires), timeUntilExpires, "Lock renewal duration must be at least 5 milliseconds.");
 
-        var duration = timeUntilExpires ?? ILockProvider.DefaultLeaseDuration;
         _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, duration);
         LeaseTimestamp? started;
         try
