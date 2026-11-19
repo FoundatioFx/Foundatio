@@ -114,7 +114,6 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private async Task<ILock?> TryAcquireImplAsync(string resource, TimeSpan? timeUntilExpires, bool releaseOnDispose, CancellationToken cancellationToken)
     {
         var duration = timeUntilExpires ?? TimeSpan.FromMinutes(20);
-
         if (duration != TimeSpan.Zero && duration < CacheClientExtensions.MinimumExpiration)
             throw new ArgumentOutOfRangeException(nameof(timeUntilExpires), timeUntilExpires, "Lock duration must be zero or at least 5 milliseconds.");
 
