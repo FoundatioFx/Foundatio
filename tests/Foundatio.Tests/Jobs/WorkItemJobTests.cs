@@ -13,6 +13,7 @@ using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
+using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -519,8 +520,10 @@ public class WorkItemJobTests : TestWithLoggingBase
         }
     }
 
-    [Fact]
-    public async Task ProcessAsync_WhenEntryWasAlreadyAbandoned_DoesNotReportSuccessOrSettleAgain()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_WhenEntryWasAlreadyAbandoned_DoesNotReportSuccessOrSettleAgain(bool renewOnProgress)
     {
         // Arrange
         using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log).RetryDelay(TimeSpan.Zero));
@@ -530,19 +533,21 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.NotNull(entry);
         var statuses = new ConcurrentQueue<int>();
         await bus.SubscribeAsync<WorkItemStatus>(s => statuses.Enqueue(s.Progress), TestCancellationToken);
+        Exception? reportError = null;
         var handlers = new WorkItemHandlers();
-        handlers.Register<string>(async ctx =>
+        handlers.Register<string>(new RenewingWorkItemHandler(EmptyLock.Empty, async ctx =>
         {
             await entry.AbandonAsync();
-            await ctx.ReportProgressAsync(100);
-        });
+            reportError = await Record.ExceptionAsync(() => ctx.ReportProgressAsync(100));
+        }, _logger) { AutoRenewLockOnProgress = renewOnProgress });
 
         // Act
         var result = await new WorkItemJob(queue, bus, handlers, Log).ProcessAsync(entry, TestCancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.DoesNotContain(100, statuses);
+        Assert.Equal(renewOnProgress, reportError is InvalidOperationException);
+        Assert.Equal([0, -1], statuses);
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
     }
 
@@ -816,6 +821,32 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.Equal(renewalFails, entry.IsAbandoned);
         Assert.Equal(!renewalFails, entry.IsCompleted);
         Assert.Equal([0, renewalFails ? -1 : 100], statuses);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WhenResultIsFailure_AbandonsAndReportsFailure()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log).Retries(0));
+        using var bus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var statuses = new ConcurrentQueue<WorkItemStatus>();
+        await bus.SubscribeAsync<WorkItemStatus>(status => statuses.Enqueue(status), TestCancellationToken);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(ctx =>
+        {
+            ctx.Result = JobResult.FailedWithMessage("Downstream rejected the item");
+            return Task.CompletedTask;
+        });
+        await queue.EnqueueAsync("item", true);
+
+        // Act
+        var result = await new WorkItemJob(queue, bus, handlers, Log).RunAsync(TestCancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal([0, -1], statuses.Select(status => status.Progress));
+        Assert.Equal("Failed: Downstream rejected the item", statuses.Last().Message);
+        Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
     }
 
     [Theory]

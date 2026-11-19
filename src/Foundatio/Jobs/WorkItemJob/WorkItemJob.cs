@@ -131,7 +131,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
-            var context = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, execution);
+            var context = new WorkItemContext(workItemData, JobId, lockValue, execution);
             try
             {
                 await handler.HandleItemAsync(context).AnyContext();
@@ -143,14 +143,18 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
             execution.ThrowIfRenewalFailed();
             if (queueEntry.IsAbandoned)
-                return context.Result.IsSuccess ? JobResult.FailedWithMessage($"Queue entry {queueEntry.Id} was already abandoned") : context.Result;
+            {
+                terminalResult = context.Result.IsSuccess ? JobResult.FailedWithMessage($"Queue entry {queueEntry.Id} was already abandoned") : context.Result;
+                return terminalResult;
+            }
 
             if (!queueEntry.IsCompleted)
             {
                 if (!context.Result.IsSuccess)
                 {
                     await queueEntry.AbandonAsync().AnyContext();
-                    return context.Result;
+                    terminalResult = context.Result;
+                    return terminalResult;
                 }
 
                 await queueEntry.CompleteAsync().AnyContext();
@@ -183,10 +187,10 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             {
                 if (queueEntry.Value.SendProgressReports && terminalResult is not null)
                 {
-                    if (terminalResult.Error is { } error)
-                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {error.Message}").AnyContext();
-                    else
+                    if (terminalResult.IsSuccess)
                         await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
+                    else
+                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {terminalResult.Error?.Message ?? terminalResult.Message}").AnyContext();
                 }
             }
         }

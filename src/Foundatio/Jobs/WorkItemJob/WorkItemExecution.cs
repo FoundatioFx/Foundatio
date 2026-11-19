@@ -14,14 +14,20 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
     private Renewals? _renewals = workItemLock.GetType() == typeof(EmptyLock) ? null : new Renewals(CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
     private int _stopped;
 
-    public CancellationToken GetHandlerToken(CancellationToken hostToken) => _renewals?.Cancellation?.Token ?? hostToken;
+    public CancellationToken HandlerToken => _renewals?.Cancellation?.Token ?? cancellationToken;
     public Exception? RenewalError => Volatile.Read(ref _renewals)?.Failure?.SourceException;
     private bool HasStopped => Volatile.Read(ref _stopped) != 0 || entry.IsAbandoned || entry.IsCompleted;
 
     public async Task ReportProgressAsync(int progress, string? message)
     {
         if (HasStopped)
+        {
+            // A renewal checkpoint must not pass silently once the queue has given the delivery away.
+            if (handler.AutoRenewLockOnProgress && Volatile.Read(ref _stopped) == 0 && entry.IsAbandoned)
+                throw new InvalidOperationException("The queue entry was abandoned before processing finished");
+
             return;
+        }
 
         if (handler.AutoRenewLockOnProgress)
         {

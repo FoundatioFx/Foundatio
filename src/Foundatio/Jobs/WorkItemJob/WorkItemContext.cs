@@ -16,8 +16,8 @@ public class WorkItemContext
         _progressCallback = progressCallback;
     }
 
-    internal WorkItemContext(object data, string jobId, ILock workItemLock, CancellationToken cancellationToken, WorkItemExecution execution)
-        : this(data, jobId, workItemLock, execution.GetHandlerToken(cancellationToken))
+    internal WorkItemContext(object data, string jobId, ILock workItemLock, WorkItemExecution execution)
+        : this(data, jobId, workItemLock, execution.HandlerToken)
     {
         _execution = execution;
     }
