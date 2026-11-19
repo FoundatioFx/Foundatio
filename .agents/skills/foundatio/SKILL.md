@@ -28,4 +28,4 @@ Use the in-memory implementations for local tests. Before relying on ordering, d
 
 For reusable provider contract tests, start in [Foundatio.TestHarness](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.TestHarness). For logging in xUnit v3 tests, use the [xUnit v3 logging fixtures](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Xunit.v3/Logging).
 
-Use `Exceptionless.DateTimeExtensions` for date arithmetic, including `SafeAdd` and `SafeSubtract` for deadlines. Use the injected `TimeProvider` for the current time and its monotonic timestamps for measuring elapsed time.
+In applications that reference `Exceptionless.DateTimeExtensions`, use its `SafeAdd` and `SafeSubtract` for deadline arithmetic. Foundatio core uses its internal `Foundatio.Utility.DateTimeExtensions.SafeAdd`. Read the clock and measure elapsed time through the injected `TimeProvider`.

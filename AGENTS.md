@@ -104,7 +104,7 @@ The codebase has NRT enabled. Follow these patterns:
 - Always dispose resources: use `using` statements or `IAsyncDisposable`
 - Handle cancellation tokens properly: check `token.IsCancellationRequested`, pass through call chains
 
-Use `Exceptionless.DateTimeExtensions` for date arithmetic. Use the injected `TimeProvider` for clock reads and elapsed-time measurements.
+Use the internal `Foundatio.Utility.DateTimeExtensions.SafeAdd` for deadline arithmetic in core. In projects that reference `Exceptionless.DateTimeExtensions`, use its date helpers. Use the injected `TimeProvider` for clock reads and elapsed time.
 
 ### Common Patterns
 
