@@ -63,6 +63,7 @@ docs                                  # Documentation site
 - Follow `.editorconfig` rules and [Microsoft C# conventions](https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions)
 - Run `dotnet format` to auto-format code
 - Match existing file style; minimize diffs
+- Separate a guard clause from preceding setup with a blank line. Leave a blank line after an early return or a closing block before the next independent statement.
 - No code comments unless necessary—code should be self-explanatory
 - **Control statements**: Use braces for multiline conditions or bodies. If any branch of an `if` / `else if` / `else` chain uses braces, brace every branch. A single-statement guard can omit braces.
 - **Block spacing**: Leave a blank line after a closing block (including a block lambda) before the next independent statement. Keep connected clauses such as `else`, `catch`, `finally`, and the `while` of a `do` loop together. Consecutive closing braces stay together.
@@ -185,7 +186,7 @@ Before marking work complete, verify:
 5. **Documentation updated**: XML doc comments added/updated for public APIs
 6. **Interface documentation**: Update interface definitions and docs with any API changes
 7. **Feature documentation**: Add entries to [docs/](docs/) folder for new features or significant changes
-8. **Keep the consumer skill focused**: Document behavior and examples in the owning guide. Update [the Foundatio skill](.agents/skills/foundatio/SKILL.md) when a reader needs a new guide, entry point, or way to find the right implementation.
+8. **Keep the consumer skill focused**: Put examples and provider details in the owning guide. Update [the Foundatio skill](.agents/skills/foundatio/SKILL.md) when the entry point changes or a short warning would prevent incorrect API use. Link to the guide for the details.
 9. **Breaking changes flagged**: Clearly identify any breaking changes for review
 10. **Providers validated**: For changes to core abstractions or `Foundatio.TestHarness`, follow [cross-repo-validation](.agents/skills/cross-repo-validation/SKILL.md) to build and test each affected provider repo against local core, using parallel subagents
 
@@ -296,7 +297,7 @@ public async Task SetAsync_WithInvalidKey_ThrowsArgumentException(string key)
 - **Derive from the test base classes**: test classes inherit `TestWithLoggingBase` (or the feature base such as `CacheClientTestsBase`), take `ITestOutputHelper`, and use `Log` and `TestCancellationToken`. Never write a bare test class.
 - **Every new test uses `// Arrange`, `// Act`, `// Assert` comments**, combined as `// Arrange & Act` or `// Act & Assert` when steps can't be separated.
 - **Order tests alphabetically by method name** within a class. Insert new tests at their alphabetical position instead of grouping them at the end or by topic. Put private helper methods and nested helper types at the bottom of the class.
-- **Follow the fixture's setup**: Reuse its existing factory or construct the in-memory client directly with the test logger. Share setup within a fixture when cases need the same configuration. Use a test double for timing or provider failures the real implementation cannot produce deterministically.
+- **Follow the fixture's setup**: Reuse its existing factory, including the configured logger, serializer, and resilience policy. In fixtures that construct clients directly, follow that pattern with the in-memory implementation and test logger. Use a test double when a provider failure or delay cannot be reproduced deterministically with the real client.
 - **Don't change existing tests to make new code pass.** Keep timing-based tests' staged checks (for example, verifying a TTL is not cleared early). If one is flaky, fix the cause or ask first.
 - **Only add tests that pin a real behavior or a bug fix.** Don't add tests for internal data structure details, allocation micro-pins, or adversarial callbacks without a reported bug. Prefer extending an existing test.
 
