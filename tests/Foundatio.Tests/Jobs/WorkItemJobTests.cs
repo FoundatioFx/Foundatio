@@ -520,10 +520,34 @@ public class WorkItemJobTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
+    public async Task ProcessAsync_WhenCompletionObserverThrows_ReportsCompletedEntry()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+        using var bus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var error = new InvalidOperationException("Completion observer failed");
+        using var observer = queue.Completed.AddHandler((_, _) => throw error);
+        var statuses = new ConcurrentQueue<int>();
+        await bus.SubscribeAsync<WorkItemStatus>(s => statuses.Enqueue(s.Progress), TestCancellationToken);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(_ => Task.CompletedTask);
+        await queue.EnqueueAsync("item", true);
+
+        // Act
+        var result = await new WorkItemJob(queue, bus, handlers, Log).RunAsync(TestCancellationToken);
+
+        // Assert
+        Assert.Same(error, result.Error);
+        Assert.Equal(1, (await queue.GetQueueStatsAsync()).Completed);
+        Assert.Equal([0, 100], statuses);
+    }
+
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ProcessAsync_WhenEntryWasAlreadyAbandoned_DoesNotReportSuccessOrSettleAgain(bool renewOnProgress)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ProcessAsync_WhenEntryIsRedelivered_PreservesRetryOutcome(bool renewOnProgress, bool redeliverDuringRenewal)
     {
         // Arrange
         using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log).RetryDelay(TimeSpan.Zero));
@@ -533,22 +557,41 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.NotNull(entry);
         var statuses = new ConcurrentQueue<int>();
         await bus.SubscribeAsync<WorkItemStatus>(s => statuses.Enqueue(s.Progress), TestCancellationToken);
-        Exception? reportError = null;
-        var handlers = new WorkItemHandlers();
-        handlers.Register<string>(new RenewingWorkItemHandler(EmptyLock.Empty, async ctx =>
+        var retryHandlers = new WorkItemHandlers();
+        retryHandlers.Register<string>(_ => Task.CompletedTask);
+        var retryJob = new WorkItemJob(queue, bus, retryHandlers, Log);
+        async Task RedeliverAsync()
         {
             await entry.AbandonAsync();
-            reportError = await Record.ExceptionAsync(() => ctx.ReportProgressAsync(100));
-        }, _logger) { AutoRenewLockOnProgress = renewOnProgress });
+            await retryJob.RunAsync(TestCancellationToken);
+        }
+
+        using var observer = queue.LockRenewed.AddHandler((_, e) =>
+            redeliverDuringRenewal && ReferenceEquals(e.Entry, entry) ? RedeliverAsync() : Task.CompletedTask);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(new DelegateWorkItemHandler(async ctx =>
+        {
+            if (!redeliverDuringRenewal)
+                await RedeliverAsync();
+
+            await ctx.ReportProgressAsync(50);
+        }, _logger)
+        { AutoRenewLockOnProgress = renewOnProgress });
 
         // Act
         var result = await new WorkItemJob(queue, bus, handlers, Log).ProcessAsync(entry, TestCancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Equal(renewOnProgress, reportError is InvalidOperationException);
-        Assert.Equal([0, -1], statuses);
-        Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
+        if (renewOnProgress)
+            Assert.IsType<InvalidOperationException>(result.Error);
+        else
+            Assert.Null(result.Error);
+
+        Assert.Equal([0, 0, 100], statuses);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, stats.Abandoned);
+        Assert.Equal(1, stats.Completed);
     }
 
     [Theory]
@@ -574,7 +617,8 @@ public class WorkItemJobTests : TestWithLoggingBase
             await locker.ReleaseAsync(lease.Resource);
             renewalError = await Assert.ThrowsAsync<LockException>(() => ctx.RenewLockAsync());
             Assert.True(ctx.CancellationToken.IsCancellationRequested);
-        }, _logger) { AutoRenewLockOnProgress = false });
+        }, _logger)
+        { AutoRenewLockOnProgress = false });
         await queue.EnqueueAsync("item");
 
         // Act
@@ -885,7 +929,8 @@ public class WorkItemJobTests : TestWithLoggingBase
 
             report = ctx.ReportProgressAsync(50);
             return Task.CompletedTask;
-        }, _logger) { AutoRenewLockOnProgress = renewOnProgress });
+        }, _logger)
+        { AutoRenewLockOnProgress = renewOnProgress });
 
         // Act
         var processing = new WorkItemJob(queue, bus, handlers, Log).ProcessAsync(entry, TestCancellationToken);

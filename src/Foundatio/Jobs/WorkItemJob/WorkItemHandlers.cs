@@ -76,8 +76,9 @@ public interface IWorkItemHandler
     /// When <c>true</c>, the queue entry and work item lock are automatically renewed each time
     /// the handler reports progress. Defaults to <c>false</c>. If work-item lock renewal fails,
     /// the report throws before sending the update and <see cref="WorkItemContext.CancellationToken"/>
-    /// signals that protected work should stop. Queue-entry renewal errors are logged. If the queue has already
-    /// abandoned the entry, the report throws <see cref="InvalidOperationException"/>.
+    /// signals that protected work should stop. Queue-entry renewal errors are logged. While the handler is
+    /// active, the report throws <see cref="InvalidOperationException"/> if its entry is marked abandoned
+    /// before or during renewal. A provider can redeliver an item without updating the original entry.
     /// </summary>
     bool AutoRenewLockOnProgress { get; set; }
 

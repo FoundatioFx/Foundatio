@@ -14,24 +14,18 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
     private Renewals? _renewals = workItemLock.GetType() == typeof(EmptyLock) ? null : new Renewals(CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
     private int _stopped;
 
-    public CancellationToken HandlerToken => _renewals?.Cancellation?.Token ?? cancellationToken;
+    public CancellationToken GetHandlerToken(CancellationToken hostToken) => _renewals?.Cancellation?.Token ?? hostToken;
     public Exception? RenewalError => Volatile.Read(ref _renewals)?.Failure?.SourceException;
-    private bool HasStopped => Volatile.Read(ref _stopped) != 0 || entry.IsAbandoned || entry.IsCompleted;
 
     public async Task ReportProgressAsync(int progress, string? message)
     {
-        if (HasStopped)
-        {
-            // A renewal checkpoint must not pass silently once the queue has given the delivery away.
-            if (handler.AutoRenewLockOnProgress && Volatile.Read(ref _stopped) == 0 && entry.IsAbandoned)
-                throw new InvalidOperationException("The queue entry was abandoned before processing finished");
-
+        bool renewOnProgress = handler.AutoRenewLockOnProgress;
+        if (!IsProcessing(throwIfAbandoned: renewOnProgress))
             return;
-        }
 
-        if (handler.AutoRenewLockOnProgress)
+        if (renewOnProgress)
         {
-            if (!await RenewAsync(includeQueueEntry: true).AnyContext() || HasStopped)
+            if (!await RenewAsync(includeQueueEntry: true).AnyContext() || !IsProcessing(throwIfAbandoned: true))
                 return;
         }
         else
@@ -48,12 +42,26 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
             throw new InvalidOperationException("The work item is no longer being processed");
     }
 
+    private bool IsProcessing(bool throwIfAbandoned)
+    {
+        if (Volatile.Read(ref _stopped) != 0)
+            return false;
+
+        if (!entry.IsAbandoned)
+            return !entry.IsCompleted;
+
+        if (throwIfAbandoned)
+            throw new InvalidOperationException("The queue entry was abandoned before processing finished");
+
+        return false;
+    }
+
     private async Task<bool> RenewAsync(bool includeQueueEntry)
     {
         var renewals = LazyInitializer.EnsureInitialized(ref _renewals, static () => new Renewals(null));
         lock (renewals)
         {
-            if (HasStopped)
+            if (!IsProcessing(throwIfAbandoned: includeQueueEntry))
                 return false;
 
             renewals.Failure?.Throw();
