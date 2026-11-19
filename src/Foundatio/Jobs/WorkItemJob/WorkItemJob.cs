@@ -127,7 +127,6 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
 
         using var execution = new WorkItemExecution(this, handler, queueEntry, workItemDataType, lockValue, cancellationToken);
-        JobResult? abandonReason = null;
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
@@ -138,7 +137,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             }
             finally
             {
-                await execution.StopAsync().AnyContext();
+                await execution.StopAndDrainRenewalsAsync().AnyContext();
             }
 
             execution.ThrowIfRenewalFailed();
@@ -148,11 +147,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             if (!queueEntry.IsCompleted)
             {
                 if (!context.Result.IsSuccess)
-                {
-                    abandonReason = context.Result;
-                    await queueEntry.AbandonAsync().AnyContext();
-                    return abandonReason;
-                }
+                    return await execution.AbandonAsync(context.Result).AnyContext();
 
                 await queueEntry.CompleteAsync().AnyContext();
                 handler.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItemData);
@@ -162,18 +157,16 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
         catch (Exception ex)
         {
-            var error = ex is OperationCanceledException ? execution.RenewalError ?? ex : ex;
+            var error = execution.GetProcessingError(ex, activity);
             activity?.SetErrorStatus(error);
-            bool abandon = !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
+            bool abandon = !execution.AbandonAttempted && !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
             var result = JobResult.FromException(error, abandon
                 ? $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}"
                 : $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
             if (!abandon)
                 return result;
 
-            abandonReason = result;
-            await queueEntry.AbandonAsync().AnyContext();
-            return abandonReason;
+            return await execution.AbandonAsync(result).AnyContext();
         }
         finally
         {
@@ -187,7 +180,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
                 {
                     if (queueEntry.IsCompleted)
                         await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
-                    else if (queueEntry.IsAbandoned && abandonReason is not null)
+                    else if (execution.ConfirmedAbandonment is { } abandonReason)
                         await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {abandonReason.Error?.Message ?? abandonReason.Message}").AnyContext();
                 }
             }

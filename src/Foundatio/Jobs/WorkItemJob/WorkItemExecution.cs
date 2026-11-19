@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,11 +12,12 @@ namespace Foundatio.Jobs;
 
 internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, CancellationToken cancellationToken) : IDisposable
 {
-    private Renewals? _renewals = workItemLock.GetType() == typeof(EmptyLock) ? null : new Renewals(CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
+    private RenewalState? _renewals = workItemLock.GetType() == typeof(EmptyLock) ? null : new RenewalState(CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
     private int _stopped;
 
     public CancellationToken GetHandlerToken(CancellationToken hostToken) => _renewals?.Cancellation?.Token ?? hostToken;
-    public Exception? RenewalError => Volatile.Read(ref _renewals)?.Failure?.SourceException;
+    public bool AbandonAttempted { get; private set; }
+    public JobResult? ConfirmedAbandonment { get; private set; }
 
     public async Task ReportProgressAsync(int progress, string? message)
     {
@@ -34,6 +36,11 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
         }
 
         await job.ReportHandlerProgressAsync(handler, entry, dataType, progress, message).AnyContext();
+        if (renewOnProgress && Volatile.Read(ref _stopped) == 0)
+        {
+            ThrowIfRenewalFailed();
+            ThrowIfEntryAbandoned();
+        }
     }
 
     public async Task RenewLockAsync()
@@ -47,18 +54,21 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
         if (Volatile.Read(ref _stopped) != 0)
             return false;
 
-        if (!entry.IsAbandoned)
-            return !entry.IsCompleted;
-
         if (throwIfAbandoned)
-            throw new InvalidOperationException("The queue entry was abandoned before processing finished");
+            ThrowIfEntryAbandoned();
 
-        return false;
+        return !entry.IsAbandoned && !entry.IsCompleted;
+    }
+
+    private void ThrowIfEntryAbandoned()
+    {
+        if (entry.IsAbandoned)
+            throw new InvalidOperationException("The queue entry was abandoned before processing finished");
     }
 
     private async Task<bool> RenewAsync(bool includeQueueEntry)
     {
-        var renewals = LazyInitializer.EnsureInitialized(ref _renewals, static () => new Renewals(null));
+        var renewals = LazyInitializer.EnsureInitialized(ref _renewals, static () => new RenewalState(null));
         lock (renewals)
         {
             if (!IsProcessing(throwIfAbandoned: includeQueueEntry))
@@ -75,10 +85,16 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
             else
                 await RenewWorkItemLockAsync(renewals).AnyContext();
         }
-        catch
+        catch (Exception ex)
         {
-            // A cancellation callback or queue logger can also throw. Preserve the ownership failure.
-            renewals.Failure?.Throw();
+            if (renewals.Failure is { } failure)
+            {
+                if (!ReferenceEquals(failure.SourceException, ex))
+                    Activity.Current?.AddException(ex);
+
+                failure.Throw();
+            }
+
             throw;
         }
         finally
@@ -106,7 +122,7 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
         }
     }
 
-    private async Task RenewWorkItemLockAsync(Renewals renewals)
+    private async Task RenewWorkItemLockAsync(RenewalState renewals)
     {
         try
         {
@@ -123,7 +139,36 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
         Volatile.Read(ref _renewals)?.Failure?.Throw();
     }
 
-    public Task StopAsync()
+    public Exception GetProcessingError(Exception error, Activity? activity)
+    {
+        if (error is OperationCanceledException && Volatile.Read(ref _renewals)?.Failure is { } failure && !ReferenceEquals(error, failure.SourceException))
+        {
+            activity?.AddException(error);
+            return failure.SourceException;
+        }
+
+        return error;
+    }
+
+    public async Task<JobResult> AbandonAsync(JobResult result)
+    {
+        AbandonAttempted = true;
+        using var attempt = entry.Value.SendProgressReports ? new QueueEntryAbandonment(entry) : null;
+        try
+        {
+            await entry.AbandonAsync().AnyContext();
+        }
+        catch (Exception ex) when (attempt?.ObserverThrew(ex) == true)
+        {
+            ConfirmedAbandonment = result;
+            throw;
+        }
+
+        ConfirmedAbandonment = result;
+        return result;
+    }
+
+    public Task StopAndDrainRenewalsAsync()
     {
         // A concurrent first renewal either sees the stop or has already registered its state.
         Interlocked.Exchange(ref _stopped, 1);
@@ -142,7 +187,8 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
 
     public void Dispose() => _renewals?.Cancellation?.Dispose();
 
-    private sealed class Renewals(CancellationTokenSource? cancellation)
+    // Concurrent renewals share the first ownership error. The monitor guards the active count and drain signal.
+    private sealed class RenewalState(CancellationTokenSource? cancellation)
     {
         private ExceptionDispatchInfo? _failure;
         public CancellationTokenSource? Cancellation { get; } = cancellation;
@@ -150,11 +196,19 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
         public int ActiveCount { get; set; }
         public TaskCompletionSource? Drained { get; set; }
 
-        public Task RecordFailureAsync(Exception error)
+        public async Task RecordFailureAsync(Exception error)
         {
-            return Interlocked.CompareExchange(ref _failure, ExceptionDispatchInfo.Capture(error), null) is null && Cancellation is not null
-                ? Cancellation.CancelAsync()
-                : Task.CompletedTask;
+            if (Interlocked.CompareExchange(ref _failure, ExceptionDispatchInfo.Capture(error), null) is not null || Cancellation is null)
+                return;
+
+            try
+            {
+                await Cancellation.CancelAsync().AnyContext();
+            }
+            catch (Exception callbackError)
+            {
+                Activity.Current?.AddException(callbackError);
+            }
         }
     }
 }

@@ -559,7 +559,15 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         if (Abandoned != null)
         {
             var args = new AbandonedEventArgs<T> { Queue = this, Entry = entry };
-            await Abandoned.InvokeAsync(this, args).AnyContext();
+            try
+            {
+                await Abandoned.InvokeAsync(this, args).AnyContext();
+            }
+            catch (Exception ex)
+            {
+                QueueEntryAbandonment.RecordObserverError(entry, ex);
+                throw;
+            }
         }
     }
 

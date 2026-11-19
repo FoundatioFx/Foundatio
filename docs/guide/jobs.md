@@ -448,13 +448,13 @@ public record DeleteEntityWorkItem
 
 `AutoRenewLockOnProgress` defaults to `false`. Enabling it uses each explicit report as a renewal checkpoint. Choose checkpoints within the lease duration. The queue controls redelivery. The default handler uses `EmptyLock`; override `GetWorkItemLockAsync` when handlers need a shared, exclusive lock on a resource.
 
-Use the context methods for renewal so the job can observe failures. A failed work-item lock renewal cancels the handler token and throws before the progress update is sent. Stop protected work at that point. Even if the handler catches the exception, the job attempts to abandon an unsettled entry. The queue's retry and dead-letter policies determine what happens next.
+Use the context methods for renewal so the job can observe failures. If the work-item lock renewal fails before publication, the report throws the provider exception and cancels the handler token. Stop protected work at that point. Even if the handler catches the exception, the job attempts to abandon an unsettled entry. The queue's retry and dead-letter policies determine what happens next.
 
-Queue-entry renewal errors are logged. While the handler is active, an auto-renewing report throws if its own queue entry is marked abandoned before or during renewal. A provider can redeliver an item without updating the original entry. Make side effects safe to repeat across attempts.
+Queue-entry renewal errors are logged. After delivery, an awaited auto-renewing report checks again for a recorded work-item lock failure or a locally abandoned entry before the handler continues. A subscriber may already have received the update at that point. A provider can redeliver an item without updating the original entry. Make side effects safe to repeat across attempts.
 
 Await each report whose delivery or order matters. The job waits for in-flight renewals before settling the entry and releasing the work-item lock. If the handler returns before awaiting a report, publication can be skipped or finish later.
 
-With `includeProgressReporting: true`, the job sends a start message before it tries to acquire the work-item lock. If it cannot acquire the lock, that can be the only message for the attempt. After trying to release an acquired lock, the job reports 100 for a completed entry or -1 for an entry it abandoned, including on a non-success `Result`. An old handler that finds its entry already abandoned sends no automatic outcome. Retries share the same `WorkItemId`, and their best-effort messages can overlap.
+With `includeProgressReporting: true`, the job sends a start message before it tries to acquire the work-item lock. If it cannot acquire the lock, that can be the only message for the attempt. Explicit handler reports also work with automatic reports disabled. After trying to release an acquired lock, the job reports 100 for a completed entry or -1 when its own abandonment is confirmed, including on a non-success `Result`. A built-in queue can confirm abandonment even if a subsequent `Abandoned` observer throws. An attempt that loses a settlement race or receives an ambiguous provider error sends no automatic failure. Retries share the same `WorkItemId`, and their best-effort messages can overlap.
 
 ### WorkItemHandlers
 

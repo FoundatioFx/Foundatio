@@ -78,7 +78,8 @@ public interface IWorkItemHandler
     /// the report throws before sending the update and <see cref="WorkItemContext.CancellationToken"/>
     /// signals that protected work should stop. Queue-entry renewal errors are logged. While the handler is
     /// active, the report throws <see cref="InvalidOperationException"/> if its entry is marked abandoned
-    /// before or during renewal. A provider can redeliver an item without updating the original entry.
+    /// before renewal, during renewal, or while the progress update is being delivered.
+    /// A provider can redeliver an item without updating the original entry.
     /// </summary>
     bool AutoRenewLockOnProgress { get; set; }
 
