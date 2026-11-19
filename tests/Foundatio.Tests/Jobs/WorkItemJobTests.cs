@@ -467,7 +467,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.Equal(0, stats.Completed);
         Assert.Equal(1, stats.Abandoned);
         Assert.Equal([0, 50, -1], statuses.Select(status => status.Status.Progress));
-        var failure = Assert.Single(statuses, status => status.Status.Progress == -1);
+        var failure = Assert.Single(statuses, status => status.Status.Progress is -1);
         Assert.StartsWith("Failed:", failure.Status.Message);
         Assert.False(failure.IsAbandoned);
     }

@@ -260,7 +260,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             {
                 lock (_sync)
                 {
-                    if (--_activeCount == 0)
+                    if (--_activeCount is 0)
                         _completion?.TrySetResult();
                 }
             }
@@ -271,7 +271,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             lock (_sync)
             {
                 _stopped = true;
-                if (_activeCount == 0)
+                if (_activeCount is 0)
                     return Task.CompletedTask;
 
                 return (_completion ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
