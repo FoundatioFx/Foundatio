@@ -126,7 +126,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         // Only notify other nodes if the key actually existed and was removed from distributed cache.
         // If removed == false, the key didn't exist, so no other node needs to be notified.
         if (removed)
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+            await PublishInvalidationAsync([key]).AnyContext();
 
         return removed;
     }
@@ -146,7 +146,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         // Only notify other nodes if the key was actually removed from distributed cache.
         // If removed == false, either the key didn't exist or the value didn't match.
         if (removed)
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+            await PublishInvalidationAsync([key]).AnyContext();
 
         return removed;
     }
@@ -172,7 +172,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = items is null, Keys = items }).AnyContext();
+            await PublishInvalidationAsync(items).AnyContext();
 
         return removed;
     }
@@ -189,7 +189,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [$"{prefix}*"] }).AnyContext();
+            await PublishInvalidationAsync([$"{prefix}*"]).AnyContext();
 
         return removed;
     }
@@ -643,22 +643,22 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         var ticket = _fence.BeginRead(key);
         var result = await ReadAndStoreAsync(ticket).AnyContext();
-        if (result.HasValue && !ticket.IsCurrent && !await _localCache.ExistsAsync(key).AnyContext())
+        if (!result.HasValue || ticket.IsCurrent || await _localCache.ExistsAsync(key).AnyContext())
+            return result;
+
+        // A delayed peer notification can invalidate a read even when L2 already returned the new value.
+        // Fetch once more to warm L1 without reinstalling a snapshot that may have been invalidated.
+        var retry = _fence.BeginRead(key);
+        if (!retry.IsCurrent)
+            return result;
+
+        try
         {
-            // A delayed peer notification can invalidate a read even when L2 already returned the new value.
-            // Fetch once more to warm L1 without reinstalling a snapshot that may have been invalidated.
-            var retry = _fence.BeginRead(key);
-            if (retry.IsCurrent)
-            {
-                try
-                {
-                    await ReadAndStoreAsync(retry).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Unable to refresh {Key} after an overlapping cache invalidation", key);
-                }
-            }
+            await ReadAndStoreAsync(retry).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to refresh {Key} after an overlapping cache invalidation", key);
         }
 
         return result;
@@ -808,9 +808,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
     }
 
-    private Task PublishInvalidationAsync(string[] keys)
+    private Task PublishInvalidationAsync(string[]? keys)
     {
-        return _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = keys });
+        return _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = keys, FlushAll = keys is null });
     }
 
     /// <summary>

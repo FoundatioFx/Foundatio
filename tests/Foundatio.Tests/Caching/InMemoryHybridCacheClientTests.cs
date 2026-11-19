@@ -139,7 +139,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         var clock = new FakeTimeProvider();
         var ttl = TimeSpan.FromSeconds(1);
         using var distributed = new DelayedCache(Log, clock);
-        using var cache = CreateCache(new InMemoryCacheClientOptions { TimeProvider = clock, LoggerFactory = Log }, distributed);
+        using var cache = CreateCache(new InMemoryCacheClientOptions { TimeProvider = clock }, distributed);
         if (String.Equals(operation, "list", StringComparison.Ordinal))
             await distributed.ListAddAsync(key, [1], ttl);
         else
@@ -474,7 +474,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         const string key = "pending:expiration";
         var clock = new FakeTimeProvider();
         using var distributed = new DelayedCache(Log, clock);
-        using var cache = CreateCache(new InMemoryCacheClientOptions { TimeProvider = clock, LoggerFactory = Log }, distributed);
+        using var cache = CreateCache(new InMemoryCacheClientOptions { TimeProvider = clock }, distributed);
         var ttl = TimeSpan.FromSeconds(5);
         distributed.AfterNextWrite(() => setMultiple
             ? cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?> { [key] = ttl })
@@ -555,32 +555,21 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.ListRemoveAsync_WithNonExistentValues_DoesNotPublishInvalidation();
     }
 
+    public static MatrixTheoryData<bool, bool, bool> ListWriteCases =>
+        new([false, true], [false, true], [false, true]);
+
     [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(false, false, true)]
-    [InlineData(false, true, false)]
-    [InlineData(false, true, true)]
-    [InlineData(true, false, false)]
-    [InlineData(true, false, true)]
-    [InlineData(true, true, false)]
-    [InlineData(true, true, true)]
+    [MemberData(nameof(ListWriteCases))]
     public async Task ListWriteAsync_WhenLocalFallbackExceedsSizeLimit_NextReadReturnsUpdatedValues(bool remove, bool stringValue, bool shouldThrow)
     {
         // Arrange
         bool rejectLocalWrites = false;
-        using var cache = CreateCache(new InMemoryCacheClientOptions
-        {
-            LoggerFactory = Log,
-            MaxMemorySize = 1000,
-            MaxEntrySize = 10,
-            ShouldThrowOnMaxEntrySizeExceeded = shouldThrow,
-            SizeCalculator = _ => !rejectLocalWrites ? 3 : throw new InvalidOperationException("Sizing failed")
-        });
+        using var cache = CreateCache(SizeLimitedOptions(_ => !rejectLocalWrites ? 3 : throw new InvalidOperationException("Sizing failed"), shouldThrow));
         using var peer = CreateCache();
         const string key = "rejected-local-list-write";
         Assert.Equal(2, await cache.ListAddAsync(key, ["old", "keep"]));
-        Assert.Equal(["keep", "old"], (await cache.LocalCache.GetListAsync<string>(key)).Value!.Order());
-        Assert.Equal(["keep", "old"], (await peer.GetListAsync<string>(key)).Value!.Order());
+        Assert.Equal(["keep", "old"], (await cache.LocalCache.GetListAsync<string>(key)).Value.Order());
+        Assert.Equal(["keep", "old"], (await peer.GetListAsync<string>(key)).Value.Order());
         rejectLocalWrites = true;
 
         // Act
@@ -605,9 +594,9 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         }
 
         string[] expected = remove ? ["keep"] : ["keep", "new", "old"];
-        Assert.Equal(expected, (await _distributedCache.GetListAsync<string>(key)).Value!.Order());
-        Assert.Equal(expected, (await cache.GetListAsync<string>(key)).Value!.Order());
-        Assert.Equal(expected, (await peer.GetListAsync<string>(key)).Value!.Order());
+        Assert.Equal(expected, (await _distributedCache.GetListAsync<string>(key)).Value.Order());
+        Assert.Equal(expected, (await cache.GetListAsync<string>(key)).Value.Order());
+        Assert.Equal(expected, (await peer.GetListAsync<string>(key)).Value.Order());
     }
 
     [Fact]
@@ -952,22 +941,16 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         // Arrange
         const string key = "failed-eviction";
         var clock = new Mock<TimeProvider> { CallBase = true };
-        using var cache = CreateCache(new InMemoryCacheClientOptions
+        var options = SizeLimitedOptions(value =>
         {
-            LoggerFactory = Log,
-            TimeProvider = clock.Object,
-            MaxMemorySize = 1000,
-            MaxEntrySize = 10,
-            ShouldThrowOnMaxEntrySizeExceeded = true,
-            SizeCalculator = value =>
-            {
-                if (value is "old")
-                    return 3;
+            if (String.Equals(value as string, "old", StringComparison.Ordinal))
+                return 3;
 
-                clock.Setup(c => c.GetUtcNow()).Throws(new InvalidOperationException("Eviction clock failed"));
-                return 11;
-            }
+            clock.Setup(c => c.GetUtcNow()).Throws(new InvalidOperationException("Eviction clock failed"));
+            return 11;
         });
+        options.TimeProvider = clock.Object;
+        using var cache = CreateCache(options);
         using var peer = CreateCache();
         Assert.True(await cache.SetAsync(key, "old", TimeSpan.FromMinutes(1)));
         Assert.Equal("old", (await peer.GetAsync<string>(key)).Value);
@@ -983,14 +966,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public async Task SetAsync_WhenLocalWriteAndInvalidationThrow_PreservesWriteError()
     {
         // Arrange
-        using var cache = CreateCache(new InMemoryCacheClientOptions
-        {
-            LoggerFactory = Log,
-            MaxMemorySize = 1000,
-            MaxEntrySize = 10,
-            ShouldThrowOnMaxEntrySizeExceeded = true,
-            SizeCalculator = value => value is "old" ? 3 : throw new InvalidOperationException("Sizing failed")
-        });
+        using var cache = CreateCache(SizeLimitedOptions(value =>
+            String.Equals(value as string, "old", StringComparison.Ordinal) ? 3 : throw new InvalidOperationException("Sizing failed")));
         const string key = "failed-local-write";
         Assert.True(await cache.SetAsync(key, "old"));
         _messageBus.Dispose();
@@ -1005,6 +982,23 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public async Task SetAsync_WhenOverlappingWritesReturnOutOfOrder_ReadsLastDistributedValue()
+    {
+        // Arrange
+        const string key = "overlapping-writes";
+        using var distributed = new DelayedCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        distributed.AfterNextWrite(async () => Assert.True(await cache.SetAsync(key, 2)));
+
+        // Act
+        Assert.True(await cache.SetAsync(key, 1).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+
+        // Assert
+        Assert.Equal(2, (await distributed.GetAsync<int>(key)).Value);
+        Assert.Equal(2, (await cache.GetAsync<int>(key)).Value);
+    }
+
+    [Fact]
     public async Task SetAsync_WhenReplacementExpiresDuringLocalSizing_DoesNotReturnOldValue()
     {
         // Arrange
@@ -1014,11 +1008,10 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         using var cache = CreateCache(new InMemoryCacheClientOptions
         {
             TimeProvider = clock,
-            LoggerFactory = Log,
             MaxMemorySize = 1000,
             SizeCalculator = value =>
             {
-                if (value is "replacement")
+                if (String.Equals(value as string, "replacement", StringComparison.Ordinal))
                     clock.Advance(TimeSpan.FromSeconds(1));
                 return 3;
             }
@@ -1171,64 +1164,41 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     {
         return base.SetUnixTimeSecondsAsync_WithUtcDateTime_StoresCorrectly();
     }
+
+    public static MatrixTheoryData<ScalarWrite, bool> ScalarWriteCases =>
+        new(Enum.GetValues<ScalarWrite>(), [false, true]);
+
     [Theory]
-    [InlineData("Add", false)]
-    [InlineData("Add", true)]
-    [InlineData("Set", false)]
-    [InlineData("Set", true)]
-    [InlineData("SetAll", false)]
-    [InlineData("SetAll", true)]
-    [InlineData("Replace", false)]
-    [InlineData("Replace", true)]
-    [InlineData("ReplaceIfEqual", false)]
-    [InlineData("ReplaceIfEqual", true)]
-    [InlineData("IncrementLong", false)]
-    [InlineData("IncrementLong", true)]
-    [InlineData("IncrementDouble", false)]
-    [InlineData("IncrementDouble", true)]
-    [InlineData("HigherLong", false)]
-    [InlineData("HigherLong", true)]
-    [InlineData("HigherDouble", false)]
-    [InlineData("HigherDouble", true)]
-    [InlineData("LowerLong", false)]
-    [InlineData("LowerLong", true)]
-    [InlineData("LowerDouble", false)]
-    [InlineData("LowerDouble", true)]
-    public async Task WriteAsync_WhenLocalFallbackExceedsSizeLimit_NextReadReturnsUpdatedValue(string operation, bool shouldThrow)
+    [MemberData(nameof(ScalarWriteCases))]
+    public async Task WriteAsync_WhenLocalFallbackExceedsSizeLimit_NextReadReturnsUpdatedValue(ScalarWrite operation, bool shouldThrow)
     {
         // Arrange
         bool rejectLocalWrites = false;
-        using var cache = CreateCache(new InMemoryCacheClientOptions
-        {
-            LoggerFactory = Log,
-            MaxMemorySize = 1000,
-            MaxEntrySize = 10,
-            ShouldThrowOnMaxEntrySizeExceeded = shouldThrow,
-            SizeCalculator = value => !rejectLocalWrites || value is 42L ? 3 : throw new InvalidOperationException("Sizing failed")
-        });
+        using var cache = CreateCache(SizeLimitedOptions(value =>
+            !rejectLocalWrites || value is 42L ? 3 : throw new InvalidOperationException("Sizing failed"), shouldThrow));
         using var peer = CreateCache();
         const string key = "rejected-local-write";
         Assert.True(await cache.SetAsync(key, 10L));
         Assert.Equal(10L, (await cache.LocalCache.GetAsync<long>(key)).Value);
         Assert.Equal(10L, (await peer.GetAsync<long>(key)).Value);
-        if (String.Equals(operation, "Add", StringComparison.Ordinal))
+        if (operation is ScalarWrite.Add)
             Assert.True(await _distributedCache.RemoveAsync(key));
         rejectLocalWrites = true;
 
         // Act
         Task write = operation switch
         {
-            "Add" => cache.AddAsync(key, 15L),
-            "Set" => cache.SetAsync(key, 15L),
-            "SetAll" => cache.SetAllAsync(new Dictionary<string, long> { [key] = 15L, ["accepted-local-write"] = 42L }),
-            "Replace" => cache.ReplaceAsync(key, 15L),
-            "ReplaceIfEqual" => cache.ReplaceIfEqualAsync(key, 15L, 10L),
-            "IncrementLong" => cache.IncrementAsync(key, 5L),
-            "IncrementDouble" => cache.IncrementAsync(key, 5d),
-            "HigherLong" => cache.SetIfHigherAsync(key, 15L),
-            "HigherDouble" => cache.SetIfHigherAsync(key, 15d),
-            "LowerLong" => cache.SetIfLowerAsync(key, 5L),
-            "LowerDouble" => cache.SetIfLowerAsync(key, 5d),
+            ScalarWrite.Add => cache.AddAsync(key, 15L),
+            ScalarWrite.Set => cache.SetAsync(key, 15L),
+            ScalarWrite.SetAll => cache.SetAllAsync(new Dictionary<string, long> { [key] = 15L, ["accepted-local-write"] = 42L }),
+            ScalarWrite.Replace => cache.ReplaceAsync(key, 15L),
+            ScalarWrite.ReplaceIfEqual => cache.ReplaceIfEqualAsync(key, 15L, 10L),
+            ScalarWrite.IncrementLong => cache.IncrementAsync(key, 5L),
+            ScalarWrite.IncrementDouble => cache.IncrementAsync(key, 5d),
+            ScalarWrite.HigherLong => cache.SetIfHigherAsync(key, 15L),
+            ScalarWrite.HigherDouble => cache.SetIfHigherAsync(key, 15d),
+            ScalarWrite.LowerLong => cache.SetIfLowerAsync(key, 5L),
+            ScalarWrite.LowerDouble => cache.SetIfLowerAsync(key, 5d),
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         };
 
@@ -1244,20 +1214,45 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
             await write;
         }
 
-        long expected = operation.StartsWith("Lower", StringComparison.Ordinal) ? 5L : 15L;
+        long expected = operation is ScalarWrite.LowerLong or ScalarWrite.LowerDouble ? 5L : 15L;
         Assert.Equal(expected, (await _distributedCache.GetAsync<long>(key)).Value);
         Assert.Equal(expected, (await cache.GetAsync<long>(key)).Value);
-        if (!String.Equals(operation, "Add", StringComparison.Ordinal))
+        if (operation is not ScalarWrite.Add)
             Assert.Equal(expected, (await peer.GetAsync<long>(key)).Value);
-        if (String.Equals(operation, "SetAll", StringComparison.Ordinal))
+        if (operation is ScalarWrite.SetAll)
             Assert.Equal(42L, (await cache.GetAsync<long>("accepted-local-write")).Value);
     }
 
+    public enum ScalarWrite
+    {
+        Add,
+        Set,
+        SetAll,
+        Replace,
+        ReplaceIfEqual,
+        IncrementLong,
+        IncrementDouble,
+        HigherLong,
+        HigherDouble,
+        LowerLong,
+        LowerDouble
+    }
 
     private HybridCacheClient CreateCache(InMemoryCacheClientOptions? options = null, ICacheClient? distributedCache = null, IMessageBus? messageBus = null)
     {
+        if (options is not null)
+            options.LoggerFactory = Log;
+
         return new HybridCacheClient(distributedCache ?? _distributedCache, messageBus ?? _messageBus, options, Log);
     }
+
+    private static InMemoryCacheClientOptions SizeLimitedOptions(Func<object, long> sizeCalculator, bool shouldThrow = true) => new()
+    {
+        MaxMemorySize = 1000,
+        MaxEntrySize = 10,
+        ShouldThrowOnMaxEntrySizeExceeded = shouldThrow,
+        SizeCalculator = sizeCalculator
+    };
 
     private sealed class DelayedCache(ILoggerFactory loggerFactory, TimeProvider? clock = null) : InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).TimeProvider(clock ?? TimeProvider.System)), ICacheClient
     {
@@ -1268,38 +1263,27 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         public void AfterNextWrite(Func<Task> action) => _afterNextWrite = action;
 
-        async Task<IDictionary<string, CacheValue<T>>> ICacheClient.GetAllAsync<T>(IEnumerable<string> keys)
-        {
-            var values = await GetAllAsync<T>(keys);
-            await RunOnceAsync(ref _afterNextRead);
-            return values;
-        }
+        Task<IDictionary<string, CacheValue<T>>> ICacheClient.GetAllAsync<T>(IEnumerable<string> keys) =>
+            CompleteAsync(GetAllAsync<T>(keys), Interlocked.Exchange(ref _afterNextRead, null));
 
-        async Task<CacheValue<T>> ICacheClient.GetAsync<T>(string key)
-        {
-            var value = await GetAsync<T>(key);
-            await RunOnceAsync(ref _afterNextRead);
-            return value;
-        }
+        Task<CacheValue<T>> ICacheClient.GetAsync<T>(string key) =>
+            CompleteAsync(GetAsync<T>(key), Interlocked.Exchange(ref _afterNextRead, null));
 
-        async Task<CacheValue<ICollection<T>>> ICacheClient.GetListAsync<T>(string key, int? page, int pageSize)
-        {
-            var value = await GetListAsync<T>(key, page, pageSize);
-            await RunOnceAsync(ref _afterNextRead);
-            return value;
-        }
+        Task<CacheValue<ICollection<T>>> ICacheClient.GetListAsync<T>(string key, int? page, int pageSize) =>
+            CompleteAsync(GetListAsync<T>(key, page, pageSize), Interlocked.Exchange(ref _afterNextRead, null));
 
-        async Task<long> ICacheClient.ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn)
-        {
-            long added = await ListAddAsync(key, values, expiresIn);
-            await RunOnceAsync(ref _afterNextWrite);
-            return added;
-        }
+        Task<long> ICacheClient.ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn) =>
+            CompleteAsync(ListAddAsync(key, values, expiresIn), Interlocked.Exchange(ref _afterNextWrite, null));
 
-        private static Task RunOnceAsync(ref Func<Task>? action)
+        Task<bool> ICacheClient.SetAsync<T>(string key, T value, TimeSpan? expiresIn) =>
+            CompleteAsync(SetAsync(key, value, expiresIn), Interlocked.Exchange(ref _afterNextWrite, null));
+
+        private static async Task<T> CompleteAsync<T>(Task<T> operation, Func<Task>? after)
         {
-            var callback = Interlocked.Exchange(ref action, null);
-            return callback is null ? Task.CompletedTask : callback();
+            T result = await operation;
+            if (after is not null)
+                await after();
+            return result;
         }
     }
 }

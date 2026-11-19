@@ -154,6 +154,8 @@ Other clients can serve an existing local value until their invalidation arrives
 
 On a cold scalar or unpaged list read, L2 reports the same null TTL for a persistent key and a missing key. The client checks existence in that case so an entry that expired during the read cannot acquire a permanent local copy. Bulk reads get existence and TTL from the same expiration lookup.
 
+For a list read from L2, `GetListAsync` supplies the members and `GetExpirationAsync` supplies the whole key's TTL. If the members expire at different times, L1 can continue returning an expired member until the cached list expires or is invalidated. A list containing a permanent member can retain that stale value indefinitely.
+
 ::: info TTL Skew Between L1 and L2
 When setting expiration times, there is a small timing skew between L1 and L2:
 

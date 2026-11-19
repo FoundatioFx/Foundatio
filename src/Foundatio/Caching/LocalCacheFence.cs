@@ -29,10 +29,11 @@ internal sealed class LocalCacheFence
 
     private Ticket BeginWrite(int slot)
     {
-        // Overlapping writes can commit in either order. The new generation blocks the older writer,
-        // and the open count prevents the newer writer from storing its result.
-        bool canStore = Interlocked.Increment(ref _openWrites[slot]) == 1;
+        // Register before advancing the generation so later writers can see this one.
+        // Check for overlap afterward because another writer can advance its generation first.
+        Interlocked.Increment(ref _openWrites[slot]);
         long generation = Interlocked.Increment(ref _generations[slot]);
+        bool canStore = Volatile.Read(ref _openWrites[slot]) == 1;
         return new Ticket(this, slot, generation, Volatile.Read(ref _epoch), isRead: false, canStore);
     }
 
