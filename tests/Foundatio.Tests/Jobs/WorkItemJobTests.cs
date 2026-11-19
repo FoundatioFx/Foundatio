@@ -13,7 +13,6 @@ using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
-using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Moq;
