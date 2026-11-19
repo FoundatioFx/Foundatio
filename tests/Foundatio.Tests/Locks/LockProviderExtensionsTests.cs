@@ -16,6 +16,34 @@ namespace Foundatio.Tests.Locks;
 
 public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLoggingBase(output)
 {
+    [Fact]
+    public async Task TryAcquireAsync_AfterRenewal_WaitsUntilNextRenewalInterval()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var inner = new CacheLockProvider(cache, messageBus, Log);
+        var locker = new BeforeAcquireLockProvider(inner, timeProvider, resource =>
+        {
+            if (String.Equals(resource, "b", StringComparison.Ordinal))
+                timeProvider.Advance(TimeSpan.FromSeconds(31));
+            else if (String.Equals(resource, "c", StringComparison.Ordinal))
+                timeProvider.Advance(TimeSpan.FromSeconds(1));
+            return Task.CompletedTask;
+        });
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.NotNull(lockInstance);
+        Assert.Equal(TimeSpan.FromSeconds(59), await cache.GetExpirationAsync("lock:a"));
+        Assert.True(await inner.IsLockedAsync("a"));
+        Assert.True(await inner.IsLockedAsync("b"));
+        Assert.True(await inner.IsLockedAsync("c"));
+    }
+
     [Theory]
     [InlineData(1, 59)]
     [InlineData(1, 61)]
@@ -184,61 +212,6 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
         }
     }
 
-    [Theory]
-    [InlineData("en-US")]
-    [InlineData("sv-SE")]
-    public async Task TryAcquireAsync_WithDifferentCultures_UsesConsistentResourceOrder(string culture)
-    {
-        // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
-        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
-        var provider = new CacheLockProvider(cache, messageBus, Log);
-        var originalCulture = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
-
-            // Act
-            await using var lease = await provider.TryAcquireAsync(["ä", "z", "a", "ä"], TimeSpan.Zero, cancellationToken: TestCancellationToken);
-
-            // Assert
-            Assert.NotNull(lease);
-            Assert.Equal("a+z+ä", lease.Resource);
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = originalCulture;
-        }
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_WithMultipleResources_AfterRenewal_WaitsUntilNextRenewalInterval()
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
-        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
-        var inner = new CacheLockProvider(cache, messageBus, Log);
-        var locker = new BeforeAcquireLockProvider(inner, timeProvider, resource =>
-        {
-            if (String.Equals(resource, "b", StringComparison.Ordinal))
-                timeProvider.Advance(TimeSpan.FromSeconds(31));
-            else if (String.Equals(resource, "c", StringComparison.Ordinal))
-                timeProvider.Advance(TimeSpan.FromSeconds(1));
-            return Task.CompletedTask;
-        });
-
-        // Act
-        await using var lockInstance = await locker.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
-
-        // Assert
-        Assert.NotNull(lockInstance);
-        Assert.Equal(TimeSpan.FromSeconds(59), await cache.GetExpirationAsync("lock:a"));
-        Assert.True(await inner.IsLockedAsync("a"));
-        Assert.True(await inner.IsLockedAsync("b"));
-        Assert.True(await inner.IsLockedAsync("c"));
-    }
-
     [Fact]
     public async Task TryAcquireAsync_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
     {
@@ -277,12 +250,32 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
         }
     }
 
+    [Fact]
+    public async Task TryAcquireAsync_WhenMemberUnavailableAndReleaseThrows_ReturnsNullAndAttemptsEveryRelease()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var first = new Mock<ILock>();
+        first.Setup(l => l.ReleaseAsync()).Throws(new CacheException("Release unavailable"));
+        var second = new Mock<ILock>();
+        second.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var locker = CreateMockLockProvider(timeProvider, ("a", first.Object), ("b", second.Object), ("c", null));
+
+        // Act
+        var lockInstance = await locker.Object.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.Null(lockInstance);
+        first.Verify(l => l.ReleaseAsync(), Times.Once);
+        second.Verify(l => l.ReleaseAsync(), Times.Once);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public async Task TryAcquireAsync_WithMultipleResources_WhenProviderThrows_ReleasesAcquiredLocks(bool duringRenewal, bool releaseThrows)
+    public async Task TryAcquireAsync_WhenProviderThrows_ReleasesAcquiredLocks(bool duringRenewal, bool releaseThrows)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -311,7 +304,7 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
     }
 
     [Fact]
-    public async Task TryAcquireAsync_WithMultipleResources_WhenRenewalLosesLockAndProviderThrows_ReturnsNullAndReleasesAcquiredLocks()
+    public async Task TryAcquireAsync_WhenRenewalLosesLockAndProviderThrows_ReturnsNullAndReleasesAcquiredLocks()
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -341,24 +334,31 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
         last.Verify(l => l.ReleaseAsync(), Times.Once);
     }
 
-    [Fact]
-    public async Task TryAcquireAsync_WithMultipleResources_WhenUnavailableAndReleaseThrows_ReturnsNullAndAttemptsEveryRelease()
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("sv-SE")]
+    public async Task TryAcquireAsync_WithDifferentCultures_UsesConsistentResourceOrder(string culture)
     {
         // Arrange
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        var first = new Mock<ILock>();
-        first.Setup(l => l.ReleaseAsync()).Throws(new CacheException("Release unavailable"));
-        var second = new Mock<ILock>();
-        second.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
-        var locker = CreateMockLockProvider(timeProvider, ("a", first.Object), ("b", second.Object), ("c", null));
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var provider = new CacheLockProvider(cache, messageBus, Log);
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
 
-        // Act
-        var lockInstance = await locker.Object.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+            // Act
+            await using var lease = await provider.TryAcquireAsync(["ä", "z", "a", "ä"], TimeSpan.Zero, cancellationToken: TestCancellationToken);
 
-        // Assert
-        Assert.Null(lockInstance);
-        first.Verify(l => l.ReleaseAsync(), Times.Once);
-        second.Verify(l => l.ReleaseAsync(), Times.Once);
+            // Assert
+            Assert.NotNull(lease);
+            Assert.Equal("a+z+ä", lease.Resource);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 
     private static Mock<ILockProvider> CreateMockLockProvider(TimeProvider timeProvider, params (string Resource, ILock? Lock)[] locks)

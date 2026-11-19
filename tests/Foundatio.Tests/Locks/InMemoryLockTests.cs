@@ -263,6 +263,12 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task RenewAsync_WhenOneOfMultipleLocksReplaced_ThrowsLockExceptionAndPreservesCurrentOwner()
+    {
+        return base.RenewAsync_WhenOneOfMultipleLocksReplaced_ThrowsLockExceptionAndPreservesCurrentOwner();
+    }
+
+    [Fact]
     public async Task RenewAsync_WithCurrentOwner_ExtendsLease()
     {
         // Arrange
@@ -315,12 +321,6 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         return base.RenewAsync_WithMissingLock_ThrowsLockException();
     }
 
-    [Fact]
-    public override Task RenewAsync_WithMultipleResources_WhenOneLockReplaced_ThrowsLockExceptionAndPreservesCurrentOwner()
-    {
-        return base.RenewAsync_WithMultipleResources_WhenOneLockReplaced_ThrowsLockExceptionAndPreservesCurrentOwner();
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -332,9 +332,9 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public override Task TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(bool scoped)
+    public override Task TryAcquireAsync_WhenMultipleResourcesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(bool scoped)
     {
-        return base.TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(scoped);
+        return base.TryAcquireAsync_WhenMultipleResourcesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(scoped);
     }
 
     [Fact]
