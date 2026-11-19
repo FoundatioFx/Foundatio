@@ -153,6 +153,8 @@ This ensures that:
 - L1 never contains data that doesn't exist in L2
 - Failed distributed writes don't leave stale data in local cache
 
+Concurrent operations on the same instance can't leave an older value in L1. A read-through or write only stores its result locally if no other write, removal or expiration change on that instance touched the key while it was in flight; otherwise the key is evicted and the next read loads it from L2. An invalidation from another instance has the same effect on a write that's in flight. A read-through that overlaps another instance's write can still cache the value it read until the entry expires or the next invalidation arrives, so use expirations for data that must converge quickly.
+
 ::: info TTL Skew Between L1 and L2
 When setting expiration times, there is a small timing skew between L1 and L2:
 
@@ -190,7 +192,7 @@ long newValue = await distributedCache.IncrementAsync(key, amount, null);
 await localCache.SetAsync(key, newValue, null);  // Both caches: no expiration
 ```
 
-**List updates** apply the changed members to a warm local list. On a local miss, `ListAddAsync` checks whether the distributed key exists before writing. It can seed a new list locally. An existing distributed list stays cold until an unpaged read fetches all members. A partial write count evicts the local list. If another write, expiration change, or invalidation affects the same key while the add is pending, the next read reloads the list from the distributed cache.
+**List updates** apply the changed members to a warm local list. On a local miss, `ListAddAsync` checks whether the distributed key exists before writing. It can seed a new list locally. An existing distributed list stays cold until an unpaged read fetches all members. A partial write count evicts the local list. If another write, expiration change, or invalidation affects the same key while the add is in flight, the key is evicted and the next read reloads the list from the distributed cache.
 
 **Remove to invalidate** - Used for conditional operations where we don't know the actual value:
 

@@ -14,6 +14,26 @@ namespace Foundatio.Tests.Caching;
 public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCacheClientTestBase(output)
 {
     [Fact]
+    public async Task GetAsync_WhenSameClientWritesDuringReadThrough_DoesNotCacheStaleValue()
+    {
+        // Arrange
+        const string key = "read-through-race";
+        using var distributed = new DelayedListCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        await distributed.SetAsync(key, 1);
+        distributed.AfterNextRead(async () => Assert.True(await cache.SetAsync(key, 2)));
+
+        // Act
+        var staleRead = await cache.GetAsync<int>(key).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        var nextRead = await cache.GetAsync<int>(key);
+
+        // Assert
+        Assert.Equal(1, staleRead.Value);
+        Assert.Equal(2, nextRead.Value);
+        Assert.Equal(2, (await distributed.GetAsync<int>(key)).Value);
+    }
+
+    [Fact]
     public async Task GetListAsync_WhenFirstReadIsPaged_NextReadReturnsCompleteList()
     {
         // Arrange
@@ -28,6 +48,25 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
         // Assert
         Assert.Single(page.Value);
         Assert.Equal([1, 2, 3], fullList.Value.Order());
+    }
+
+    [Fact]
+    public async Task GetListAsync_WhenSameClientAddsDuringReadThrough_NextReadIncludesNewMember()
+    {
+        // Arrange
+        const string key = "list-read-through-race";
+        using var distributed = new DelayedListCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        await distributed.ListAddAsync(key, [1]);
+        distributed.AfterNextRead(async () => Assert.Equal(1, await cache.ListAddAsync(key, [2])));
+
+        // Act
+        var staleRead = await cache.GetListAsync<int>(key).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        var nextRead = await cache.GetListAsync<int>(key);
+
+        // Assert
+        Assert.Equal([1], staleRead.Value);
+        Assert.Equal([1, 2], nextRead.Value.Order());
     }
 
     [Theory]
@@ -349,18 +388,38 @@ public class HybridCacheConsistencyTests(ITestOutputHelper output) : HybridCache
 
     private sealed class DelayedListCache(ILoggerFactory loggerFactory, TimeProvider? clock = null) : InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).TimeProvider(clock ?? TimeProvider.System)), ICacheClient
     {
+        private Func<Task>? _afterNextRead;
         private Func<Task>? _afterNextWrite;
 
+        public void AfterNextRead(Func<Task> action) => _afterNextRead = action;
+
         public void AfterNextWrite(Func<Task> action) => _afterNextWrite = action;
+
+        async Task<CacheValue<T>> ICacheClient.GetAsync<T>(string key)
+        {
+            var value = await GetAsync<T>(key);
+            await RunOnceAsync(ref _afterNextRead);
+            return value;
+        }
+
+        async Task<CacheValue<ICollection<T>>> ICacheClient.GetListAsync<T>(string key, int? page, int pageSize)
+        {
+            var value = await GetListAsync<T>(key, page, pageSize);
+            await RunOnceAsync(ref _afterNextRead);
+            return value;
+        }
 
         async Task<long> ICacheClient.ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn)
         {
             long added = await ListAddAsync(key, values, expiresIn);
-            var afterWrite = Interlocked.Exchange(ref _afterNextWrite, null);
-            if (afterWrite is not null)
-                await afterWrite();
-
+            await RunOnceAsync(ref _afterNextWrite);
             return added;
+        }
+
+        private static Task RunOnceAsync(ref Func<Task>? action)
+        {
+            var callback = Interlocked.Exchange(ref action, null);
+            return callback is null ? Task.CompletedTask : callback();
         }
     }
 }
