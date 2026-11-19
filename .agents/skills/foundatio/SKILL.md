@@ -306,7 +306,7 @@ public class OrderServiceTests : TestLoggerBase
 
 ## Gotchas
 
-- **Lock acquisition and renewal**: On acquisition failure, `TryAcquireAsync` returns `null` and `AcquireAsync` throws `LockAcquisitionTimeoutException`. Cache-backed leases require at least 5 ms, except that zero requests a non-expiring acquisition. Stop protected work if `RenewAsync` throws `LockException`.
+- **Lock acquisition and renewal**: On acquisition failure, `TryAcquireAsync` returns `null` and `AcquireAsync` throws `LockAcquisitionTimeoutException`. Multi-resource acquisition is all-or-nothing, and members already acquired are released before it returns `null` or throws. Cache-backed leases require at least 5 ms, except that zero requests a non-expiring acquisition. Stop protected work if `RenewAsync` throws `LockException`.
 - **Dispose streams and locks**: `ILock` is `IAsyncDisposable` -- use `await using`. Streams from `GetFileStreamAsync` are `IDisposable` -- use `using var`.
 - **Cache TTL floor**: Expiration values below 5ms are treated as already expired. Key writes remove the key; `ListAddAsync` removes only the supplied values. Guard dynamically computed TTLs against near-zero values.
 - **Cache `GetAsync` returns `CacheValue<T>`**: Check `result.HasValue` before accessing `result.Value`. A missing key returns `HasValue = false`, not an exception.

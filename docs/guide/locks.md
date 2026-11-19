@@ -291,9 +291,25 @@ A renewal failure cancels cooperative work. Finishing the work stops the timer, 
 
 ### Acquiring multiple resources
 
-Resources are acquired in ordinal order. If workers use different cultures, coordinate their upgrade so they agree on the acquisition order. `TryAcquireAsync` returns `null` when any member is unavailable or a lease is lost before the whole set is acquired. `AcquireAsync` throws `LockAcquisitionTimeoutException` in that case. `CacheLockProvider` reports renewal cache errors as a lost lease. Other exceptions propagate after the acquired members are released.
+Acquiring a set is all-or-nothing. You get one handle that owns every resource, or no locks are held:
 
-Cleanup attempts every acquired member. Failed releases are logged. A non-expiring lock needs explicit recovery if cleanup fails. During acquisition, loss of any member aborts the attempt even if another renewal also failed.
+```csharp
+await using var lck = await locker.TryAcquireAsync(
+    ["account:1", "account:2"],
+    timeUntilExpires: TimeSpan.FromMinutes(5),
+    acquireTimeout: TimeSpan.FromSeconds(10));
+
+if (lck is null)
+    return; // nothing is held
+
+await TransferAsync();
+```
+
+Resources are acquired one at a time in ordinal order, and duplicates are ignored. If workers use different cultures, coordinate their upgrade so they agree on the acquisition order. The timeout or cancellation token covers the whole set, not each member.
+
+`TryAcquireAsync` returns `null` when a member can't be acquired before cancellation or a lease is lost before the whole set is acquired. `AcquireAsync` throws `LockAcquisitionTimeoutException` in that case. Either way the members already acquired are released before the call returns, even when `releaseOnDispose` is false. `CacheLockProvider` reports renewal cache errors as a lost lease. Other exceptions propagate after the acquired members are released.
+
+Cleanup attempts every acquired member. Failed releases are logged. A non-expiring lock needs explicit recovery if cleanup fails. If one renewal loses its lease while another throws, the attempt returns `null` instead of throwing, because the set can no longer be held.
 
 ## Common Patterns
 

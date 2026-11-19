@@ -286,6 +286,19 @@ public static class LockProviderExtensions
         }, timeUntilExpires, acquireTimeout);
     }
 
+    /// <summary>
+    /// Attempts to acquire every resource as one all-or-nothing lock. Resources are deduplicated and acquired one at a time in ordinal order.
+    /// </summary>
+    /// <param name="provider">The lock provider.</param>
+    /// <param name="resources">The resources to lock together.</param>
+    /// <param name="timeUntilExpires">The lease duration for each member. Expiring members are renewed while the rest of the set is acquired.</param>
+    /// <param name="releaseOnDispose">If true, every member is released when the returned lock is disposed.</param>
+    /// <param name="cancellationToken">Bounds acquisition of the whole set, not each member.</param>
+    /// <returns>
+    /// A lock that owns every resource, or <c>null</c> when a member cannot be acquired or an acquired lease is lost first.
+    /// When <c>null</c> is returned, the members already acquired have been released, regardless of <paramref name="releaseOnDispose"/>.
+    /// </returns>
+    /// <remarks>Members already acquired are also released before a provider exception propagates. A failed release is logged.</remarks>
     public static async Task<ILock?> TryAcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resources);
