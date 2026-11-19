@@ -773,13 +773,15 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             original.MarkAbandoned();
             return observed;
         });
+
         bool continued = false;
         var handlers = new WorkItemHandlers();
         handlers.Register<string>(new DelegateWorkItemHandler(async ctx =>
         {
             await ctx.ReportProgressAsync(50);
             continued = true;
-        }, _logger) { AutoRenewLockOnProgress = true });
+        }, _logger)
+        { AutoRenewLockOnProgress = true });
 
         // Act
         var result = await new WorkItemJob(queue, bus, handlers, Log).ProcessAsync(entry.Object, TestCancellationToken);
