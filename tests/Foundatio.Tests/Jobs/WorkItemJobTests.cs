@@ -781,6 +781,44 @@ public class WorkItemJobTests : TestWithLoggingBase
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_WhenReleaseFails_ReportsSettledOutcome(bool renewalFails)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var lockBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        using var statusBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log).Retries(0));
+        var locker = new CacheLockProvider(cache, lockBus, Log);
+        await using var lease = await locker.AcquireAsync("item", cancellationToken: TestCancellationToken);
+        if (renewalFails)
+            await locker.ReleaseAsync(lease.Resource);
+
+        var statuses = new ConcurrentQueue<int>();
+        await statusBus.SubscribeAsync<WorkItemStatus>(status => statuses.Enqueue(status.Progress), TestCancellationToken);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(new RenewingWorkItemHandler(lease, async context =>
+        {
+            lockBus.Dispose();
+            if (renewalFails)
+                await context.RenewLockAsync();
+        }, _logger));
+        await queue.EnqueueAsync("item", true);
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+        var job = new WorkItemJob(queue, statusBus, handlers, Log);
+
+        // Act
+        await Assert.ThrowsAsync<MessageBusException>(() => job.ProcessAsync(entry, TestCancellationToken));
+
+        // Assert
+        Assert.Equal(renewalFails, entry.IsAbandoned);
+        Assert.Equal(!renewalFails, entry.IsCompleted);
+        Assert.Equal([0, renewalFails ? -1 : 100], statuses);
+    }
+
+    [Theory]
     [InlineData(false, 50)]
     [InlineData(true, 50)]
     [InlineData(true, 100)]

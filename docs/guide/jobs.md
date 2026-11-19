@@ -450,7 +450,7 @@ public record DeleteEntityWorkItem
 
 Use the context methods for renewal so the job can observe failures. If the work-item lock fails to renew, the context signals cancellation and the call throws before sending its progress update. Stop protected work at that point. The job remembers the failure even if the handler catches it and returns normally. It attempts to abandon an unsettled entry. The queue's retry and dead-letter policies determine what happens next. Make side effects safe to repeat across attempts. A queue-entry renewal error alone is logged. If the entry is already marked abandoned, the job skips completion.
 
-Await each report whose delivery or order matters. The job waits for in-flight renewals before settling the queue entry and releasing the work-item lock. If the handler returns before awaiting a report, publication can be skipped or finish later. With `includeProgressReporting: true`, the job also sends a start message, reports 100 after successful completion, and reports -1 for an exception. It sends the outcome after the settlement attempt and lock release. A failure status describes one attempt.
+Await each report whose delivery or order matters. The job waits for in-flight renewals before settling the queue entry and releasing the work-item lock. If the handler returns before awaiting a report, publication can be skipped or finish later. With `includeProgressReporting: true`, the job also sends a start message, reports 100 after successful completion, and reports -1 for a processing exception. It attempts the outcome notification after trying to release the lock, even when release throws. A failure status describes one attempt.
 
 ### WorkItemHandlers
 

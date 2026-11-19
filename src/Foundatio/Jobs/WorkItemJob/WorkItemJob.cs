@@ -175,14 +175,19 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
         finally
         {
-            await lockValue.ReleaseAsync().AnyContext();
-
-            if (queueEntry.Value.SendProgressReports && terminalResult is not null)
+            try
             {
-                if (terminalResult.Error is { } error)
-                    await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {error.Message}").AnyContext();
-                else
-                    await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
+                await lockValue.ReleaseAsync().AnyContext();
+            }
+            finally
+            {
+                if (queueEntry.Value.SendProgressReports && terminalResult is not null)
+                {
+                    if (terminalResult.Error is { } error)
+                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {error.Message}").AnyContext();
+                    else
+                        await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
+                }
             }
         }
     }
