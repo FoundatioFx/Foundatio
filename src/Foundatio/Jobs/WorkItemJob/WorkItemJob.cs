@@ -168,13 +168,12 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             var result = JobResult.FromException(error, abandon
                 ? $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}"
                 : $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
-            if (abandon)
-            {
-                abandonReason = result;
-                await queueEntry.AbandonAsync().AnyContext();
-            }
+            if (!abandon)
+                return result;
 
-            return result;
+            abandonReason = result;
+            await queueEntry.AbandonAsync().AnyContext();
+            return abandonReason;
         }
         finally
         {
