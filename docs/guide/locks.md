@@ -245,7 +245,11 @@ foreach (var batch in batches)
 
 Choose a lease long enough for renewal latency, one batch, and scheduling delays. A process pause can still outlast the lease. For writes that must reject a stale owner, enforce ownership at the destination.
 
-Cache-backed renewal requires at least 5 milliseconds. For acquisition, zero requests a non-expiring lock. Other durations below 5 milliseconds throw before touching the cache. When a successful acquisition response takes the whole lease lifetime, `TryAcquireAsync` returns `null` and `AcquireAsync` throws `LockAcquisitionTimeoutException`.
+Cache-backed renewal requires at least 5 milliseconds. For acquisition, zero requests a non-expiring lock. Other durations below 5 milliseconds throw before touching the cache. When a successful acquisition response takes the whole lease lifetime, the lease is released and acquisition keeps trying until the cancellation token is cancelled.
+
+Cache-backed renewal throws `LockException` when the cache rejects the renewal, when the cache call fails, or when the response takes the whole lease lifetime. A cache error is the inner exception. In each case ownership is no longer assured, so stop the protected work.
+
+When multi-resource acquisition loses an acquired lease, it releases the locks it holds and returns `null` (`AcquireAsync` throws `LockAcquisitionTimeoutException`).
 
 ### Automatic renewal for a long operation
 

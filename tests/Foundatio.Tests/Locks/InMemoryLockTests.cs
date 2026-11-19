@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -51,20 +52,47 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         };
 
         // Act & Assert
+        var singleAttempt = new CancellationToken(true);
         if (tryAcquire)
         {
-            await using var lease = await provider.TryAcquireAsync("resource", duration, cancellationToken: TestCancellationToken);
+            await using var lease = await provider.TryAcquireAsync("resource", duration, cancellationToken: singleAttempt);
             Assert.Null(lease);
         }
         else
         {
-            await Assert.ThrowsAsync<LockAcquisitionTimeoutException>(() => provider.AcquireAsync("resource", duration, cancellationToken: TestCancellationToken));
+            await Assert.ThrowsAsync<LockAcquisitionTimeoutException>(() => provider.AcquireAsync("resource", duration, cancellationToken: singleAttempt));
         }
 
         var owner = await cache.GetAsync<string>("lock:resource");
         Assert.Equal(replaced, owner.HasValue);
         if (replaced)
             Assert.Equal("replacement", owner.Value);
+    }
+
+    [Fact]
+    public async Task AcquireAsync_WhenCacheResponseOutlastsLease_RetriesUntilAcquired()
+    {
+        // Arrange
+        var clock = new FakeTimeProvider();
+        using var cache = new DelayedWriteCache(clock, Log);
+        var provider = new CacheLockProvider(cache, _messageBus, Log);
+        var duration = TimeSpan.FromMinutes(1);
+        int writes = 0;
+        cache.AfterWriteAsync = _ =>
+        {
+            if (Interlocked.Increment(ref writes) is 1)
+                clock.Advance(duration + TimeSpan.FromSeconds(1));
+
+            return Task.CompletedTask;
+        };
+
+        // Act
+        await using var lease = await provider.AcquireAsync("resource", duration, cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.Equal(2, writes);
+        var owner = await cache.GetAsync<string>("lock:resource");
+        Assert.Equal(lease.LockId, owner.Value);
     }
 
     [Theory]
@@ -184,6 +212,25 @@ public class InMemoryLockTests : LockTestBase, IDisposable
             await Assert.ThrowsAsync<LockException>(() => renewal);
         else
             await renewal;
+    }
+
+    [Fact]
+    public async Task RenewAsync_WhenCacheThrows_ThrowsLockExceptionWithInnerException()
+    {
+        // Arrange
+        using var cache = new DelayedWriteCache(TimeProvider.System, Log);
+        var resiliencePolicyProvider = new ResiliencePolicyProvider().WithDefaultPolicy(p => p.WithMaxAttempts(1));
+        var locker = new CacheLockProvider(cache, _messageBus, null, resiliencePolicyProvider, Log);
+        await using var lease = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        var cacheError = new TimeoutException("cache unavailable");
+        cache.AfterWriteAsync = _ => throw cacheError;
+
+        // Act
+        var ex = await Assert.ThrowsAsync<LockException>(() => lease.RenewAsync());
+
+        // Assert
+        Assert.Same(cacheError, ex.InnerException);
+        Assert.Equal(0, lease.RenewalCount);
     }
 
     [Theory]
