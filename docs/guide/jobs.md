@@ -438,8 +438,8 @@ public record DeleteEntityWorkItem
 | Member | Description |
 |--------|-------------|
 | `GetData<T>()` | Returns the deserialized work item as `T`, or `null` for a different type |
-| `Data` | The raw work item payload (use `GetData<T>()` instead) |
-| `JobId` | Unique identifier for this job run |
+| `Data` | The deserialized work item as an object |
+| `JobId` | Identifies the `WorkItemJob` instance. Use `WorkItemStatus.WorkItemId` to correlate reports for an enqueued item |
 | `WorkItemLock` | Optional distributed lock for the work item |
 | `CancellationToken` | Signals shutdown or a failure to renew the handler's work-item lock. Pass it to cancellable work |
 | `Result` | Set to `JobResult.FailedWithMessage(...)` to indicate failure without throwing. As with `QueueJobBase`, a non-success `Result` abandons and retries the entry -- see [Retry vs Permanent Failure](#retry-vs-permanent-failure) |
@@ -454,7 +454,7 @@ Await each report whose delivery or order matters. The job waits for in-flight r
 
 ### WorkItemHandlers
 
-`WorkItemHandlers` is a registry mapping work item data types to their handlers. You can register handlers in several ways:
+`WorkItemHandlers` reuses one handler per registered type, including across concurrent attempts. Choose one registration style per type and keep per-attempt state in the handler method.
 
 ```csharp
 var handlers = new WorkItemHandlers();
@@ -463,7 +463,7 @@ var handlers = new WorkItemHandlers();
 handlers.Register<DeleteEntityWorkItem>(
     new DeleteEntityWorkItemHandler(entityService, logger));
 
-// Factory registration (lazy — creates a new handler per invocation)
+// Alternatively, resolve the handler once on first use.
 handlers.Register<DeleteEntityWorkItem>(
     () => sp.GetRequiredService<DeleteEntityWorkItemHandler>());
 
@@ -482,7 +482,8 @@ handlers.Register<SimpleWorkItem>(async ctx =>
 services.AddSingleton<IQueue<WorkItemData>>(sp => new InMemoryQueue<WorkItemData>());
 services.AddSingleton<IMessageBus>(sp => new InMemoryMessageBus());
 services.AddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
-services.AddScoped<DeleteEntityWorkItemHandler>();
+services.AddSingleton<DeleteEntityWorkItemHandler>();
+services.AddSingleton<WorkItemJob>();
 services.AddSingleton(sp =>
 {
     var handlers = new WorkItemHandlers();
@@ -503,20 +504,17 @@ Use the `EnqueueAsync<T>` extension method to enqueue strongly-typed work items:
 ```csharp
 var queue = serviceProvider.GetRequiredService<IQueue<WorkItemData>>();
 
-// Enqueue a work item (returns a job ID for tracking)
-string jobId = await queue.EnqueueAsync(new DeleteEntityWorkItem { EntityId = 123 });
-
-// With progress reporting enabled
-string jobId = await queue.EnqueueAsync(
-    new DeleteEntityWorkItem { EntityId = 123 },
-    includeProgressReporting: true);
-
-// Subscribe to progress updates
+// Subscribe before enqueueing so a fast worker's first update can be received.
 var messageBus = serviceProvider.GetRequiredService<IMessageBus>();
 await messageBus.SubscribeAsync<WorkItemStatus>(status =>
 {
     Console.WriteLine($"[{status.WorkItemId}] {status.Progress}% - {status.Message}");
 });
+
+// The returned ID matches WorkItemStatus.WorkItemId across retries.
+string workItemId = await queue.EnqueueAsync(
+    new DeleteEntityWorkItem { EntityId = 123 },
+    includeProgressReporting: true);
 ```
 
 ## Job Runner
