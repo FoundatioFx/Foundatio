@@ -244,7 +244,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unable to release expired acquisition of lock {Resource} ({LockId})", resource, lockId);
+            _logger.LogError(ex, "Unable to release expired acquisition of lock {Resource} ({LockId}): {Message}", resource, lockId, ex.Message);
         }
 
         return false;
