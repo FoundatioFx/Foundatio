@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -94,8 +93,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             {
                 if (!message.Expired && key.EndsWith('*'))
                 {
-                    _fence.InvalidateAll();
-                    tasks.Add(_localCache.RemoveByPrefixAsync(key[..^1]));
+                    tasks.Add(InvalidateLocalPrefixAsync(key[..^1]));
                     continue;
                 }
 
@@ -181,13 +179,13 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
+        // ICacheClient accepts a null prefix for a full flush. Forward the equivalent empty prefix to both caches.
         prefix ??= String.Empty;
 
         await EnsureSubscribedAsync().AnyContext();
 
         int removed = await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();
-        _fence.InvalidateAll();
-        await _localCache.RemoveByPrefixAsync(prefix).AnyContext();
+        await InvalidateLocalPrefixAsync(prefix).AnyContext();
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
@@ -285,7 +283,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         using var ticket = _fence.BeginWrite(key);
         bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
         if (added)
-            (await UpdateLocalValueAsync(ticket, key, value, expiresIn).AnyContext())?.Throw();
+        {
+            await UpdateLocalValueAsync(ticket, key, value, expiresIn, notify: false).AnyContext();
+        }
 
         return added;
     }
@@ -303,15 +303,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
 
         _logger.LogTrace("Setting key {Key} with expiration: {Expiration}", key, expiresIn);
-        bool updated;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            updated = await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: updated).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        bool updated = await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: updated).AnyContext();
 
         return updated;
     }
@@ -348,15 +342,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return false;
         }
 
-        bool replaced;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: replaced).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: replaced).AnyContext();
         return replaced;
     }
 
@@ -372,15 +360,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return false;
         }
 
-        bool replaced;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            replaced = await _distributedCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: replaced).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        bool replaced = await _distributedCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: replaced).AnyContext();
         return replaced;
     }
 
@@ -396,15 +378,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return 0;
         }
 
-        double newValue;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            newValue = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, newValue, expiresIn, valueKnown: newValue != 0).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        double newValue = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, newValue, expiresIn, valueKnown: newValue != 0).AnyContext();
         return newValue;
     }
 
@@ -420,15 +396,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return 0;
         }
 
-        long newValue;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            newValue = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, newValue, expiresIn, valueKnown: newValue != 0).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        long newValue = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, newValue, expiresIn, valueKnown: newValue != 0).AnyContext();
         return newValue;
     }
 
@@ -511,18 +481,13 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         await EnsureSubscribedAsync().AnyContext();
 
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
+        using var ticket = _fence.BeginWrite(key);
+        await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
+        await UpdateLocalAsync(ticket, key, expiresIn, static async (cache, k, expiration) =>
         {
-            await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
-            localError = await UpdateLocalAsync(ticket, key, expiresIn, static async (cache, k, expiration) =>
-            {
-                await cache.SetExpirationAsync(k, expiration).AnyContext();
-                return true;
-            }).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+            await cache.SetExpirationAsync(k, expiration).AnyContext();
+            return true;
+        }).AnyContext();
     }
 
     public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
@@ -553,15 +518,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return 0;
         }
 
-        double difference;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: Math.Abs(difference) > double.Epsilon).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        double difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: Math.Abs(difference) > double.Epsilon).AnyContext();
         return difference;
     }
 
@@ -577,15 +536,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return 0;
         }
 
-        long difference;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: difference != 0).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        long difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: difference != 0).AnyContext();
         return difference;
     }
 
@@ -601,15 +554,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return 0;
         }
 
-        double difference;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: Math.Abs(difference) > double.Epsilon).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        double difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: Math.Abs(difference) > double.Epsilon).AnyContext();
         return difference;
     }
 
@@ -625,15 +572,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return 0;
         }
 
-        long difference;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
-            localError = await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: difference != 0).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        long difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
+        await UpdateLocalValueAsync(ticket, key, value, expiresIn, valueKnown: difference != 0).AnyContext();
         return difference;
     }
 
@@ -645,21 +586,14 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         await EnsureSubscribedAsync().AnyContext();
 
         var (items, expectedCount) = MaterializeListValues(values);
-        long addedCount;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            // A local list is always complete. When there is none, the writer can only start one if the distributed
-            // list didn't exist either, otherwise the local list would hold just the new members.
-            bool hasLocalEntry = await _localCache.ExistsAsync(key).AnyContext();
-            bool isNewList = !hasLocalEntry && !await _distributedCache.ExistsAsync(key).AnyContext();
-            addedCount = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
-            localError = await UpdateLocalAsync(ticket, key, (items, expectedCount, expiresIn, requireExistingList: hasLocalEntry),
-                static async (cache, k, state) => await cache.ListAddAsync(k, state.items, state.expiresIn, state.requireExistingList).AnyContext() == state.expectedCount,
-                canUpdate: addedCount == expectedCount && (hasLocalEntry || isNewList)).AnyContext();
-        }
-
-        await PublishInvalidationAsync([key], localError).AnyContext();
+        using var ticket = _fence.BeginWrite(key);
+        // A cold writer can seed a complete local list only if the distributed key was also missing.
+        bool hasLocalEntry = await _localCache.ExistsAsync(key).AnyContext();
+        bool isNewList = !hasLocalEntry && !await _distributedCache.ExistsAsync(key).AnyContext();
+        long addedCount = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
+        await UpdateLocalAsync(ticket, key, (items, expectedCount, expiresIn, requireExistingList: hasLocalEntry),
+            static async (cache, k, state) => await cache.ListAddAsync(k, state.items, state.expiresIn, state.requireExistingList).AnyContext() == state.expectedCount,
+            canUpdate: addedCount == expectedCount && (hasLocalEntry || isNewList)).AnyContext();
         return addedCount;
     }
 
@@ -671,22 +605,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         await EnsureSubscribedAsync().AnyContext();
 
         var (items, expectedCount) = MaterializeListValues(values);
-        long removedCount;
-        ExceptionDispatchInfo? localError;
-        using (var ticket = _fence.BeginWrite(key))
-        {
-            removedCount = await _distributedCache.ListRemoveAsync(key, items).AnyContext();
-            localError = await UpdateLocalAsync(ticket, key, (items, expectedCount),
-                static async (cache, k, state) => await cache.ListRemoveAsync(k, state.items).AnyContext() == state.expectedCount,
-                canUpdate: removedCount == expectedCount).AnyContext();
-        }
-
-        // Only notify other nodes if items were actually removed from distributed cache.
-        if (removedCount > 0)
-            await PublishInvalidationAsync([key], localError).AnyContext();
-        else
-            localError?.Throw();
-
+        using var ticket = _fence.BeginWrite(key);
+        long removedCount = await _distributedCache.ListRemoveAsync(key, items).AnyContext();
+        await UpdateLocalAsync(ticket, key, (items, expectedCount),
+            static async (cache, k, state) => await cache.ListRemoveAsync(k, state.items).AnyContext() == state.expectedCount,
+            canUpdate: removedCount == expectedCount, notify: removedCount > 0).AnyContext();
         return removedCount;
     }
 
@@ -758,50 +681,47 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     /// <summary>
     /// Stores a value learned from the distributed cache, or evicts the key if the ticket no longer allows it.
     /// </summary>
-    private Task<ExceptionDispatchInfo?> UpdateLocalValueAsync<T>(LocalCacheFence.Ticket ticket, string key, T value, TimeSpan? expiresIn, bool valueKnown = true)
+    private Task UpdateLocalValueAsync<T>(LocalCacheFence.Ticket ticket, string key, T value, TimeSpan? expiresIn, bool valueKnown = true, bool notify = true)
     {
         return UpdateLocalAsync(ticket, key, (value, expiresIn), static (cache, k, state) =>
-            cache.SetAsync(k, state.value, state.expiresIn), canUpdate: valueKnown);
+            cache.SetAsync(k, state.value, state.expiresIn), canUpdate: valueKnown, notify: notify);
     }
 
     /// <summary>
     /// Applies a local update when the ticket is current, then evicts the key if the update was rejected or the key
-    /// was invalidated while it ran. A write's local error is returned after eviction, so the caller can still notify
-    /// peers before surfacing it. A read's local error is logged.
+    /// was invalidated while it ran. A committed write still notifies peers if the local update fails.
     /// </summary>
-    private async Task<ExceptionDispatchInfo?> UpdateLocalAsync<TState>(LocalCacheFence.Ticket ticket, string key, TState state,
-        Func<InMemoryCacheClient, string, TState, Task<bool>> update, bool canUpdate = true)
+    private async Task UpdateLocalAsync<TState>(LocalCacheFence.Ticket ticket, string key, TState state,
+        Func<InMemoryCacheClient, string, TState, Task<bool>> update, bool canUpdate = true, bool notify = true)
     {
+        bool notifyPeers = notify && !ticket.IsRead;
         try
         {
-            if (ticket.IsCurrent)
-            {
-                if (canUpdate && await update(_localCache, key, state).AnyContext() && ticket.IsCurrent)
-                    return null;
-            }
+            bool stored = false;
+            if (canUpdate && ticket.IsCurrent)
+                stored = await update(_localCache, key, state).AnyContext();
             else if (ticket.IsRead)
-            {
-                return null;
-            }
+                return;
 
-            await _localCache.RemoveAsync(key).AnyContext();
+            if (!stored || !ticket.IsCurrent)
+                await _localCache.RemoveAsync(key).AnyContext();
         }
         catch (Exception ex)
         {
-            await EvictAfterFailureAsync([key]).AnyContext();
+            await InvalidateAfterFailureAsync([key], notifyPeers).AnyContext();
             if (!ticket.IsRead)
-                return ExceptionDispatchInfo.Capture(ex);
+                throw;
 
             _logger.LogWarning(ex, "Unable to store {Key} in the local cache after a distributed read", key);
         }
 
-        return null;
+        if (notifyPeers)
+            await PublishInvalidationAsync([key]).AnyContext();
     }
 
     private async Task<int> WriteBatchAsync<TState>(string[] keys, TState state, Func<ICacheClient, TState, Task<int>> write)
     {
-        int count = 0;
-        ExceptionDispatchInfo? error = null;
+        int count;
         using (var tickets = _fence.BeginWrites(keys))
         {
             try
@@ -824,15 +744,15 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
                 // Either cache can commit some keys before throwing. The result doesn't identify them.
-                error = ExceptionDispatchInfo.Capture(ex);
-                await EvictAfterFailureAsync(keys).AnyContext();
+                await InvalidateAfterFailureAsync(keys, notify: true).AnyContext();
+                throw;
             }
         }
 
-        await PublishInvalidationAsync(keys, error).AnyContext();
+        await PublishInvalidationAsync(keys).AnyContext();
         return count;
     }
 
@@ -853,7 +773,15 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return _localCache.RemoveAsync(key);
     }
 
-    private async Task EvictAfterFailureAsync(string[] keys)
+    private Task<int> InvalidateLocalPrefixAsync(string prefix)
+    {
+        // The fence stores hash slots without key names, so a prefix must invalidate every in-flight ticket.
+        // The local cache still removes only matching entries.
+        _fence.InvalidateAll();
+        return _localCache.RemoveByPrefixAsync(prefix);
+    }
+
+    private async Task InvalidateAfterFailureAsync(string[] keys, bool notify)
     {
         foreach (string key in keys)
         {
@@ -866,20 +794,23 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
                 _logger.LogError(ex, "Error removing {Key} from the local cache after a failed update", key);
             }
         }
-    }
 
-    private async Task PublishInvalidationAsync(string[] keys, ExceptionDispatchInfo? error)
-    {
+        if (!notify)
+            return;
+
         try
         {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = keys }).AnyContext();
+            await PublishInvalidationAsync(keys).AnyContext();
         }
-        catch (Exception ex) when (error is not null)
+        catch (Exception ex)
         {
             _logger.LogError(ex, "Error publishing cache invalidation after a failed cache update");
         }
+    }
 
-        error?.Throw();
+    private Task PublishInvalidationAsync(string[] keys)
+    {
+        return _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = keys });
     }
 
     /// <summary>
