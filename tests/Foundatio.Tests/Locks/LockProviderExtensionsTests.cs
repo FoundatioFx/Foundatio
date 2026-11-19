@@ -213,6 +213,33 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
     }
 
     [Fact]
+    public async Task TryAcquireAsync_WhenDurationIsZero_DoesNotRenewAndReturnsAllLocks()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var members = new[] { "a", "b", "c" }.Select(_ =>
+        {
+            var member = new Mock<ILock>();
+            member.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).ThrowsAsync(new InvalidOperationException("A non-expiring lock must not be renewed"));
+            return member;
+        }).ToArray();
+        var locker = CreateMockLockProvider(timeProvider, ("a", members[0].Object), ("b", members[1].Object), ("c", members[2].Object));
+        locker.Setup(p => p.TryAcquireAsync(It.IsAny<string>(), TimeSpan.Zero, It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns((string resource, TimeSpan? _, bool _, CancellationToken _) =>
+        {
+            timeProvider.Advance(TimeSpan.FromHours(1));
+            return Task.FromResult<ILock?>(members["abc".IndexOf(resource, StringComparison.Ordinal)].Object);
+        });
+
+        // Act
+        var lockInstance = await locker.Object.TryAcquireAsync(["a", "b", "c"], TimeSpan.Zero, cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.NotNull(lockInstance);
+        foreach (var member in members)
+            member.Verify(l => l.RenewAsync(It.IsAny<TimeSpan?>()), Times.Never);
+    }
+
+    [Fact]
     public async Task TryAcquireAsync_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
     {
         // Arrange
