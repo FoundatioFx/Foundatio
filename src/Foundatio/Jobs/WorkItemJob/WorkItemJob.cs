@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Serializer;
@@ -127,156 +126,72 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
-        using var leaseLoss = new CancellationTokenSource();
-        using var workItemCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, leaseLoss.Token);
-        var progressReports = new WorkItemProgress(async (progress, message) =>
-        {
-            if (handler.AutoRenewLockOnProgress)
-                await RenewWorkItemLocksAsync(handler, queueEntry, lockValue, leaseLoss).AnyContext();
-
-            await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
-            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
-        });
-
+        using var execution = new WorkItemExecution(this, handler, queueEntry, workItemDataType, lockValue, cancellationToken);
+        JobResult? terminalResult = null;
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
-            var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, workItemCancellation.Token, progressReports.ReportAsync);
+            var context = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, execution);
             try
             {
-                await handler.HandleItemAsync(workItemContext).AnyContext();
+                await handler.HandleItemAsync(context).AnyContext();
             }
             finally
             {
-                await progressReports.StopAsync().AnyContext();
+                await execution.StopAsync().AnyContext();
             }
 
-            if (leaseLoss.IsCancellationRequested)
+            execution.ThrowIfRenewalFailed();
+            if (queueEntry.IsAbandoned)
+                return context.Result.IsSuccess ? JobResult.FailedWithMessage($"Queue entry {queueEntry.Id} was already abandoned") : context.Result;
+
+            if (!queueEntry.IsCompleted)
             {
-                var lostResult = JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Work item lease renewal failed in handler {workItemDataType.Name}");
-                activity?.SetErrorStatus(message: lostResult.Message);
-                if (queueEntry.Value.SendProgressReports)
-                    await ReportProgressAsync(handler, queueEntry, -1, "Failed: Work item lease renewal failed").AnyContext();
-
-                if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                    await queueEntry.AbandonAsync().AnyContext();
-
-                return lostResult;
-            }
-
-            if (!workItemContext.Result.IsSuccess)
-            {
-                if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                if (!context.Result.IsSuccess)
                 {
                     await queueEntry.AbandonAsync().AnyContext();
-                    return workItemContext.Result;
+                    return context.Result;
                 }
-            }
 
-            if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-            {
                 await queueEntry.CompleteAsync().AnyContext();
                 handler.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItemData);
             }
 
-            if (queueEntry.Value.SendProgressReports)
-                await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
-
-            return JobResult.Success;
+            terminalResult = JobResult.Success;
+            return terminalResult;
         }
         catch (Exception ex)
         {
-            activity?.SetErrorStatus(ex);
-
-            if (queueEntry.Value.SendProgressReports)
-                await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {ex.Message}").AnyContext();
-
-            if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-            {
+            var error = ex is OperationCanceledException ? execution.RenewalError ?? ex : ex;
+            activity?.SetErrorStatus(error);
+            bool abandon = !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
+            terminalResult = JobResult.FromException(error, abandon
+                ? $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}"
+                : $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
+            if (abandon)
                 await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}");
-            }
 
-            return JobResult.FromException(ex, $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
+            return terminalResult;
         }
         finally
         {
             await lockValue.ReleaseAsync().AnyContext();
-        }
-    }
 
-    private static async Task RenewWorkItemLocksAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, ILock workItemLock, CancellationTokenSource leaseLoss)
-    {
-        await Task.WhenAll(RenewQueueEntryLockAsync(), RenewWorkItemLockAsync()).AnyContext();
-
-        async Task RenewQueueEntryLockAsync()
-        {
-            try
+            if (queueEntry.Value.SendProgressReports && terminalResult is not null)
             {
-                await queueEntry.RenewLockAsync().AnyContext();
-            }
-            catch (Exception ex)
-            {
-                handler.Log.LogError(ex, "Error renewing queue entry lock: {Message}", ex.Message);
-            }
-        }
-
-        async Task RenewWorkItemLockAsync()
-        {
-            try
-            {
-                await workItemLock.RenewAsync().AnyContext();
-            }
-            catch (Exception ex)
-            {
-                handler.Log.LogWarning(ex, "Unable to renew work item lock {Resource} for queue entry {Id}, cancelling work item", workItemLock.Resource, queueEntry.Id);
-                await leaseLoss.CancelAsync().AnyContext();
+                if (terminalResult.Error is { } error)
+                    await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {error.Message}").AnyContext();
+                else
+                    await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
             }
         }
     }
 
-    private sealed class WorkItemProgress(Func<int, string?, Task> report)
+    internal async Task ReportHandlerProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, int progress, string? message)
     {
-        private readonly System.Threading.Lock _sync = new();
-        private int _activeCount;
-        private bool _stopped;
-        private TaskCompletionSource? _completion;
-
-        public async Task ReportAsync(int progress, string? message)
-        {
-            lock (_sync)
-            {
-                if (_stopped)
-                    return;
-
-                _activeCount++;
-            }
-
-            try
-            {
-                await report(progress, message).AnyContext();
-            }
-            finally
-            {
-                lock (_sync)
-                {
-                    if (--_activeCount is 0)
-                        _completion?.TrySetResult();
-                }
-            }
-        }
-
-        public Task StopAsync()
-        {
-            lock (_sync)
-            {
-                _stopped = true;
-                if (_activeCount is 0)
-                    return Task.CompletedTask;
-
-                return (_completion ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
-            }
-        }
+        await ReportProgressAsync(handler, entry, progress, message).AnyContext();
+        if (handler.Log.IsEnabled(LogLevel.Information))
+            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", dataType.Name, progress, message);
     }
 
     protected virtual Activity? StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)

@@ -408,7 +408,7 @@ public class DeleteEntityWorkItemHandler : WorkItemHandlerBase
 
         // Delete children with progress reporting
         var children = await _entityService.GetChildrenAsync(workItem.EntityId);
-        var total = children.Count;
+        var total = children.Count + 1;
         var current = 0;
 
         foreach (var child in children)
@@ -417,7 +417,7 @@ public class DeleteEntityWorkItemHandler : WorkItemHandlerBase
             current++;
             await ctx.ReportProgressAsync(
                 (current * 100) / total,
-                $"Deleted {current} of {total} children");
+                $"Deleted {current} of {children.Count} children");
         }
 
         await _entityService.DeleteAsync(workItem.EntityId);
@@ -437,16 +437,20 @@ public record DeleteEntityWorkItem
 
 | Member | Description |
 |--------|-------------|
-| `GetData<T>()` | Deserializes the raw payload to your work item type |
+| `GetData<T>()` | Returns the deserialized work item as `T`, or `null` for a different type |
 | `Data` | The raw work item payload (use `GetData<T>()` instead) |
 | `JobId` | Unique identifier for this job run |
 | `WorkItemLock` | Optional distributed lock for the work item |
-| `CancellationToken` | Signals that processing should stop, including when `AutoRenewLockOnProgress` detects that the work item lock was lost. After a lost lock the entry is abandoned and retried, even if the handler returns normally |
+| `CancellationToken` | Signals shutdown or a failure to renew the handler's work-item lock. Pass it to cancellable work |
 | `Result` | Set to `JobResult.FailedWithMessage(...)` to indicate failure without throwing. As with `QueueJobBase`, a non-success `Result` abandons and retries the entry -- see [Retry vs Permanent Failure](#retry-vs-permanent-failure) |
-| `ReportProgressAsync(progress, message)` | Publishes `WorkItemStatus` updates via `IMessageBus`. With `AutoRenewLockOnProgress`, it also renews the queue entry and work item lock |
-| `RenewLockAsync()` | Extends the work item lock lease. Throws `LockException` if a cache-backed lock was lost; stop the work |
+| `ReportProgressAsync(progress, message)` | Sends a best-effort `WorkItemStatus` update. When `AutoRenewLockOnProgress` is enabled, it first renews the queue entry and the work-item lock |
+| `RenewLockAsync()` | Explicitly renews the work-item lock. A failed renewal throws the provider's exception |
 
-With `AutoRenewLockOnProgress`, a failed work item lock renewal cancels the context token without waiting for queue renewal. For a lock collection, the job observes the result when the collection finishes renewing. When progress reports are enabled, a terminal failure status is published before abandonment, including when the handler returns normally after cancellation. Queue renewal errors are logged and do not themselves cancel the handler. The default `WorkItemHandlerBase` uses `EmptyLock`; preventing concurrent redelivery requires overriding `GetWorkItemLockAsync` with an exclusive lock shared by all processors of that work item. When the handler exits, the job waits for progress reports already in flight before completing or abandoning the entry and releasing its lock. Reports started after that boundary are ignored, so retained callbacks cannot renew a released lock or publish progress after the terminal status. Configure provider timeouts because in-flight renewals must settle before cleanup.
+`AutoRenewLockOnProgress` defaults to `false`. Enabling it uses each explicit report as a renewal checkpoint. Choose checkpoints within the lease duration. The queue controls redelivery. The default handler uses `EmptyLock`; override `GetWorkItemLockAsync` when handlers need a shared, exclusive lock on a resource.
+
+Use the context methods for renewal so the job can observe failures. If the work-item lock fails to renew, the context signals cancellation and the call throws before sending its progress update. Stop protected work at that point. The job remembers the failure even if the handler catches it and returns normally. It attempts to abandon an unsettled entry. The queue's retry and dead-letter policies determine what happens next. Make side effects safe to repeat across attempts. A queue-entry renewal error alone is logged. If the entry is already marked abandoned, the job skips completion.
+
+Await each report whose delivery or order matters. The job waits for in-flight renewals before settling the queue entry and releasing the work-item lock. If the handler returns before awaiting a report, publication can be skipped or finish later. With `includeProgressReporting: true`, the job also sends a start message, reports 100 after successful completion, and reports -1 for an exception. It sends the outcome after the settlement attempt and lock release. A failure status describes one attempt.
 
 ### WorkItemHandlers
 

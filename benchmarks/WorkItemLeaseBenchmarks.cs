@@ -20,11 +20,18 @@ public class WorkItemLeaseBenchmarks
     [Params(false, true)]
     public bool ReportProgress { get; set; }
 
+    [Params(false, true)]
+    public bool UseWorkItemLock { get; set; }
+
     [GlobalSetup]
     public void Setup()
     {
         var handlers = new WorkItemHandlers();
-        handlers.Register<string>(new Handler(new CacheLockProvider(_cache, _bus), ReportProgress) { AutoRenewLockOnProgress = true });
+        if (UseWorkItemLock)
+            handlers.Register<string>(new Handler(new CacheLockProvider(_cache, _bus), ReportProgress) { AutoRenewLockOnProgress = true });
+        else
+            handlers.Register<string>(ctx => ReportProgress ? ctx.ReportProgressAsync(50) : Task.CompletedTask);
+
         _job = new WorkItemJob(_queue, _bus, handlers);
     }
 
