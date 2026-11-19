@@ -33,6 +33,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     {
         // Arrange
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -466,6 +467,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     {
         // Arrange
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -486,6 +488,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     {
         // Arrange
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -509,6 +512,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     {
         // Arrange
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -526,8 +530,10 @@ public abstract class LockTestBase : TestWithLoggingBase
     {
         // Arrange
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
+
         if (scoped)
             locker = new ScopedLockProvider(locker, "renewal");
 
