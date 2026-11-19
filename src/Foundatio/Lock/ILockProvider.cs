@@ -14,6 +14,8 @@ namespace Foundatio.Lock;
 /// </summary>
 public interface ILockProvider
 {
+    internal static TimeSpan DefaultLeaseDuration { get; } = TimeSpan.FromMinutes(20);
+
     /// <summary>
     /// Acquires a lock on the specified resource. Throws <see cref="LockAcquisitionTimeoutException"/>
     /// if the lock cannot be obtained before the supplied <paramref name="cancellationToken"/> is cancelled.
@@ -33,6 +35,7 @@ public interface ILockProvider
     /// </param>
     /// <returns>The acquired <see cref="ILock"/>.</returns>
     /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before cancellation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The provider does not support <paramref name="timeUntilExpires"/>.</exception>
     /// <remarks>
     /// Use this when the work cannot run safely without the lock. For best-effort acquisition where
     /// failure is a normal control-flow outcome, call <see cref="TryAcquireAsync(string, TimeSpan?, bool, CancellationToken)"/>
@@ -58,6 +61,7 @@ public interface ILockProvider
     /// if it fails.
     /// </param>
     /// <returns>The acquired <see cref="ILock"/>, or <c>null</c> if the lock could not be obtained.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The provider does not support <paramref name="timeUntilExpires"/>.</exception>
     /// <remarks>
     /// Use this when lock unavailability is a normal control-flow outcome (best-effort dedupe,
     /// opportunistic work). When the work cannot run without the lock, call
@@ -92,6 +96,10 @@ public interface ILockProvider
     /// <param name="resource">The resource identifier.</param>
     /// <param name="lockId">The unique identifier of the lock to renew.</param>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The provider does not support <paramref name="timeUntilExpires"/>.</exception>
+    /// <exception cref="LockException">
+    /// The provider could not confirm ownership of the lock. Stop the protected work when renewal fails.
+    /// </exception>
     Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 }
 
@@ -104,6 +112,10 @@ public interface ILock : IAsyncDisposable
     /// Extends the lock expiration to prevent automatic release during long-running operations.
     /// </summary>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The provider does not support <paramref name="timeUntilExpires"/>.</exception>
+    /// <exception cref="LockException">
+    /// The provider could not confirm ownership of the lock. Stop the protected work when renewal fails.
+    /// </exception>
     Task RenewAsync(TimeSpan? timeUntilExpires = null);
 
     /// <summary>
@@ -308,7 +320,21 @@ public static class LockProviderExtensions
                 var locksToRenew = acquiredLocks.Where(al => al.LastRenewed < utcNow.Subtract(renewTime)).ToArray();
                 if (locksToRenew.Length > 0)
                 {
-                    await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
+                    try
+                    {
+                        await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
+                    }
+                    catch (Exception ex)
+                    {
+                        // A failed renewal can no longer be silent, so don't strand the locks already held until they expire.
+                        logger.LogWarning(ex, "Unable to renew acquired locks while acquiring {Resource}, releasing acquired locks", resource);
+                        await ReleaseAcquiredLocksAsync([.. acquiredLocks.Select(al => al.Lock), l], logger).AnyContext();
+                        if (ex is LockException)
+                            return null;
+
+                        throw;
+                    }
+
                     locksToRenew.ForEach(al => al.LastRenewed = utcNow);
 
                     logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(al => al.Lock.Resource), renewTime);
@@ -349,6 +375,18 @@ public static class LockProviderExtensions
         logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", resourceList.Length, resourceList, sw.Elapsed);
 
         return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), provider.GetTimeProvider().GetUtcNow().UtcDateTime, sw.Elapsed, logger);
+    }
+
+    private static async Task ReleaseAcquiredLocksAsync(IReadOnlyCollection<ILock> locks, ILogger logger)
+    {
+        try
+        {
+            await Task.WhenAll(locks.Select(async l => await l.ReleaseAsync().AnyContext())).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unable to release {LockCount} partially acquired locks {Resource}", locks.Count, locks.Select(l => l.Resource));
+        }
     }
 
     public static async Task<ILock?> TryAcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires, TimeSpan? acquireTimeout)
