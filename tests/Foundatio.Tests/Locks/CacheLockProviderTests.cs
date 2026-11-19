@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
+using Foundatio.Messaging;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -21,7 +22,8 @@ public class CacheLockProviderTests(ITestOutputHelper output) : TestWithLoggingB
         // Arrange
         var clock = new FakeTimeProvider();
         using var cache = new DelayedWriteCache(clock, Log);
-        var provider = new CacheLockProvider(cache, null, Log);
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var provider = new CacheLockProvider(cache, messageBus, Log);
         var duration = TimeSpan.FromMinutes(1);
         cache.AfterWriteAsync = async key =>
         {
@@ -55,7 +57,8 @@ public class CacheLockProviderTests(ITestOutputHelper output) : TestWithLoggingB
         // Arrange
         var clock = new FakeTimeProvider();
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log));
-        var provider = new CacheLockProvider(cache, null, Log);
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var provider = new CacheLockProvider(cache, messageBus, Log);
 
         // Act
         await using var acquired = await provider.AcquireAsync("resource", TimeSpan.FromMilliseconds(milliseconds), cancellationToken: TestCancellationToken);
@@ -75,7 +78,8 @@ public class CacheLockProviderTests(ITestOutputHelper output) : TestWithLoggingB
         // Arrange
         var clock = new FakeTimeProvider();
         using var cache = new DelayedWriteCache(clock, Log);
-        var provider = new CacheLockProvider(cache, null, Log);
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var provider = new CacheLockProvider(cache, messageBus, Log);
         var duration = TimeSpan.FromSeconds(10);
         await using var lease = await provider.AcquireAsync("resource", duration, cancellationToken: TestCancellationToken);
         cache.AfterWriteAsync = _ =>
@@ -102,7 +106,8 @@ public class CacheLockProviderTests(ITestOutputHelper output) : TestWithLoggingB
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
-        var locker = new CacheLockProvider(cache, null, Log);
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, Log);
         await using var staleLock = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
         timeProvider.Advance(TimeSpan.FromMinutes(2));
         await using var newLock = acquiredByAnotherOwner
@@ -129,7 +134,8 @@ public class CacheLockProviderTests(ITestOutputHelper output) : TestWithLoggingB
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
-        var locker = new CacheLockProvider(cache, null, Log);
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, Log);
         await using var lockInstance = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
         timeProvider.Advance(TimeSpan.FromSeconds(30));
 
@@ -148,7 +154,8 @@ public class CacheLockProviderTests(ITestOutputHelper output) : TestWithLoggingB
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
-        var locker = new CacheLockProvider(cache, null, Log);
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, Log);
         await using var lease = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
 
         // Act

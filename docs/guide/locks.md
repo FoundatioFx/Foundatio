@@ -247,6 +247,46 @@ Choose a lease long enough for renewal latency, one batch, and scheduling delays
 
 Cache-backed renewal requires at least 5 milliseconds. For acquisition, zero requests a non-expiring lock. Other durations below 5 milliseconds throw before touching the cache. When a successful acquisition response takes the whole lease lifetime, `TryAcquireAsync` returns `null` and `AcquireAsync` throws `LockAcquisitionTimeoutException`.
 
+### Automatic renewal for a long operation
+
+When work has no batch boundary, renew the lease on a timer and pass a cancellation token to the operation. Start the timer before acquisition so a slow acquisition counts toward the first renewal interval.
+
+```csharp
+var leaseDuration = TimeSpan.FromMinutes(2);
+using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+await using var lease = await locker.AcquireAsync("import", leaseDuration, cancellationToken: stoppingToken);
+using var work = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
+await Task.WhenAll(RenewLeaseAsync(), RunWorkAsync());
+
+async Task RenewLeaseAsync()
+{
+    try
+    {
+        while (await timer.WaitForNextTickAsync(work.Token))
+            await lease.RenewAsync(leaseDuration);
+    }
+    finally
+    {
+        await work.CancelAsync();
+    }
+}
+
+async Task RunWorkAsync()
+{
+    try
+    {
+        await VeryLongRunningOperationAsync(work.Token);
+    }
+    finally
+    {
+        timer.Dispose();
+    }
+}
+```
+
+A renewal failure cancels cooperative work. Finishing the work stops the timer, and both tasks finish before the lease is released. A paused process can still outlive its lease. Enforce ownership at the destination when a stale write must be rejected.
+
 ## Common Patterns
 
 ### Singleton Processing
