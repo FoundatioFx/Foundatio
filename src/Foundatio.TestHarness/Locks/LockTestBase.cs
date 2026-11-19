@@ -63,6 +63,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
 
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -103,6 +104,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task CanReleaseLockMultipleTimes()
     {
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -134,6 +136,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
 
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -175,6 +178,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
 
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -229,6 +233,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
 
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -266,6 +271,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
 
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -301,6 +307,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task CanAcquireLocksInParallel()
     {
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -336,6 +343,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task CanAcquireScopedLocksInParallel()
     {
         var lockProvider = GetLockProvider();
+
         if (lockProvider == null)
             return;
 
@@ -373,6 +381,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task CanAcquireMultipleLocksInParallel()
     {
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -408,6 +417,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task LockOneAtATimeAsync()
     {
         var locker = GetLockProvider();
+
         if (locker == null)
             return;
 
@@ -564,6 +574,7 @@ public abstract class LockTestBase : TestWithLoggingBase
 
         var period = TimeSpan.FromSeconds(2);
         var locker = GetThrottlingLockProvider(allowedLocks, period);
+
         if (locker == null)
             return;
 
@@ -604,6 +615,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task AcquireAsync_ThrowsWhenLockNotAvailableAsync()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -619,6 +631,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -637,6 +650,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -659,6 +673,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         const int allowedLocks = 1;
         var period = TimeSpan.FromSeconds(1);
         var locker = GetThrottlingLockProvider(allowedLocks, period);
+
         if (locker is null)
             return;
 
@@ -692,6 +707,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -718,6 +734,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -739,6 +756,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task Lock_LockIdAndResource_ReturnCorrectValues()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -756,6 +774,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
@@ -776,6 +795,7 @@ public abstract class LockTestBase : TestWithLoggingBase
     public virtual async Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
     {
         var locker = GetLockProvider();
+
         if (locker is null)
             return;
 
