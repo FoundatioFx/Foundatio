@@ -227,58 +227,91 @@ await using var lck = await locker.TryAcquireAsync(
 );
 ```
 
-### Renewing Locks
+### Renewing a cache-backed lock between batches
 
-For long-running operations, renew the lock:
+For a long-running import, renew before starting each batch. If renewal throws, the loop exits before the next batch starts.
+
+```csharp
+var leaseDuration = TimeSpan.FromMinutes(1);
+await using var lease = await locker.AcquireAsync("import", leaseDuration, cancellationToken: stoppingToken);
+
+foreach (var batch in batches)
+{
+    stoppingToken.ThrowIfCancellationRequested();
+    await lease.RenewAsync(leaseDuration);
+    await ProcessBatchAsync(batch, stoppingToken);
+}
+```
+
+Choose a lease long enough for renewal latency, one batch, and scheduling delays. A process pause can still outlast the lease. For writes that must reject a stale owner, enforce ownership at the destination.
+
+Cache-backed renewal requires at least 5 milliseconds. For acquisition, zero requests a non-expiring lock. Other durations below 5 milliseconds throw before touching the cache. When a successful acquisition response takes the whole lease lifetime, the lease is released and acquisition keeps trying until the cancellation token is cancelled.
+
+Cache-backed renewal throws `LockException` when the cache rejects the renewal, when the cache call fails, or when the response takes the whole lease lifetime. A cache error is the inner exception. In each case ownership is no longer assured, so stop the protected work.
+
+### Automatic renewal for a long operation
+
+When work has no batch boundary, renew the lease on a timer and pass a cancellation token to the operation. Start the timer before acquisition so a slow acquisition counts toward the first renewal interval.
+
+```csharp
+var leaseDuration = TimeSpan.FromMinutes(2);
+using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+await using var lease = await locker.AcquireAsync("import", leaseDuration, cancellationToken: stoppingToken);
+using var work = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
+await Task.WhenAll(RenewLeaseAsync(), RunWorkAsync());
+
+async Task RenewLeaseAsync()
+{
+    try
+    {
+        while (await timer.WaitForNextTickAsync(work.Token))
+            await lease.RenewAsync(leaseDuration);
+    }
+    finally
+    {
+        await work.CancelAsync();
+    }
+}
+
+async Task RunWorkAsync()
+{
+    try
+    {
+        await VeryLongRunningOperationAsync(work.Token);
+    }
+    finally
+    {
+        timer.Dispose();
+    }
+}
+```
+
+A renewal failure cancels cooperative work. Finishing the work stops the timer, and both tasks finish before the lease is released. A paused process can still outlive its lease. Enforce ownership at the destination when a stale write must be rejected.
+
+### Acquiring multiple resources
+
+Use the multi-resource overload when work requires every resource. It returns a collection only after every individual acquisition succeeds and the provider checks the lease times.
 
 ```csharp
 await using var lck = await locker.TryAcquireAsync(
-    "my-resource",
-    timeUntilExpires: TimeSpan.FromMinutes(1)
-);
+    ["account:1", "account:2"],
+    timeUntilExpires: TimeSpan.FromMinutes(5),
+    acquireTimeout: TimeSpan.FromSeconds(10));
 
-if (lck is not null)
-{
-    // Do some work
-    await DoPartOneAsync();
+if (lck is null)
+    return;
 
-    // Renew lock for more time
-    await lck.RenewAsync(TimeSpan.FromMinutes(1));
-
-    // Continue work
-    await DoPartTwoAsync();
-}
+await TransferAsync();
 ```
 
-### Automatic Renewal
+Resources are acquired one at a time in ordinal order. Duplicates are ignored. Earlier versions sorted using the worker's current culture. With `en-US`, the older version takes `ä` before `z`, and the newer version takes `z` first. If your keys can sort differently, drain workers using the old order before starting workers using the new order. Otherwise each can hold a key the other needs. With non-expiring locks and no acquisition timeout, both can wait indefinitely.
 
-For very long operations, set up automatic renewal:
+Use a cache that retains live lock keys until release or expiration. Evicting a key can let another caller acquire the same resource, even before the collection is returned. The final elapsed-time check cannot detect eviction or force-release.
 
-```csharp
-await using var lck = await locker.TryAcquireAsync("my-resource");
-if (lck is null) return;
+Each acquisition receives the same cancellation token. If a member is unavailable, a renewal reports lost ownership, or a lease reaches its expiration bound, `TryAcquireAsync` returns `null` and `AcquireAsync` throws `LockAcquisitionTimeoutException`. Other provider exceptions propagate, including when a parallel renewal also reports lost ownership.
 
-using var cts = new CancellationTokenSource();
-
-// Start renewal task
-var renewTask = Task.Run(async () =>
-{
-    while (!cts.Token.IsCancellationRequested)
-    {
-        await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
-        await lck.RenewAsync(TimeSpan.FromMinutes(1));
-    }
-});
-
-try
-{
-    await VeryLongRunningOperationAsync();
-}
-finally
-{
-    cts.Cancel();
-}
-```
+Every failure triggers a release attempt for every acquired member. Cleanup errors are logged. A failed release can leave a lock held until expiration, or until explicit recovery for a non-expiring lock. Disposing a successful collection explicitly releases its members even when `releaseOnDispose` is `false`.
 
 ## Common Patterns
 
