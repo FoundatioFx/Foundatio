@@ -123,7 +123,7 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         // Assert
         Assert.True(await provider.IsLockedAsync("resource"));
         clock.Advance(TimeSpan.FromDays(1));
-        Assert.Equal(milliseconds == 0, await provider.IsLockedAsync("resource"));
+        Assert.Equal(milliseconds is 0, await provider.IsLockedAsync("resource"));
     }
 
     [Fact]
