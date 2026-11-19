@@ -291,7 +291,7 @@ A renewal failure cancels cooperative work. Finishing the work stops the timer, 
 
 ### Acquiring multiple resources
 
-Acquiring a set is all-or-nothing. You get one handle that owns every resource, or no locks are held:
+Use the multi-resource overload when work requires every resource. It returns a collection only after every individual acquisition succeeds and the provider checks the lease times.
 
 ```csharp
 await using var lck = await locker.TryAcquireAsync(
@@ -300,16 +300,18 @@ await using var lck = await locker.TryAcquireAsync(
     acquireTimeout: TimeSpan.FromSeconds(10));
 
 if (lck is null)
-    return; // nothing is held
+    return;
 
 await TransferAsync();
 ```
 
-Resources are acquired one at a time in ordinal order, and duplicates are ignored. If workers use different cultures, coordinate their upgrade so they agree on the acquisition order. The timeout or cancellation token covers the whole set, not each member.
+Resources are acquired one at a time in ordinal order. Duplicates are ignored. Earlier versions sorted using the worker's current culture. With `en-US`, the older version takes `ä` before `z`, and the newer version takes `z` first. If your keys can sort differently, drain workers using the old order before starting workers using the new order. Otherwise each can hold a key the other needs. With non-expiring locks and no acquisition timeout, both can wait indefinitely.
 
-`TryAcquireAsync` returns `null` when a member can't be acquired before cancellation or a lease is lost before the whole set is acquired. `AcquireAsync` throws `LockAcquisitionTimeoutException` in that case. Either way the members already acquired are released before the call returns, even when `releaseOnDispose` is false. `CacheLockProvider` reports renewal cache errors as a lost lease. Other exceptions propagate after the acquired members are released.
+Use a cache that retains live lock keys until release or expiration. Evicting a key can let another caller acquire the same resource, even before the collection is returned. The final elapsed-time check cannot detect eviction or force-release.
 
-Cleanup attempts every acquired member. Failed releases are logged. A non-expiring lock needs explicit recovery if cleanup fails. If one renewal loses its lease while another throws, the attempt returns `null` instead of throwing, because the set can no longer be held.
+Each acquisition receives the same cancellation token. If a member is unavailable, a renewal reports lost ownership, or a lease reaches its expiration bound, `TryAcquireAsync` returns `null` and `AcquireAsync` throws `LockAcquisitionTimeoutException`. Other provider exceptions propagate, including when a parallel renewal also reports lost ownership.
+
+Every failure triggers a release attempt for every acquired member. Cleanup errors are logged. A failed release can leave a lock held until expiration, or until explicit recovery for a non-expiring lock. Disposing a successful collection explicitly releases its members even when `releaseOnDispose` is `false`.
 
 ## Common Patterns
 

@@ -8,6 +8,7 @@ using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Utility;
 using Foundatio.Xunit;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
@@ -153,6 +154,32 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
             finishRenewal.TrySetResult();
             await using var remaining = await acquisition.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
         }
+    }
+
+    [Theory]
+    [InlineData(99, true)]
+    [InlineData(100, false)]
+    public async Task TryAcquireAsync_AfterSlowSuccessTrace_ReturnsOnlyUnexpiredSet(int elapsedMilliseconds, bool shouldAcquire)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, Log);
+        Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
+        Log.Options.WriteLogEntryFunc = entry =>
+        {
+            if (entry.Message.StartsWith("Acquired 2 locks ", StringComparison.Ordinal))
+                timeProvider.Advance(TimeSpan.FromMilliseconds(elapsedMilliseconds));
+        };
+
+        // Act
+        await using var lease = await locker.TryAcquireAsync(["a", "b"], TimeSpan.FromMilliseconds(100), cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.Equal(shouldAcquire, lease is not null);
+        Assert.Equal(shouldAcquire, await locker.IsLockedAsync("a"));
+        Assert.Equal(shouldAcquire, await locker.IsLockedAsync("b"));
     }
 
     [Theory]
@@ -330,8 +357,10 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
         second.Verify(l => l.ReleaseAsync(), duringRenewal ? Times.Once() : Times.Never());
     }
 
-    [Fact]
-    public async Task TryAcquireAsync_WhenRenewalLosesLockAndProviderThrows_ReturnsNullAndReleasesAcquiredLocks()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TryAcquireAsync_WhenRenewalLosesLockAndProviderThrows_ReleasesAllAndPropagatesProviderError(bool lostFirst)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -344,7 +373,7 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
         failing.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
         var last = new Mock<ILock>();
         last.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
-        var locker = CreateMockLockProvider(timeProvider, ("a", failing.Object), ("b", lost.Object), ("c", last.Object));
+        var locker = CreateMockLockProvider(timeProvider, ("a", lostFirst ? lost.Object : failing.Object), ("b", lostFirst ? failing.Object : lost.Object), ("c", last.Object));
         locker.Setup(p => p.TryAcquireAsync("c", It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(() =>
         {
             timeProvider.Advance(TimeSpan.FromSeconds(31));
@@ -352,10 +381,10 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
         });
 
         // Act
-        var lockInstance = await locker.Object.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => locker.Object.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken));
 
         // Assert
-        Assert.Null(lockInstance);
+        Assert.Same(providerError, thrown);
         lost.Verify(l => l.ReleaseAsync(), Times.Once);
         failing.Verify(l => l.ReleaseAsync(), Times.Once);
         last.Verify(l => l.ReleaseAsync(), Times.Once);

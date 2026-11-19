@@ -287,18 +287,18 @@ public static class LockProviderExtensions
     }
 
     /// <summary>
-    /// Attempts to acquire every resource as one all-or-nothing lock. Resources are deduplicated and acquired one at a time in ordinal order.
+    /// Attempts to acquire each distinct resource in ordinal order and returns the handles as a collection.
     /// </summary>
     /// <param name="provider">The lock provider.</param>
     /// <param name="resources">The resources to lock together.</param>
-    /// <param name="timeUntilExpires">The lease duration for each member. Expiring members are renewed while the rest of the set is acquired.</param>
-    /// <param name="releaseOnDispose">If true, every member is released when the returned lock is disposed.</param>
-    /// <param name="cancellationToken">Bounds acquisition of the whole set, not each member.</param>
+    /// <param name="timeUntilExpires">The lease duration for each member. The provider checks for due renewals between acquisitions.</param>
+    /// <param name="releaseOnDispose">Passed to each member acquisition. Disposing the returned collection explicitly releases its members even when this is false.</param>
+    /// <param name="cancellationToken">The same token is passed to each acquisition.</param>
     /// <returns>
-    /// A lock that owns every resource, or <c>null</c> when a member cannot be acquired or an acquired lease is lost first.
-    /// When <c>null</c> is returned, the members already acquired have been released, regardless of <paramref name="releaseOnDispose"/>.
+    /// The collection if every acquisition succeeds, or <c>null</c> if a member is unavailable, renewal reports lost ownership, or a lease reaches its expiration bound.
     /// </returns>
-    /// <remarks>Members already acquired are also released before a provider exception propagates. A failed release is logged.</remarks>
+    /// <remarks>Cache-backed locks require a store that retains live lock keys until release or expiration.
+    /// On failure, the provider attempts to release every acquired member and logs cleanup errors. Other provider exceptions propagate after cleanup.</remarks>
     public static async Task<ILock?> TryAcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resources);
@@ -343,6 +343,9 @@ public static class LockProviderExtensions
             var locks = acquiredLocks.Select(l => l.Lock).ToArray();
             var result = new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), timeProvider.GetUtcNow().UtcDateTime, sw.Elapsed, logger);
             logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", locks.Length, locks.Select(l => l.Resource), sw.Elapsed);
+            if (HasExpiredLease(acquiredLocks, timeUntilExpires, timeProvider, logger))
+                return null;
+
             acquiredAll = true;
             return result;
         }
@@ -374,28 +377,45 @@ public static class LockProviderExtensions
         if (locksToRenew is null)
             return true;
 
-        var renewal = Task.WhenAll(locksToRenew.Select(async l => await l.RenewAsync(timeUntilExpires).AnyContext()));
-
-        try
-        {
-            await renewal.AnyContext();
-        }
-        catch (Exception) when (renewal.Exception?.InnerExceptions.Any(ex => ex is LockException) is true)
-        {
-            logger.LogWarning(renewal.Exception, "Lost a lock while acquiring {Resource}, releasing acquired locks", acquiredLocks[^1].Lock.Resource);
+        var renewed = await Task.WhenAll(locksToRenew.Select(l => TryRenewMemberAsync(l, timeUntilExpires, logger))).AnyContext();
+        if (renewed.Contains(false) || HasExpiredLease(acquiredLocks, timeUntilExpires, timeProvider, logger))
             return false;
-        }
-
-        var checkedAt = LeaseTimestamp.Capture(timeProvider);
-        var leaseDuration = timeUntilExpires ?? ILockProvider.DefaultLeaseDuration;
-        if (acquiredLocks.Any(l => l.LastRenewed.ElapsedUntil(checkedAt, timeProvider) >= leaseDuration))
-        {
-            logger.LogWarning("An acquired lease may have expired while renewing locks for {Resource}, releasing acquired locks", acquiredLocks[^1].Lock.Resource);
-            return false;
-        }
 
         logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Count, locksToRenew.Select(l => l.Resource), renewTime);
         return true;
+    }
+
+    private static async Task<bool> TryRenewMemberAsync(ILock member, TimeSpan? timeUntilExpires, ILogger logger)
+    {
+        try
+        {
+            await member.RenewAsync(timeUntilExpires).AnyContext();
+            return true;
+        }
+        catch (LockException ex)
+        {
+            logger.LogWarning(ex, "Lost lock {Resource} during multi-resource acquisition", member.Resource);
+            return false;
+        }
+    }
+
+    private static bool HasExpiredLease(List<(ILock Lock, LeaseTimestamp LastRenewed)> acquiredLocks, TimeSpan? timeUntilExpires, TimeProvider timeProvider, ILogger logger)
+    {
+        var duration = timeUntilExpires ?? ILockProvider.DefaultLeaseDuration;
+        if (duration == TimeSpan.Zero)
+            return false;
+
+        var checkedAt = LeaseTimestamp.Capture(timeProvider);
+        foreach (var (member, lastRenewed) in acquiredLocks)
+        {
+            if (lastRenewed.ElapsedUntil(checkedAt, timeProvider) < duration)
+                continue;
+
+            logger.LogWarning("Lease for {Resource} may have expired during multi-resource acquisition", member.Resource);
+            return true;
+        }
+
+        return false;
     }
 
     private static async Task ReleaseAcquiredLocksAsync(IReadOnlyCollection<ILock> locks, ILogger logger)
