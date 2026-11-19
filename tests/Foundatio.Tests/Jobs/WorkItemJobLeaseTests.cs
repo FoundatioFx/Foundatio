@@ -756,6 +756,40 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ReportProgressAsync_WhenAbandonmentBecomesVisibleAtEntryCheck_StopsHandler()
+    {
+        // Arrange
+        using var queue = CreateQueue();
+        using var bus = CreateMessageBus();
+        await queue.EnqueueAsync("item");
+        var original = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(original);
+        var entry = new Mock<IQueueEntry<WorkItemData>>();
+        entry.SetupGet(e => e.Id).Returns(original.Id);
+        entry.SetupGet(e => e.Value).Returns(original.Value);
+        entry.SetupGet(e => e.IsAbandoned).Returns(() =>
+        {
+            bool observed = original.IsAbandoned;
+            original.MarkAbandoned();
+            return observed;
+        });
+        bool continued = false;
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(new DelegateWorkItemHandler(async ctx =>
+        {
+            await ctx.ReportProgressAsync(50);
+            continued = true;
+        }, _logger) { AutoRenewLockOnProgress = true });
+
+        // Act
+        var result = await new WorkItemJob(queue, bus, handlers, Log).ProcessAsync(entry.Object, TestCancellationToken);
+
+        // Assert
+        Assert.False(continued);
+        Assert.IsType<InvalidOperationException>(result.Error);
+    }
+
+    [Fact]
     public async Task ReportProgressAsync_WhenEntryExpiresDuringDelivery_PreservesRetryWrite()
     {
         // Arrange

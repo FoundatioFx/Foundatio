@@ -56,8 +56,10 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
 
         if (throwIfAbandoned)
             ThrowIfEntryAbandoned();
+        else if (entry.IsAbandoned)
+            return false;
 
-        return !entry.IsAbandoned && !entry.IsCompleted;
+        return !entry.IsCompleted;
     }
 
     private void ThrowIfEntryAbandoned()
