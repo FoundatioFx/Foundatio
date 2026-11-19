@@ -482,6 +482,31 @@ public abstract class LockTestBase : TestWithLoggingBase
         Assert.Equal(0, lockInstance.RenewalCount);
     }
 
+    public virtual async Task RenewAsync_WhenOneOfMultipleLocksReplaced_ThrowsLockExceptionAndPreservesCurrentOwner()
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string prefix = Guid.NewGuid().ToString("N")[..10];
+        string replacedResource = prefix + "-a";
+        string retainedResource = prefix + "-b";
+        await using var lockInstance = await locker.AcquireAsync([replacedResource, retainedResource], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        await locker.ReleaseAsync(replacedResource);
+        await using var currentOwner = await locker.AcquireAsync(replacedResource, TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => lockInstance.RenewAsync());
+
+        // Assert
+        Assert.Equal(0, lockInstance.RenewalCount);
+        Assert.True(await locker.IsLockedAsync(replacedResource));
+        Assert.True(await locker.IsLockedAsync(retainedResource));
+        await currentOwner.RenewAsync();
+        Assert.Equal(1, currentOwner.RenewalCount);
+    }
+
     public virtual async Task RenewAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds)
     {
         // Arrange
@@ -548,6 +573,30 @@ public abstract class LockTestBase : TestWithLoggingBase
         await current.RenewAsync();
         Assert.True(await locker.IsLockedAsync(lockName));
         Assert.Equal(1, current.RenewalCount);
+    }
+
+    public virtual async Task TryAcquireAsync_WhenMultipleResourcesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(bool scoped)
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        if (scoped)
+            locker = new ScopedLockProvider(locker, "suffix");
+
+        string heldResource = "b" + Guid.NewGuid().ToString("N");
+        string availableResource = "a" + heldResource;
+        await using var owner = await locker.AcquireAsync(heldResource, TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync([availableResource, heldResource], TimeSpan.FromMinutes(1), cancellationToken: new CancellationToken(true));
+
+        // Assert
+        Assert.Null(lockInstance);
+        Assert.False(await locker.IsLockedAsync(availableResource));
+        Assert.True(await locker.IsLockedAsync(heldResource));
+        await owner.RenewAsync();
     }
 
     public virtual async Task WillThrottleCallsAsync()
