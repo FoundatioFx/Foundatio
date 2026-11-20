@@ -133,7 +133,9 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        return WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.AddAsync(s.key, s.value, s.expiresIn)).AsTask();
+        var add = WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.AddAsync(s.key, s.value, s.expiresIn));
+        // Below the TTL floor, AddAsync can remove an existing entry and return false.
+        return expiresIn < CacheClientExtensions.MinimumExpiration ? InvalidateAfterExpiredAddAsync(key, add) : add.AsTask();
     }
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -329,6 +331,13 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
             ArgumentOutOfRangeException.ThrowIfLessThan(page.Value, 1);
 
         return _distributedCache.GetListAsync<T>(key, page, pageSize);
+    }
+
+    private async Task<bool> InvalidateAfterExpiredAddAsync(string key, ValueTask<bool> add)
+    {
+        bool added = await add.AnyContext();
+        await PublishInvalidationAsync([key]).AnyContext();
+        return added;
     }
 
     /// <summary>
