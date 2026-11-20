@@ -279,13 +279,13 @@ Console.WriteLine($"Invalidation calls: {hybridCache.InvalidateCacheCalls}");
 ### Message Bus Traffic
 
 ::: warning Shared Topic Traffic
-`SetAsync` publishes an invalidation on each completed write. In high-write scenarios with a shared topic, this can generate significant traffic across all instances.
+Every write except `AddAsync` publishes an invalidation, and removals publish when they remove something. In high-write scenarios with a shared topic, this can generate significant traffic across all instances.
 :::
 
 **The problem:**
 
 ```csharp
-// Each successful SetAsync publishes an InvalidateCache message to subscribers
+// Each SetAsync publishes an InvalidateCache message to subscribers
 await hybridCache.SetAsync("key1", value1);  // 1 message to all
 await hybridCache.SetAsync("key2", value2);  // 1 message to all
 await hybridCache.SetAsync("key3", value3);  // 1 message to all
