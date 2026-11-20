@@ -122,8 +122,9 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(3, cache.LocalCache.Count);
         Assert.Equal(0, cache.LocalCacheHits);
 
-        // GetAll should hit local cache for all keys
-        var result = await cache.GetAllAsync<int>(["hybrid1", "hybrid2", "hybrid3"]);
+        // Duplicate keys count once, whether the value comes from the local or distributed cache.
+        string[] keys = ["hybrid1", "hybrid2", "hybrid2", "hybrid3"];
+        var result = await cache.GetAllAsync<int>(keys);
         Assert.Equal(3, result.Count);
         Assert.Equal(1, result["hybrid1"].Value);
         Assert.Equal(2, result["hybrid2"].Value);
@@ -135,7 +136,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(2, cache.LocalCache.Count);
 
         // GetAll should hit local cache for 2 keys, distributed for 1
-        result = await cache.GetAllAsync<int>(["hybrid1", "hybrid2", "hybrid3"]);
+        result = await cache.GetAllAsync<int>(keys);
         Assert.Equal(3, result.Count);
         Assert.Equal(1, result["hybrid1"].Value);
         Assert.Equal(2, result["hybrid2"].Value); // From distributed cache

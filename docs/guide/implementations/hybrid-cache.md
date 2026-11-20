@@ -45,7 +45,7 @@ dotnet add package Foundatio.Redis
 
 1. Check local in-memory cache first (zero network latency)
 2. On miss, check distributed cache (Redis, etc.)
-3. If found in distributed cache, store in local cache for future requests
+3. If found in distributed cache, store in local cache for future requests, unless an overlapping write or invalidation made the result stale. Paged list reads are never stored locally
 4. Return value to caller
 
 ### Write Flow
@@ -91,7 +91,7 @@ dotnet add package Foundatio.Redis
 ```
 
 1. Write to distributed cache first (L2 is the source of truth)
-2. Only update local cache (L1) if distributed write succeeds
+2. Only update local cache (L1) if distributed write succeeds and no overlapping operation on the key is still in flight; otherwise evict the key from L1
 3. Publish invalidation message via message bus
 4. **Other instances** receive message and clear **only the affected keys** from their local cache
 5. Current instance ignores its own invalidation messages (filtered by `CacheId`)
@@ -150,8 +150,16 @@ This architecture is similar to Microsoft's `HybridCache` (.NET 9+) and other di
 
 This ensures that:
 - L2 is always the **source of truth**
-- L1 never contains data that doesn't exist in L2
-- Failed distributed writes don't leave stale data in local cache
+- An operation that overlaps a write or invalidation on the same client never leaves an older value in L1; the key is evicted instead
+
+Another instance can still serve its warm L1 value until the invalidation message reaches it. If L2 commits a write and its reply is lost, L1 can retain its previous value until invalidation, eviction or expiration.
+
+::: info Consistency trade-offs
+- **Cold reads with a null TTL** check whether the key still exists before filling L1. If a writer changes L2 directly between the value, TTL and existence reads, L1 can cache the previous value with the wrong expiration. Use a hybrid or hybrid-aware client for writes that should invalidate L1.
+- **An invalidation from another instance during a cold read** discards that read's local fill. The client returns the value it read and reads L2 once more to fill L1, so later reads can be served locally. It retries only once and skips the retry while a write on the key is in flight.
+- **In-flight operations are tracked in 4,096 hash slots per client.** Keys that share a slot, and any prefix removal or flush, can skip a local fill and cause an extra L2 read later. They never leave a stale entry.
+- **A read that finishes as a write lands on the same client** can briefly store its older value before evicting it.
+:::
 
 ::: info TTL Skew Between L1 and L2
 When setting expiration times, there is a small timing skew between L1 and L2:
@@ -227,6 +235,8 @@ This approach ensures consistency even when:
 - Conditional operations have partial success (e.g., list operations)
 - Multiple instances are writing concurrently
 - Operations fail due to past expiration
+
+A cold `ListAddAsync` only seeds L1 when L2 confirms the list didn't exist before the add, so L1 never holds a list with only the new members. If a bulk set or expiration change throws after a partial commit, the client evicts the requested keys and notifies other instances before rethrowing.
 
 ### Edge Cases with Zero Values
 

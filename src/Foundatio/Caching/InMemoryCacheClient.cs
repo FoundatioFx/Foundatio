@@ -599,7 +599,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
+    public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
+    {
+        return ListAddAsync(key, values, expiresIn, requireExistingList: false);
+    }
+
+    /// <summary>
+    /// Adds list members. When <paramref name="requireExistingList"/> is set, nothing is added unless the key already
+    /// holds a list, so a caller that mirrors a complete list never creates one that contains only the new members.
+    /// </summary>
+    internal async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn, bool requireExistingList) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -615,8 +624,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         // A string argument binds T to char; it is one member, as it has always been.
         long added = values is string stringValue
-            ? UpdateList(key, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { stringValue }, expiresAt, remove: false)
-            : UpdateList(key, GetDistinctListValues(values), expiresAt, remove: false);
+            ? UpdateList(key, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { stringValue }, expiresAt, remove: false, requireExistingList)
+            : UpdateList(key, GetDistinctListValues(values), expiresAt, remove: false, requireExistingList);
 
         if (added > 0)
             await StartMaintenanceAsync().AnyContext();
@@ -699,7 +708,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// entry before releasing it, so they never redo work for each other. The swap only fails when another kind of
     /// write replaced the entry; the change is then rolled back and retried against the new entry.
     /// </summary>
-    private long UpdateList<T>(string key, HashSet<T> items, DateTime? expiresAt, bool remove) where T : notnull
+    private long UpdateList<T>(string key, HashSet<T> items, DateTime? expiresAt, bool remove, bool requireExistingList = false) where T : notnull
     {
         if (items.Count is 0)
             return 0;
@@ -771,7 +780,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             if (current is not null && current.StoredValue is not IDictionary<T, DateTime?>)
             {
-                if (remove)
+                if (remove || requireExistingList)
                     return 0;
                 throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
             }
@@ -786,6 +795,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 OnItemExpired(key);
                 return 0;
             }
+
+            if (current is null && requireExistingList)
+                return 0;
 
             if (!TryCreateList(key, stored, current, items, expiresAt, remove, input, inputSize, out long result))
                 continue;

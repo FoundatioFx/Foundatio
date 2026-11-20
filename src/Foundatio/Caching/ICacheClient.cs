@@ -53,7 +53,7 @@ public interface ICacheClient : IDisposable
     /// Removes multiple cache entries, or all entries if no keys are specified.
     /// </summary>
     /// <param name="keys">
-    /// The keys to remove. If null or empty, all cache entries will be removed (flush).
+    /// The keys to remove. Pass null to remove all cache entries. The behavior of an empty collection depends on the provider.
     /// Each key in the collection cannot be null or empty.
     /// </param>
     /// <returns>The number of entries that were removed.</returns>
