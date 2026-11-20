@@ -402,8 +402,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         const string key = "uncertain-increment";
         using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
-        using var aware = new HybridAwareCacheClient(distributed, _messageBus, Log);
-        ICacheClient writer = useHybridAwareWriter ? aware : cache;
+        using var awareWriter = useHybridAwareWriter ? CreateHybridAwareCache(distributed) : null;
+        var writer = awareWriter ?? cache;
         Assert.True(await cache.SetAsync(key, 1L));
         var error = new TimeoutException("Increment response lost");
         distributed.AfterNextWrite(() => Task.FromException(error));
@@ -740,8 +740,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
-        using var aware = new HybridAwareCacheClient(distributed, _messageBus, Log);
-        ICacheClient writer = useHybridAwareWriter ? aware : cache;
+        using var awareWriter = useHybridAwareWriter ? CreateHybridAwareCache(distributed) : null;
+        var writer = awareWriter ?? cache;
         await cache.SetAllAsync(new Dictionary<string, int> { [removed] = 1, [other] = 2 });
         await peer.GetAllAsync<int>([removed, other]);
         var error = new TimeoutException("Removal response lost");
@@ -1260,8 +1260,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
-        using var aware = new HybridAwareCacheClient(distributed, _messageBus, Log);
-        ICacheClient writer = useHybridAwareWriter ? aware : cache;
+        using var awareWriter = useHybridAwareWriter ? CreateHybridAwareCache(distributed) : null;
+        var writer = awareWriter ?? cache;
         Assert.True(await cache.SetAsync(key, 1));
         Assert.Equal(1, (await peer.GetAsync<int>(key)).Value);
         var error = new TimeoutException("Write response lost");
@@ -1377,8 +1377,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         using var writer = CreateCache(distributedCache: provider.Object);
         using var peer = CreateCache();
-        using var aware = new HybridAwareCacheClient(provider.Object, _messageBus, Log);
-        ICacheClient activeWriter = useHybridAwareWriter ? aware : writer;
+        using var awareWriter = useHybridAwareWriter ? CreateHybridAwareCache(provider.Object) : null;
+        var activeWriter = awareWriter ?? writer;
         await peer.SetAllAsync(values);
         await writer.LocalCache.SetAllAsync(values);
         Assert.Equal(1, (await writer.GetAsync<int>("first")).Value);
@@ -1568,6 +1568,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         return new HybridCacheClient(distributedCache ?? _distributedCache, messageBus ?? _messageBus, options, Log);
     }
+
+    private ICacheClient CreateHybridAwareCache(ICacheClient distributedCache) => new HybridAwareCacheClient(distributedCache, _messageBus, Log);
 
     private static InMemoryCacheClientOptions SizeLimitedOptions(Func<object, long> sizeCalculator, bool shouldThrow = true) => new()
     {
