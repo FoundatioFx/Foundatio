@@ -3,6 +3,10 @@ on: [push, pull_request]
 
 jobs:
   build:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: ./.github/workflows/build-workflow.yml
     secrets: inherit
     with:
