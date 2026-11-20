@@ -250,7 +250,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             if (!kvp.Value.HasValue || !expirations.TryGetValue(kvp.Key, out var expiration) || !misses.TryGetValue(kvp.Key, out var ticket))
                 continue;
 
-            _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
+            LogLocalCacheFill(ticket, kvp.Key, expiration);
             await UpdateLocalValueAsync(ticket, kvp.Key, kvp.Value.Value, expiration).AnyContext();
         }
 
@@ -679,11 +679,20 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
                 // A null TTL can also mean the key expired after the value was read.
                 if (expiration.HasValue || await TryGetDistributedKeyExistenceAsync(key).AnyContext() is true)
+                {
+                    LogLocalCacheFill(observation, key, expiration);
                     await UpdateLocalAsync(observation, key, (value.Value, expiration), store).AnyContext();
+                }
             }
 
             return value;
         }
+    }
+
+    private void LogLocalCacheFill(LocalCacheFence.Ticket ticket, string key, TimeSpan? expiration)
+    {
+        if (_logger.IsEnabled(LogLevel.Trace) && ticket.IsCurrent)
+            _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
     }
 
     private async ValueTask<bool?> TryGetDistributedKeyExistenceAsync(string key)

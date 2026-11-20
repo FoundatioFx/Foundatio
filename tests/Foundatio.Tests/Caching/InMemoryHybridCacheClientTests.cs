@@ -88,6 +88,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public async Task GetAllAsync_WhenPeerWritesDuringRead_CachesOnlyCurrentValues()
     {
         // Arrange
+        Log.SetLogLevel<HybridCacheClient>(LogLevel.Trace);
         using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
@@ -102,6 +103,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.Equal(1, snapshot["changed"].Value);
         Assert.Equal(2, current["changed"].Value);
         Assert.Equal(3, current["stable"].Value);
+        Assert.Single(Log.LogEntries, entry => entry.Message.StartsWith("Setting Local cache key: changed ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -146,6 +148,41 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task GetAllExpirationAsync_WithMixedKeys_ReturnsExpectedResults()
     {
         return base.GetAllExpirationAsync_WithMixedKeys_ReturnsExpectedResults();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetAsync_WhenColdReadFillsLocalCache_TracesKeyAndExpiration(bool readList)
+    {
+        // Arrange
+        const string key = "traced-fill";
+        var ttl = TimeSpan.FromMinutes(5);
+        Log.SetLogLevel<HybridCacheClient>(LogLevel.Trace);
+        using var distributed = new DelayedCache(Log, new FakeTimeProvider());
+        using var cache = CreateCache(distributedCache: distributed);
+        if (readList)
+            await distributed.ListAddAsync(key, [42], ttl);
+        else
+            await distributed.SetAsync(key, 42, ttl);
+
+        // Act
+        if (readList)
+        {
+            await cache.GetListAsync<int>(key);
+            await cache.GetListAsync<int>(key);
+        }
+        else
+        {
+            await cache.GetAsync<int>(key);
+            await cache.GetAsync<int>(key);
+        }
+
+        // Assert
+        var entry = Assert.Single(Log.LogEntries, entry => entry.LogLevel == LogLevel.Trace && entry.Message == $"Setting Local cache key: {key} with expiration: {ttl}");
+        var fields = Assert.IsAssignableFrom<IEnumerable<KeyValuePair<string, object?>>>(entry.State).ToDictionary();
+        Assert.Equal(key, fields["Key"]);
+        Assert.Equal(ttl, fields["Expiration"]);
     }
 
     [Fact]
