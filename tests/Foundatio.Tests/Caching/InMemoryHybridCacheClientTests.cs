@@ -85,6 +85,26 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public async Task GetAllAsync_WhenPeerWritesDuringRead_CachesOnlyCurrentValues()
+    {
+        // Arrange
+        using var distributed = new DelayedCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        using var peer = CreateCache(distributedCache: distributed);
+        await distributed.SetAllAsync(new Dictionary<string, int> { ["changed"] = 1, ["stable"] = 3 });
+        distributed.AfterNextRead(async () => Assert.True(await peer.SetAsync("changed", 2)));
+
+        // Act
+        var snapshot = await cache.GetAllAsync<int>(["changed", "stable"]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        var current = await cache.GetAllAsync<int>(["changed", "stable"]);
+
+        // Assert
+        Assert.Equal(1, snapshot["changed"].Value);
+        Assert.Equal(2, current["changed"].Value);
+        Assert.Equal(3, current["stable"].Value);
+    }
+
+    [Fact]
     public override Task GetAllAsync_WithInvalidKeys_ValidatesCorrectly()
     {
         return base.GetAllAsync_WithInvalidKeys_ValidatesCorrectly();
@@ -916,6 +936,37 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public async Task SetAllExpirationAsync_WhenOnlyFirstExpirationCommits_InvalidatesBothClients()
+    {
+        // Arrange
+        var values = new Dictionary<string, int> { ["first"] = 1, ["second"] = 2 };
+        var expirations = new Dictionary<string, TimeSpan?> { ["first"] = TimeSpan.Zero, ["second"] = TimeSpan.Zero };
+        var error = new CacheException("Batch interrupted");
+        var provider = new Mock<ICacheClient>();
+        provider.Setup(c => c.SetAllExpirationAsync(expirations)).Returns(async () =>
+        {
+            await _distributedCache.SetExpirationAsync("first", TimeSpan.Zero);
+            throw error;
+        });
+
+        using var writer = CreateCache(distributedCache: provider.Object);
+        using var peer = CreateCache();
+        await peer.SetAllAsync(values);
+        await writer.LocalCache.SetAllAsync(values);
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => writer.SetAllExpirationAsync(expirations));
+
+        // Assert
+        Assert.Same(error, thrown);
+        Assert.Equal(0, writer.LocalCache.Count);
+        Assert.Equal(0, peer.LocalCache.Count);
+        var current = await peer.GetAllAsync<int>(values.Keys);
+        Assert.False(current["first"].HasValue);
+        Assert.Equal(2, current["second"].Value);
+    }
+
+    [Fact]
     public override Task SetAllExpirationAsync_WithInvalidItems_ValidatesCorrectly()
     {
         return base.SetAllExpirationAsync_WithInvalidItems_ValidatesCorrectly();
@@ -949,6 +1000,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
             clock.Setup(c => c.GetUtcNow()).Throws(new InvalidOperationException("Eviction clock failed"));
             return 11;
         });
+
         options.TimeProvider = clock.Object;
         using var cache = CreateCache(options);
         using var peer = CreateCache();

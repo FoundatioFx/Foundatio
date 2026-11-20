@@ -161,7 +161,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
         if (items is null)
+        {
             _fence.InvalidateAll();
+        }
         else
         {
             foreach (string key in items)
@@ -239,7 +241,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
                 misses.Add(kvp.Key, _fence.BeginRead(kvp.Key));
             }
         }
-        Interlocked.Add(ref _localCacheHits, keysCollection.Count - (misses?.Count ?? 0));
+
+        Interlocked.Add(ref _localCacheHits, localValues.Count - (misses?.Count ?? 0));
 
         // All keys found in local cache.
         if (misses is null)

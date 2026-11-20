@@ -39,7 +39,7 @@ internal sealed class LocalCacheFence
 
     public WriteBatch BeginWrites(string[] keys)
     {
-        var tickets = new Dictionary<int, Ticket>();
+        var tickets = new Dictionary<int, Ticket>(Math.Min(keys.Length, SlotCount));
         foreach (string key in keys)
         {
             int slot = GetSlot(key);
