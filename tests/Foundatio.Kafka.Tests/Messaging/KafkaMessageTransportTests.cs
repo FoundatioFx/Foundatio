@@ -692,6 +692,101 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Receive_WithAGroupBacklogStartingToSkipNearItsPartitionsSkippedLimit_SkipsAllOfItAndKeepsTheGroupInOrder()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverGroupHeldLimit = 10,
+            ReceiverSkippedLimit = 8,
+            ReceiverHeldStopTimeout = TimeSpan.FromSeconds(1)
+        }));
+        var source = MessageSource.Queue(NewName("skip-near-limit"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Another group's first message is being handled: it holds its budget of 10 and skips the 5 after, of the
+        // partition's 8.
+        await transport.SendAsync(destination, Enumerable.Range(0, 16).Select(i => Message($"other-{i}", $"other-{i}") with { GroupKey = "other" }).ToList(), TestCancellationToken);
+        Assert.Equal("other-0", (await ReceiveOneAsync(receiver)).MessageId);
+        await WaitForAsync(() => receiver.SkippedCount == 5);
+
+        // The group handles a batch of 9 while 9 more wait behind it, under its budget.
+        await transport.SendAsync(destination, Enumerable.Range(0, 9).Select(i => Message($"g-{i}", $"g-{i}") with { GroupKey = "g" }).ToList(), TestCancellationToken);
+        await WaitForAsync(() => receiver.HeldCount == 10 + 8);
+        var batch = await receiver.ReceiveAsync(9, TimeSpan.FromSeconds(5), TestCancellationToken);
+        Assert.Equal(Enumerable.Range(0, 9).Select(i => $"g-{i}"), batch.Select(m => m.MessageId));
+        await transport.SendAsync(destination, Enumerable.Range(9, 9).Select(i => Message($"g-{i}", $"g-{i}") with { GroupKey = "g" }).ToList(), TestCancellationToken);
+        await WaitForAsync(() => receiver.HeldCount == 10 + 9);
+        Assert.Equal(1, receiver.GroupSkips);
+
+        // The batch is released for an immediate retry, as Foundatio releases the rest of a group's batch behind a
+        // failure, so the group holds 18 and does not drain. Skipping what it holds past its budget takes the partition
+        // past its limit; all of it is skipped, so none of it is delivered ahead of the rest.
+        foreach (var message in batch)
+            await receiver.AbandonAsync(message, TimeSpan.Zero, TestCancellationToken);
+
+        await WaitForAsync(() => receiver.GroupSkips == 2);
+        int skipped = receiver.SkippedCount;
+        int held = receiver.HeldCount;
+        Assert.Equal(Enumerable.Range(0, 18).Select(i => $"g-{i}"), await DrainAsync(receiver, 18, TimeSpan.FromSeconds(60)));
+        Assert.Equal(5 + 8, skipped);
+        Assert.Equal(10 + 9, held);
+        Assert.Equal(8, receiver.ReadAgainCount);
+    }
+
+    [Fact]
+    public async Task Receive_WithAGroupBacklogOlderThanItsPartitionsSkippedSpanAllows_HoldsAllOfItAndKeepsTheGroupInOrder()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverGroupHeldLimit = 10,
+            ReceiverSkippedSpanLimit = 25,
+            ReceiverHeldStopTimeout = TimeSpan.FromSeconds(1)
+        }));
+        var source = MessageSource.Queue(NewName("skip-near-span"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // The group handles a batch of 9 while 9 more wait behind it, under its budget.
+        await transport.SendAsync(destination, Enumerable.Range(0, 9).Select(i => Message($"g-{i}", $"g-{i}") with { GroupKey = "g" }).ToList(), TestCancellationToken);
+        await WaitForAsync(() => receiver.HeldCount == 8);
+        var batch = await receiver.ReceiveAsync(9, TimeSpan.FromSeconds(5), TestCancellationToken);
+        Assert.Equal(Enumerable.Range(0, 9).Select(i => $"g-{i}"), batch.Select(m => m.MessageId));
+        await transport.SendAsync(destination, Enumerable.Range(9, 9).Select(i => Message($"g-{i}", $"g-{i}") with { GroupKey = "g" }).ToList(), TestCancellationToken);
+        await WaitForAsync(() => receiver.HeldCount == 9);
+
+        // Then another group's first message is being handled: it holds its budget of 10 and skips the 12 after, which
+        // are 12 offsets back, of the 25 the partition allows.
+        await transport.SendAsync(destination, Enumerable.Range(0, 23).Select(i => Message($"other-{i}", $"other-{i}") with { GroupKey = "other" }).ToList(), TestCancellationToken);
+        var other = (KafkaIncomingMessage)await ReceiveOneAsync(receiver);
+        Assert.Equal("other-0", other.MessageId);
+        await WaitForAsync(() => receiver.SkippedCount == 12);
+        long lowest = receiver.LowestSkippedOffset(other.Partition.TopicPartition);
+        Assert.Equal(other.Offset + 11, lowest);
+        Assert.Equal(1, receiver.GroupSkips);
+
+        // The batch is released for an immediate retry, so the group holds 18 and does not drain. What it holds past its
+        // budget is older than the partition's skipped records, further back than the partition allows: it holds all of
+        // it instead of skipping part of it, so none of it is delivered ahead of the rest.
+        foreach (var message in batch)
+            await receiver.AbandonAsync(message, TimeSpan.Zero, TestCancellationToken);
+
+        await WaitForAsync(() => receiver.GroupSkips == 2);
+        int skipped = receiver.SkippedCount;
+        long lowestAfter = receiver.LowestSkippedOffset(other.Partition.TopicPartition);
+        Assert.Equal(Enumerable.Range(0, 18).Select(i => $"g-{i}"), await DrainAsync(receiver, 18, TimeSpan.FromSeconds(60)));
+        Assert.Equal(12, skipped);
+        Assert.Equal(lowest, lowestAfter);
+        Assert.Equal(0, receiver.ReadAgainCount);
+    }
+
+    [Fact]
     public async Task Receive_WithAGroupThatDrainsWithinTheStopTimeout_DoesNotSkip()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with

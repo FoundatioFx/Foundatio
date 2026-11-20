@@ -132,6 +132,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private int _pauses;
     private int _heldStops;
     private int _groupStops;
+    private int _groupSkips;
     private int _skippedCount;
     private long _skippedTotal;
     private long _readAgainCount;
@@ -193,6 +194,16 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         {
             lock (_lock)
                 return _groupStops;
+        }
+    }
+
+    /// <summary>How many times a group that held its budget and did not drain started skipping its later records. For tests.</summary>
+    internal int GroupSkips
+    {
+        get
+        {
+            lock (_lock)
+                return _groupSkips;
         }
     }
 
@@ -631,6 +642,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             if (skipping is not null)
             {
                 _groupStopped.ExceptWith(skipping);
+                _groupSkips += skipping.Count;
                 foreach (var group in skipping)
                     SkipHeldPastBudget(group);
             }
@@ -839,7 +851,12 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     /// <summary>
     /// Skips what a group that starts skipping holds past its budget, as if it had been skipped when read, so a backlog
     /// held while its partition could not skip (its state was loading, or it was at its skip limits) does not go on
-    /// holding up the partition. A partition where the group already skips, or cannot, keeps the group's records.
+    /// holding up the partition. It decides once per partition, by the group's first record there past its budget, so
+    /// the group's records on a partition are either all kept or all skipped from that one on, and none is handed out
+    /// ahead of an earlier one. Skipping them all may take the partition past its count limit by what the group holds
+    /// there, which the partition's held limit bounds; it never takes it past its span limit, since the later records
+    /// are newer than the first. A partition where the group already skips keeps the group's records: they are older
+    /// than its skipped ones there, since the group's later records on it are skipped as they are read.
     /// </summary>
     private void SkipHeldPastBudget(KafkaRecordGroup group)
     {
@@ -850,39 +867,42 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         for (int kept = 0; kept < _groupHeldLimit && node is not null; kept++)
             node = node.Next;
 
-        HashSet<KafkaPartitionState>? keeping = null;
-        HashSet<KafkaPartitionState>? skipped = null;
-        while (node is not null)
+        var skipping = new Dictionary<KafkaPartitionState, bool>();
+        var skipped = new List<LinkedListNode<KafkaRecord>>();
+        for (; node is not null; node = node.Next)
         {
-            var next = node.Next;
             var state = node.Value.Partition!;
-            if (keeping?.Contains(state) == true || state.Loading || state.Revoking || state.Revoked || state.Skipped.Contains(group.Key) && skipped?.Contains(state) != true || IsSkipFull(state))
-            {
-                (keeping ??= []).Add(state);
-            }
-            else
-            {
-                var record = node.Value;
-                RemoveFromGroup(group, node);
-                Skip(record, state);
-                (skipped ??= []).Add(state);
-            }
+            if (!skipping.TryGetValue(state, out bool skip))
+                skipping[state] = skip = !state.Loading && !state.Revoking && !state.Revoked && !state.Skipped.Contains(group.Key) && MaySkipFrom(state, node.Value.Offset);
 
-            node = next;
+            if (skip)
+                skipped.Add(node);
         }
+
+        // Taking a record from the group judges its partition's limits, so skip them all first to judge them on all of them.
+        foreach (var record in skipped)
+            Skip(record.Value, record.Value.Partition!);
+
+        foreach (var record in skipped)
+            RemoveFromGroup(group, record);
 
         UpdateGroup(group);
-        if (skipped is not null)
-        {
-            foreach (var state in skipped)
-                UpdateHeldPause(state);
-        }
     }
 
     /// <summary>Whether a partition has skipped as many records as it may, or holds back as many offsets.</summary>
     private bool IsSkipFull(KafkaPartitionState state)
     {
         return state.Skipped.Count >= _skippedLimit || state.SkippedSpan >= _skippedSpanLimit;
+    }
+
+    /// <summary>
+    /// Whether a partition within its count limit may skip a record at <paramref name="offset"/>, which becomes its
+    /// oldest skipped record if it is older than those, and stay within its span limit.
+    /// </summary>
+    private bool MaySkipFrom(KafkaPartitionState state, long offset)
+    {
+        long lowest = state.Skipped.Count > 0 ? Math.Min(state.Skipped.LowestOffset, offset) : offset;
+        return state.Skipped.Count < _skippedLimit && state.NextOffset - lowest < _skippedSpanLimit;
     }
 
     /// <summary>Whether a partition is back within half its skip limits.</summary>
@@ -1064,6 +1084,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         if (budget.Stopped && group.Timed.Count > 0)
         {
             budget.PauseIfStoppedFor(TimeSpan.Zero, Stopwatch.GetTimestamp());
+            _groupSkips++;
             changed = true;
         }
 
