@@ -126,7 +126,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
-        using var execution = new WorkItemExecution(this, handler, queueEntry, workItemDataType, lockValue, cancellationToken);
+        using var execution = new WorkItemExecution(_publisher, handler, queueEntry, workItemDataType, lockValue, cancellationToken);
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
@@ -144,29 +144,29 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             if (queueEntry.IsAbandoned)
                 return context.Result.IsSuccess ? JobResult.FailedWithMessage($"Queue entry {queueEntry.Id} was already abandoned") : context.Result;
 
+            var result = context.Result.IsSuccess ? JobResult.Success : context.Result;
             if (!queueEntry.IsCompleted)
             {
-                if (!context.Result.IsSuccess)
-                    return await execution.AbandonAsync(context.Result).AnyContext();
-
-                await queueEntry.CompleteAsync().AnyContext();
-                handler.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItemData);
+                await execution.SettleAsync(result).AnyContext();
+                if (!execution.AbandonAttempted)
+                    handler.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItemData);
             }
 
-            return JobResult.Success;
+            return result;
         }
         catch (Exception ex)
         {
             var error = execution.GetProcessingError(ex, activity);
             activity?.SetErrorStatus(error);
-            bool abandon = !execution.AbandonAttempted && !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
+            bool abandon = !execution.AbandonAttempted && execution.SettledResult is null && !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
             var result = JobResult.FromException(error, abandon
                 ? $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}"
                 : $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
             if (!abandon)
                 return result;
 
-            return await execution.AbandonAsync(result).AnyContext();
+            await execution.SettleAsync(result).AnyContext();
+            return result;
         }
         finally
         {
@@ -176,22 +176,15 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             }
             finally
             {
-                if (queueEntry.Value.SendProgressReports)
+                if (queueEntry.Value.SendProgressReports && execution.SettledResult is { } settled)
                 {
-                    if (queueEntry.IsCompleted)
+                    if (execution.AbandonAttempted)
+                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {settled.Error?.Message ?? settled.Message}").AnyContext();
+                    else
                         await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
-                    else if (execution.ConfirmedAbandonment is { } abandonReason)
-                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {abandonReason.Error?.Message ?? abandonReason.Message}").AnyContext();
                 }
             }
         }
-    }
-
-    internal async Task ReportHandlerProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, int progress, string? message)
-    {
-        await ReportProgressAsync(handler, entry, progress, message).AnyContext();
-        if (handler.Log.IsEnabled(LogLevel.Information))
-            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", dataType.Name, progress, message);
     }
 
     protected virtual Activity? StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)
@@ -269,21 +262,8 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         return resolvedType;
     }
 
-    protected async Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string? message = null)
+    protected Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string? message = null)
     {
-        try
-        {
-            await _publisher.PublishAsync(new WorkItemStatus
-            {
-                WorkItemId = queueEntry.Value?.WorkItemId,
-                Type = queueEntry.Value?.Type,
-                Progress = progress,
-                Message = message
-            }).AnyContext();
-        }
-        catch (Exception ex)
-        {
-            handler.Log.LogError(ex, "Error sending progress report: {Message}", ex.Message);
-        }
+        return WorkItemExecution.PublishProgressAsync(_publisher, handler, queueEntry, progress, message);
     }
 }

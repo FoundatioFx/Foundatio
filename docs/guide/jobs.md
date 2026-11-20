@@ -454,7 +454,9 @@ Queue-entry renewal errors are logged. After delivery, an awaited auto-renewing 
 
 Await each report whose delivery or order matters. The job waits for in-flight renewals before settling the entry and releasing the work-item lock. If the handler returns before awaiting a report, publication can be skipped or finish later.
 
-With `includeProgressReporting: true`, the job sends a start message before it tries to acquire the work-item lock. If it cannot acquire the lock, that can be the only message for the attempt. Explicit handler reports also work with automatic reports disabled. After trying to release an acquired lock, the job reports 100 for a completed entry or -1 when its own abandonment is confirmed, including on a non-success `Result`. A built-in queue can confirm abandonment even if a subsequent `Abandoned` observer throws. An attempt that loses a settlement race or receives an ambiguous provider error sends no automatic failure. Retries share the same `WorkItemId`, and their best-effort messages can overlap.
+With `includeProgressReporting: true`, the job sends a start message before it tries to acquire the work-item lock. If it cannot acquire the lock, that can be the only message for the attempt. Explicit handler reports also work with automatic reports disabled. After trying to release an acquired lock, the job sends 100 for its own completion or -1 for its own abandonment, including when the handler returns a failed result. A built-in queue can confirm the operation before metrics, event observers, or later provider code throw. If another caller settles the entry or the provider fails before confirming the outcome, the job skips its terminal message. Retries share the same `WorkItemId`, and their best-effort messages can overlap.
+
+When decorating a queue entry, forwarding the underlying settlement task or its per-delivery `Properties` dictionary lets the job recognize a confirmed operation if the call throws. A message ID and delivery count can be identical on separate broker messages.
 
 ### WorkItemHandlers
 

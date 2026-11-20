@@ -51,6 +51,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             await locker.ReleaseAsync(lease.Resource);
             reportError = await Record.ExceptionAsync(() => ctx.ReportProgressAsync(50));
         }, _logger));
+
         await queue.EnqueueAsync("item", true);
         var job = new WorkItemJob(queue, bus, handlers, Log);
 
@@ -91,6 +92,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
 
             return Task.FromException(error);
         });
+
         var statuses = new ConcurrentQueue<int>();
         await bus.SubscribeAsync<WorkItemStatus>(s => statuses.Enqueue(s.Progress), TestCancellationToken);
         var handlers = new WorkItemHandlers();
@@ -107,34 +109,6 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.Same(error, result.Error);
         entry.Verify(e => e.AbandonAsync(), Times.Once);
         Assert.Equal([0], statuses);
-    }
-
-    [Fact]
-    public async Task ProcessAsync_WhenAutoRenewedWorkItemLockIsHeld_DoesNotCancelHandler()
-    {
-        // Arrange
-        using var cache = CreateCache();
-        using var queue = CreateQueue();
-        using var messageBus = CreateMessageBus();
-        var locker = new CacheLockProvider(cache, messageBus, Log);
-        await using var lease = await locker.AcquireAsync("work-item", cancellationToken: TestCancellationToken);
-        var handlerRegistry = new WorkItemHandlers();
-        handlerRegistry.Register<MyWorkItem>(new RenewingWorkItemHandler(lease, async context =>
-        {
-            await context.ReportProgressAsync(50);
-            context.CancellationToken.ThrowIfCancellationRequested();
-        }, _logger));
-        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
-        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
-
-        // Act
-        var result = await job.RunAsync(TestCancellationToken);
-
-        // Assert
-        Assert.True(result.IsSuccess);
-        Assert.Equal(1, lease.RenewalCount);
-        var stats = await queue.GetQueueStatsAsync();
-        Assert.Equal(1, stats.Completed);
     }
 
     [Theory]
@@ -162,6 +136,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             using var registration = context.CancellationToken.Register(() => cancellationObserved.TrySetResult());
             await context.ReportProgressAsync(50);
         }, _logger));
+
         var job = new WorkItemJob(queue, messageBus, handlers, Log);
 
         // Act
@@ -226,6 +201,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
                 observedCancellation = context.CancellationToken.IsCancellationRequested;
             }
         }, _logger));
+
         var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
         await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, sendProgressReports);
         var entry = await queue.DequeueAsync(TestCancellationToken);
@@ -277,6 +253,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
 
             return Task.CompletedTask;
         });
+
         var job = new WorkItemJob(queue, bus, handlers, Log);
         await queue.EnqueueAsync("item", true);
 
@@ -408,6 +385,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
                 if (callbackThrows)
                     throw new InvalidOperationException("Cancellation observer failed");
             });
+
             await locker.ReleaseAsync(lease.Resource);
             renewalError = await Assert.ThrowsAsync<LockException>(() => ctx.RenewLockAsync());
             Assert.True(ctx.CancellationToken.IsCancellationRequested);
@@ -471,6 +449,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             progressStarted.SetResult();
             return handlerThrows ? Task.FromException(handlerError) : Task.CompletedTask;
         }, _logger));
+
         var job = new WorkItemJob(queue, messageBus, handlers, Log);
 
         // Act
@@ -550,6 +529,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             cancelledBeforeHost = context.CancellationToken.IsCancellationRequested;
             await jobCancellation.CancelAsync();
         }, _logger));
+
         var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
         await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
 
@@ -586,6 +566,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             workItemContext = context;
             return Task.CompletedTask;
         }, _logger));
+
         var job = new WorkItemJob(queue, messageBus, handlers, Log);
 
         Assert.True((await job.ProcessAsync(entry, TestCancellationToken)).IsSuccess);
@@ -599,37 +580,6 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.Equal(0, lease.RenewalCount);
         Assert.False(await locker.IsLockedAsync("work-item"));
         Assert.True(entry.IsCompleted);
-    }
-
-    [Fact]
-    public async Task ProcessAsync_WhenQueueRenewalFails_DoesNotCancelHandler()
-    {
-        // Arrange
-        using var cache = CreateCache();
-        using var messageBus = CreateMessageBus();
-        using var queue = CreateQueue();
-        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" });
-        var entry = await queue.DequeueAsync(TestCancellationToken);
-        Assert.NotNull(entry);
-        using var observer = queue.LockRenewed.AddHandler((_, _) => throw new InvalidOperationException("Queue renewal failed"));
-        var locker = new CacheLockProvider(cache, messageBus, Log);
-        await using var lease = await locker.AcquireAsync("work-item", cancellationToken: TestCancellationToken);
-        var handlers = new WorkItemHandlers();
-        handlers.Register<MyWorkItem>(new RenewingWorkItemHandler(lease, async context =>
-        {
-            await context.ReportProgressAsync(50);
-            context.CancellationToken.ThrowIfCancellationRequested();
-        }, _logger));
-        var job = new WorkItemJob(queue, messageBus, handlers, Log);
-
-        // Act
-        var result = await job.ProcessAsync(entry, TestCancellationToken);
-
-        // Assert
-        Assert.True(result.IsSuccess);
-        Assert.Equal(1, lease.RenewalCount);
-        Assert.True(entry.IsCompleted);
-        Assert.False(entry.IsAbandoned);
     }
 
     [Theory]
@@ -656,6 +606,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             if (renewalFails)
                 await context.RenewLockAsync();
         }, _logger));
+
         await queue.EnqueueAsync("item", true);
         var entry = await queue.DequeueAsync(TestCancellationToken);
         Assert.NotNull(entry);
@@ -684,6 +635,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             ctx.Result = JobResult.FailedWithMessage("Downstream rejected the item");
             return Task.CompletedTask;
         });
+
         await queue.EnqueueAsync("item", true);
 
         // Act
@@ -808,6 +760,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             ctx.CancellationToken.ThrowIfCancellationRequested();
             await cache.SetAsync("saved", "original worker");
         }, _logger));
+
         var statuses = new ConcurrentQueue<int>();
         JobResult? retry = null;
         await bus.SubscribeAsync<WorkItemStatus>(async status =>
@@ -822,6 +775,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             retryHandlers.Register<string>(new RenewingWorkItemHandler(retryLease, async _ => { await cache.SetAsync("saved", "retry"); }, _logger));
             retry = await new WorkItemJob(queue, bus, retryHandlers, Log).RunAsync(TestCancellationToken);
         }, TestCancellationToken);
+
         await queue.EnqueueAsync("item", true);
 
         // Act
@@ -857,12 +811,14 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
                 renewalError = await Record.ExceptionAsync(() => context!.RenewLockAsync());
             }
         }, TestCancellationToken);
+
         var handlers = new WorkItemHandlers();
         handlers.Register<string>(new RenewingWorkItemHandler(lease, async ctx =>
         {
             context = ctx;
             reportError = await Record.ExceptionAsync(() => ctx.ReportProgressAsync(50));
         }, _logger));
+
         await queue.EnqueueAsync("item", true);
 
         // Act
@@ -875,6 +831,46 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.Equal([0, 50, -1], statuses);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RunAsync_WhenAutoRenewedWorkItemLockIsHeld_CompletesEntry(bool queueRenewalFails, bool sendProgressReports)
+    {
+        // Arrange
+        using var queue = CreateQueue();
+        using var cache = CreateCache();
+        using var bus = CreateMessageBus();
+        var locker = new CacheLockProvider(cache, bus, Log);
+        await using var lease = await locker.AcquireAsync("work-item", cancellationToken: TestCancellationToken);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<MyWorkItem>(new RenewingWorkItemHandler(lease, async context =>
+        {
+            using var observer = queueRenewalFails
+                ? queue.LockRenewed.AddHandler((_, _) => throw new InvalidOperationException("Queue renewal failed"))
+                : null;
+            await context.ReportProgressAsync(50);
+            context.CancellationToken.ThrowIfCancellationRequested();
+        }, _logger));
+
+        var job = new WorkItemJob(queue, bus, handlers, Log);
+        IQueueEntry<WorkItemData>? entry = null;
+        using var dequeued = queue.Dequeued.AddSyncHandler((_, args) => entry = args.Entry);
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, sendProgressReports);
+
+        // Act
+        var result = await job.RunAsync(TestCancellationToken);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, lease.RenewalCount);
+        Assert.NotNull(entry);
+        Assert.True(entry.IsCompleted);
+        Assert.False(entry.IsAbandoned);
+        Assert.Equal(1, (await queue.GetQueueStatsAsync()).Completed);
+    }
+
     private static ActivityListener ListenToJobActivities()
     {
         var listener = new ActivityListener
@@ -882,6 +878,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             ShouldListenTo = source => ReferenceEquals(source, FoundatioDiagnostics.ActivitySource),
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded
         };
+
         ActivitySource.AddActivityListener(listener);
         return listener;
     }

@@ -4,20 +4,21 @@ using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
+using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
-internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, CancellationToken cancellationToken) : IDisposable
+internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, CancellationToken cancellationToken) : IDisposable
 {
     private RenewalState? _renewals = workItemLock.GetType() == typeof(EmptyLock) ? null : new RenewalState(CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
     private int _stopped;
 
     public CancellationToken GetHandlerToken(CancellationToken hostToken) => _renewals?.Cancellation?.Token ?? hostToken;
     public bool AbandonAttempted { get; private set; }
-    public JobResult? ConfirmedAbandonment { get; private set; }
+    public JobResult? SettledResult { get; private set; }
 
     public async Task ReportProgressAsync(int progress, string? message)
     {
@@ -35,7 +36,10 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
             ThrowIfRenewalFailed();
         }
 
-        await job.ReportHandlerProgressAsync(handler, entry, dataType, progress, message).AnyContext();
+        await PublishProgressAsync(publisher, handler, entry, progress, message).AnyContext();
+        if (handler.Log.IsEnabled(LogLevel.Information))
+            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", dataType.Name, progress, message);
+
         if (renewOnProgress && Volatile.Read(ref _stopped) == 0)
         {
             ThrowIfRenewalFailed();
@@ -47,6 +51,24 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
     {
         if (!await RenewAsync(includeQueueEntry: false).AnyContext())
             throw new InvalidOperationException("The work item is no longer being processed");
+    }
+
+    internal static async Task PublishProgressAsync(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, int progress, string? message)
+    {
+        try
+        {
+            await publisher.PublishAsync(new WorkItemStatus
+            {
+                WorkItemId = entry.Value?.WorkItemId,
+                Type = entry.Value?.Type,
+                Progress = progress,
+                Message = message
+            }).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            handler.Log.LogError(ex, "Error sending progress report: {Message}", ex.Message);
+        }
     }
 
     private bool IsProcessing(bool throwIfAbandoned)
@@ -152,22 +174,32 @@ internal sealed class WorkItemExecution(WorkItemJob job, IWorkItemHandler handle
         return error;
     }
 
-    public async Task<JobResult> AbandonAsync(JobResult result)
+    public Task SettleAsync(JobResult result)
     {
-        AbandonAttempted = true;
-        using var attempt = entry.Value.SendProgressReports ? new QueueEntryAbandonment(entry) : null;
+        bool completing = result.IsSuccess;
+        AbandonAttempted = !completing;
+        if (!entry.Value.SendProgressReports)
+            return completing ? entry.CompleteAsync() : entry.AbandonAsync();
+
+        return SettleAndRecordAsync(result, completing);
+    }
+
+    private async Task SettleAndRecordAsync(JobResult result, bool completing)
+    {
+        using var attempt = new QueueEntrySettlement<WorkItemData>(entry, completing);
+        Task? operation = null;
         try
         {
-            await entry.AbandonAsync().AnyContext();
+            operation = completing ? entry.CompleteAsync() : entry.AbandonAsync();
+            await operation.AnyContext();
         }
-        catch (Exception ex) when (attempt?.ObserverThrew(ex) == true)
+        catch when (attempt.IsConfirmedFor(operation))
         {
-            ConfirmedAbandonment = result;
+            SettledResult = result;
             throw;
         }
 
-        ConfirmedAbandonment = result;
-        return result;
+        SettledResult = result;
     }
 
     public Task StopAndDrainRenewalsAsync()
