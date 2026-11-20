@@ -37,7 +37,6 @@ public interface ICacheClient : IDisposable
 
     // Expiration operations
     Task<TimeSpan?> GetExpirationAsync(string key);
-    Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key);
     Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys);
     Task SetExpirationAsync(string key, TimeSpan expiresIn);
     Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations);
@@ -324,10 +323,6 @@ var sameUser = await hybridCache.GetAsync<User>("user:123");
 - **Write-through**: Writes go to L2 first, then L1 only on success (distributed-first pattern)
 - **Key-specific invalidation**: Only affected keys are cleared on other instances
 - **Message bus coordination**: Automatic invalidation across all hybrid cache instances
-
-If a size limit, expiration, or partial write leaves the local value uncertain, the hybrid cache evicts it. A paged list read never seeds the local cache with a partial list. Adding members to an existing distributed list on a local miss leaves it cold until a full read.
-
-A bulk set or expiration change can commit some keys before the provider throws. The client evicts the requested keys and sends their invalidation to peers. If a local write throws after a distributed commit, the client attempts eviction and the operation's usual peer notification before surfacing the original error. Secondary eviction and publication errors are logged.
 
 ::: tip Full Documentation
 See [Hybrid Cache Implementation](/guide/implementations/hybrid-cache) for detailed configuration, performance considerations, and best practices.

@@ -52,6 +52,18 @@ internal sealed class LocalCacheFence
 
     public void Invalidate(string key) => Interlocked.Increment(ref _generations[GetSlot(key)]);
 
+    public void Invalidate(string[]? keys)
+    {
+        if (keys is null)
+        {
+            InvalidateAll();
+            return;
+        }
+
+        foreach (string key in keys)
+            Invalidate(key);
+    }
+
     public void InvalidateAll() => Interlocked.Increment(ref _epoch);
 
     private static int GetSlot(string key) => StringComparer.Ordinal.GetHashCode(key) & (SlotCount - 1);

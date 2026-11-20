@@ -162,14 +162,6 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult<TimeSpan?>(null);
     }
 
-    public Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        Interlocked.Increment(ref _reads);
-        return Task.FromResult(CacheValue<TimeSpan?>.NoValue);
-    }
-
     public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);

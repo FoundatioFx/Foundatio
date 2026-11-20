@@ -148,6 +148,24 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.GetAllExpirationAsync_WithMixedKeys_ReturnsExpectedResults();
     }
 
+    [Fact]
+    public async Task GetAsync_WhenExpirationLookupFails_ReturnsValueWithoutCachingIt()
+    {
+        // Arrange
+        const string key = "metadata";
+        var provider = new Mock<ICacheClient>(MockBehavior.Strict);
+        provider.Setup(c => c.GetAsync<int>(key)).ReturnsAsync(new CacheValue<int>(42, true));
+        provider.Setup(c => c.GetExpirationAsync(key)).ThrowsAsync(new CacheException("TTL unavailable"));
+        using var cache = CreateCache(distributedCache: provider.Object);
+
+        // Act
+        var result = await cache.GetAsync<int>(key);
+
+        // Assert
+        Assert.Equal(42, result.Value);
+        Assert.False(await cache.LocalCache.ExistsAsync(key));
+    }
+
     [Theory]
     [InlineData("scalar")]
     [InlineData("bulk")]
@@ -184,26 +202,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.True(found);
         Assert.False(await distributed.ExistsAsync(key));
         Assert.False(await cache.ExistsAsync(key));
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task GetAsync_WhenOnlyProviderExpirationInfoIsAvailable_FillsLocalCacheIfKeyExists(bool exists)
-    {
-        // Arrange
-        const string key = "metadata";
-        var provider = new Mock<ICacheClient>(MockBehavior.Strict);
-        provider.Setup(c => c.GetAsync<int>(key)).ReturnsAsync(new CacheValue<int>(42, true));
-        provider.Setup(c => c.GetExpirationInfoAsync(key)).ReturnsAsync(exists ? CacheValue<TimeSpan?>.Null : CacheValue<TimeSpan?>.NoValue);
-        using var cache = CreateCache(distributedCache: provider.Object);
-
-        // Act
-        var result = await cache.GetAsync<int>(key);
-
-        // Assert
-        Assert.Equal(42, result.Value);
-        Assert.Equal(exists, await cache.LocalCache.ExistsAsync(key));
     }
 
     [Theory]
@@ -478,12 +476,10 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     [InlineData("prefix", false)]
     [InlineData("null-prefix", false)]
     [InlineData("all", false)]
-    [InlineData("empty-keys", false)]
     [InlineData("member", false)]
     [InlineData("key", true)]
     [InlineData("prefix", true)]
     [InlineData("all", true)]
-    [InlineData("empty-keys", true)]
     [InlineData("member", true)]
     public async Task ListAddAsync_WhenRemovedBeforeResponse_KeepsLocalEntryEvicted(string removal, bool useSecondClient)
     {
@@ -501,7 +497,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
             "prefix" => remover.RemoveByPrefixAsync("pending:"),
             "null-prefix" => remover.RemoveByPrefixAsync(null!),
             "all" => remover.RemoveAllAsync(),
-            "empty-keys" => remover.RemoveAllAsync(Array.Empty<string>()),
             _ => throw new ArgumentOutOfRangeException(nameof(removal))
         });
 
@@ -665,6 +660,32 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.Equal(expected, (await peer.GetListAsync<string>(key)).Value.Order());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveAllAsync_WithEmptyKeys_PreservesProviderBehavior(bool providerFlushes)
+    {
+        // Arrange
+        const string key = "unrelated";
+        var provider = new Mock<ICacheClient>();
+        provider.Setup(c => c.RemoveAllAsync(It.IsAny<IEnumerable<string>?>()))
+            .Returns((IEnumerable<string>? keys) => _distributedCache.RemoveAllAsync(providerFlushes ? null : keys));
+        using var cache = CreateCache(distributedCache: provider.Object);
+        using var peer = CreateCache();
+        await peer.SetAsync(key, 42);
+        await cache.LocalCache.SetAsync(key, 42);
+
+        // Act
+        int removed = await cache.RemoveAllAsync([]);
+
+        // Assert
+        provider.Verify(c => c.RemoveAllAsync(It.Is<IEnumerable<string>>(keys => keys != null && !keys.Any())), Times.Once);
+        Assert.Equal(providerFlushes ? 1 : 0, removed);
+        Assert.Equal(!providerFlushes, await _distributedCache.ExistsAsync(key));
+        Assert.Equal(!providerFlushes, await cache.LocalCache.ExistsAsync(key));
+        Assert.Equal(!providerFlushes, await peer.LocalCache.ExistsAsync(key));
+    }
+
     [Fact]
     public override Task RemoveAllAsync_WithInvalidKeys_ValidatesCorrectly()
     {
@@ -824,6 +845,23 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task RemoveByPrefixAsync_WithSpecialCharacterPrefix_TreatsAsLiteral(string specialPrefix)
     {
         return base.RemoveByPrefixAsync_WithSpecialCharacterPrefix_TreatsAsLiteral(specialPrefix);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task RemoveByPrefixAsync_WithSuppliedPrefix_ForwardsItToProvider(string? prefix)
+    {
+        // Arrange
+        var provider = new Mock<ICacheClient>(MockBehavior.Strict);
+        provider.Setup(c => c.RemoveByPrefixAsync(prefix!)).ReturnsAsync(0);
+        using var cache = CreateCache(distributedCache: provider.Object);
+
+        // Act
+        await cache.RemoveByPrefixAsync(prefix!);
+
+        // Assert
+        provider.Verify(c => c.RemoveByPrefixAsync(prefix!), Times.Once);
     }
 
     [Theory]
@@ -1406,9 +1444,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         Task<bool> ICacheClient.ExistsAsync(string key) =>
             RejectExistenceChecks ? Task.FromException<bool>(new CacheException("Existence check unavailable")) : ExistsAsync(key);
-
-        Task<CacheValue<TimeSpan?>> ICacheClient.GetExpirationInfoAsync(string key) =>
-            RejectExistenceChecks ? Task.FromException<CacheValue<TimeSpan?>>(new CacheException("Expiration info unavailable")) : GetExpirationInfoAsync(key);
 
         Task<IDictionary<string, CacheValue<T>>> ICacheClient.GetAllAsync<T>(IEnumerable<string> keys) =>
             CompleteAsync(GetAllAsync<T>(keys), Interlocked.Exchange(ref _afterNextRead, null));

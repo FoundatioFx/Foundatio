@@ -39,18 +39,18 @@ dotnet add package Foundatio.Redis
                       ▼                        ▼
                  Cache Hit?              Cache Hit?
                       │                        │
-                  Yes: Return            Yes: Store in Local
-                                         Then: Return
+                  Yes: Return            Yes: Check TTL and
+                                         warm L1 if current
 ```
 
 1. Check local in-memory cache first (zero network latency)
 2. On miss, check distributed cache (Redis, etc.)
-3. On a distributed hit, cache the value locally when its expiration and any concurrent writes allow it
+3. On a distributed hit, cache the result locally if it is complete, its TTL is known, and no overlapping write invalidated it
 4. Return value to caller
 
 ### Write Flow
 
-A successful `SetAsync` follows this flow.
+For a successful `SetAsync`:
 
 ```txt
 ┌──────────────────┐
@@ -63,17 +63,17 @@ A successful `SetAsync` follows this flow.
   │    (L2 - Update)   │
   └────────┬───────────┘
            │
-           │ Success?
+           │ Can L1 store the result?
            │
      ┌─────┴─────┐
      │           │
      ▼           ▼
-   Yes          No
+   Yes        Evict key
      │           │
      ▼           │
 ┌──────────────┐ │
 │ Local Cache  │ │
-│ (L1 - Update)│ │
+│ (L1 - Store)│ │
 └──────────────┘ │
      │           │
      └─────┬─────┘
@@ -92,15 +92,13 @@ A successful `SetAsync` follows this flow.
 └─────────────────────────┘
 ```
 
-1. Write to distributed cache first (L2 is the source of truth)
-2. Only update local cache (L1) if distributed write succeeds
-3. Publish invalidation message via message bus
-4. **Other instances** receive message and clear **only the affected keys** from their local cache
-5. Current instance ignores its own invalidation messages (filtered by `CacheId`)
+1. Write to the distributed cache (L2).
+2. Store the confirmed value in the writer's local cache (L1) if the write is still current. Evict the local entry if a concurrent write makes the result uncertain.
+3. Publish the key to the message bus. Other instances evict it when they receive the message. The writer ignores its own message using `CacheId`.
 
 ### Key-Specific Invalidation
 
-The operation determines which entries peers evict.
+Peers use the scope carried by the invalidation message. A trailing `*` denotes a prefix, including when the written key itself ends in `*`.
 
 | Operation | Invalidation Scope |
 |-----------|-------------------|
@@ -112,7 +110,7 @@ The operation determines which entries peers evict.
 
 ### Smart Cache Invalidation
 
-Removal operations notify peers when L2 reports that it removed something.
+Removal operations publish an invalidation when the distributed cache reports a removal.
 
 | Operation | Publishes When |
 |-----------|---------------|
@@ -123,30 +121,32 @@ Removal operations notify peers when L2 reports that it removed something.
 | `RemoveByPrefixAsync(prefix)` | At least one key matched and was removed |
 | `ListRemoveAsync(key, values)` | At least one value was removed from the list |
 
-`AddAsync` creates a key without sending an invalidation. If L2 independently evicts a key and a writer adds it again, a peer can keep serving its previous local value until expiration, eviction, or another invalidation.
+For example, `RemoveAsync("user:123")` sends no message if L2 reports the key was missing. `AddAsync` also skips notification on success. If L2 independently evicts a key and a writer adds it again, peers can retain their earlier value until expiration, eviction or another invalidation.
 
 ## L1/L2 Cache Architecture
 
-Each instance keeps its own L1 and shares L2 with the other instances.
+`HybridCacheClient` implements a two-tier caching architecture following industry-standard terminology:
 
 | Tier | Name | Implementation | Characteristics |
 |------|------|----------------|-----------------|
 | **L1** | Local Cache | `InMemoryCacheClient` | Fast (no network), per-instance, volatile |
 | **L2** | Distributed Cache | Redis, etc. | Shared across instances, source of truth |
 
+This architecture is similar to Microsoft's `HybridCache` (.NET 9+) and other distributed caching solutions like EasyCaching.
+
 ### Consistency Model
 
-Writes update L2 first. The writer updates its own L1 when it knows the resulting value and the write is still current.
+`HybridCacheClient` uses a **write-through** pattern to ensure consistency:
 
-L2 is the source of truth. An in-flight read can return the value it fetched before a concurrent write. If an invalidation arrives during a single-key read and leaves L1 empty, the client can fetch the key once more to warm L1 with a current value. Overlapping writes on the same client discard uncertain local values. The next cache miss reads L2.
+1. **Distributed-first writes**: All write operations go to L2 (distributed cache) first
+2. **Conditional local update**: L1 stores a confirmed value while the operation is still current
+3. **Cross-instance invalidation**: Message bus notifies other instances to clear affected keys
 
-Other clients can serve an existing local value until their invalidation arrives. If L2 commits a single-key write and the provider throws before returning its result, both the writer and its peers can keep their previous local values. Set a TTL to bound staleness in either case.
+An in-flight read can return the value it fetched before a concurrent write. On the same client, an overlapping write or delivered invalidation prevents that read from leaving a stale local entry. A peer can still serve a warm value while its invalidation is in transit. If a provider commits a single-key mutation and loses the reply, both clients can retain their prior values until expiration or eviction.
 
-Peer invalidations interpret a trailing `*` as a prefix. Writing the literal key `account:*` also evicts a peer's local `account:42` entry. Its next read reloads the value from L2.
+On a cold scalar or unpaged list read, a null TTL can mean either a persistent key or a key that disappeared after the value was read. The client checks whether the key still exists before caching it locally. If the TTL or existence lookup fails, it returns the value it already read and leaves L1 empty.
 
-After a cold scalar or unpaged list read, the client uses `GetExpirationInfoAsync` to distinguish a persistent key from one that expired during the read. Providers can report both existence and TTL in one lookup. The default implementation checks existence separately for a null TTL. If the metadata lookup fails, the caller still receives the value read from L2 and the client skips the local fill.
-
-For a list read from L2, `GetListAsync` supplies the members and `GetExpirationInfoAsync` supplies the whole key's TTL. If the members expire at different times, L1 can continue returning an expired member until the cached list expires or is invalidated. A list containing a permanent member can retain that stale value indefinitely.
+A paged list read never populates L1 with a partial list. A full list read uses the whole key's TTL. When individual members expire earlier, L1 can retain those members until the list is evicted or expires.
 
 ::: info TTL Skew Between L1 and L2
 When setting expiration times, there is a small timing skew between L1 and L2:
@@ -160,18 +160,27 @@ This means L1 may expire slightly **after** L2, potentially serving stale data f
 
 ### Local Cache Synchronization Strategies
 
-| L2 result | Writer's local cache |
-|-----------|----------------------|
-| A scalar write returns a known value | Stores the value if the write is still current. |
-| `SetIfHigherAsync` or `SetIfLowerAsync` reports no change | Evicts the entry because the result does not identify the stored value. |
-| A list add or removal reports partial success | Evicts the list so an unpaged read can reload all members. |
-| A bulk set or expiration change throws after it may have updated some keys | Evicts all requested keys and attempts to notify peers before rethrowing the original error. |
+Different operations use different strategies to keep L1 in sync with L2:
 
-A warm list can apply the changed members directly. On a cold `ListAddAsync`, the client can seed L1 when L2 reports the key was absent before the write. If that check fails, the distributed add still runs and L1 stays cold. An existing distributed list stays cold until an unpaged read fetches all its members.
+| Strategy | When Used | Operations |
+|----------|-----------|------------|
+| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` |
+| **Set on full success** | When all requested changes succeed and the full local list is known | `ListAddAsync`, `ListRemoveAsync` (when count matches) |
+| **Remove to invalidate** | When the final value is uncertain or partial success | `SetIfHigherAsync`, `SetIfLowerAsync`, partial `ListAddAsync`/`ListRemoveAsync` |
+| **Remove on failure** | When the operation reports failure (e.g., past expiration) | `SetAsync`, `SetAllAsync`, `ReplaceAsync`, `ReplaceIfEqualAsync` |
+
+A cold `ListAddAsync` can seed L1 when L2 confirms that the key was absent before the add. If L2 already contained members, the next unpaged read fetches the complete list. A failed existence check still allows the distributed write.
+
+If a bulk set or expiration change throws after a partial commit, the client evicts the requested keys and attempts to notify peers before rethrowing. A local write failure after L2 success also triggers eviction and the operation's usual notification.
 
 ### Edge Cases with Zero Values
 
-When `IncrementAsync` returns zero, the writer evicts its local entry. This includes a valid increment from five to zero. The next cache miss reads the value from L2.
+The `IncrementAsync` operation has an edge case where L1 and L2 may temporarily be inconsistent when the result is 0:
+
+**IncrementAsync returning 0:**
+- If `IncrementAsync` returns 0 (e.g., incrementing 5 by -5, or creating a new key with amount 0), the key is removed from L1 rather than cached
+- This is a conservative approach since 0 could indicate either a legitimate value or an error condition
+- **Self-healing**: The next `GetAsync` will fetch from L2 and populate L1
 
 ## Basic Usage
 
@@ -270,8 +279,24 @@ Console.WriteLine($"Invalidation calls: {hybridCache.InvalidateCacheCalls}");
 ### Message Bus Traffic
 
 ::: warning Shared Topic Traffic
-Each `SetAsync` sends one invalidation to the shared topic. At 1,000 successful sets per second, a topic with ten subscribed instances receives 10,000 deliveries per second across those instances. `AddAsync` and removals that find nothing skip the notification.
+`SetAsync` publishes an invalidation on each completed write. In high-write scenarios with a shared topic, this can generate significant traffic across all instances.
 :::
+
+**The problem:**
+
+```csharp
+// Each successful SetAsync publishes an InvalidateCache message to subscribers
+await hybridCache.SetAsync("key1", value1);  // 1 message to all
+await hybridCache.SetAsync("key2", value2);  // 1 message to all
+await hybridCache.SetAsync("key3", value3);  // 1 message to all
+// 1000 writes = 1000 messages to ALL instances
+```
+
+**Impact:**
+
+- With 10 instances and 1000 writes/second = 10,000 messages/second total
+- Each subscribed instance receives the message and the writer ignores its own
+- Can overwhelm Redis pub/sub or other message bus implementations
 
 **Solutions:**
 

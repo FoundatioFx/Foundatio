@@ -1212,33 +1212,27 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
-        TryGetExpiration(key, out var expiration);
-        return Task.FromResult(expiration);
-    }
-
-    public Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key)
-    {
-        if (!TryGetExpiration(key, out var expiration))
-            return Task.FromResult(CacheValue<TimeSpan?>.NoValue);
-
-        return Task.FromResult(expiration.HasValue ? new CacheValue<TimeSpan?>(expiration, true) : CacheValue<TimeSpan?>.Null);
-    }
-
-    private bool TryGetExpiration(string key, out TimeSpan? expiration)
-    {
         ArgumentException.ThrowIfNullOrEmpty(key);
-        expiration = null;
-        if (!_memory.TryGetValue(key, out var entry) || entry.IsExpired)
+
+        if (!_memory.TryGetValue(key, out var existingEntry))
         {
             Interlocked.Increment(ref _misses);
-            return false;
+            return Task.FromResult<TimeSpan?>(null);
+        }
+
+        if (existingEntry.IsExpired)
+        {
+            Interlocked.Increment(ref _misses);
+            return Task.FromResult<TimeSpan?>(null);
         }
 
         Interlocked.Increment(ref _hits);
-        if (entry.ExpiresAt is { } expiresAt && expiresAt != DateTime.MaxValue)
-            expiration = expiresAt - _timeProvider.GetUtcNow().UtcDateTime;
 
-        return true;
+        // Return null for keys with no expiration (DateTime.MaxValue means no expiration)
+        if (!existingEntry.ExpiresAt.HasValue || existingEntry.ExpiresAt.Value == DateTime.MaxValue)
+            return Task.FromResult<TimeSpan?>(null);
+
+        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
     public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
@@ -1252,8 +1246,29 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var result = new Dictionary<string, TimeSpan?>(keysArray.Length);
         foreach (string key in keysArray)
         {
-            if (TryGetExpiration(key, out var expiration))
-                result[key] = expiration;
+            ArgumentException.ThrowIfNullOrEmpty(key);
+
+            if (!_memory.TryGetValue(key, out var existingEntry))
+            {
+                Interlocked.Increment(ref _misses);
+                // Omit non-existent keys from result
+                continue;
+            }
+
+            if (existingEntry.IsExpired)
+            {
+                Interlocked.Increment(ref _misses);
+                // Omit expired keys from result
+                continue;
+            }
+
+            Interlocked.Increment(ref _hits);
+
+            // Include keys without expiration with null value (DateTime.MaxValue means no expiration)
+            if (!existingEntry.ExpiresAt.HasValue || existingEntry.ExpiresAt.Value == DateTime.MaxValue)
+                result[key] = null;
+            else
+                result[key] = existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
         }
 
         return Task.FromResult<IDictionary<string, TimeSpan?>>(result.AsReadOnly());

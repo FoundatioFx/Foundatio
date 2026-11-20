@@ -226,13 +226,6 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.GetExpirationAsync(GetUnscopedCacheKey(key));
     }
 
-    public Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        return UnscopedCache.GetExpirationInfoAsync(GetUnscopedCacheKey(key));
-    }
-
     public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
