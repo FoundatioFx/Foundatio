@@ -44,10 +44,11 @@ public sealed record RabbitMQMessageTransportOptions
     /// The RabbitMQ management API, for example "http://guest:guest@localhost:15672", used by
     /// <see cref="RabbitMQMessageTransport.GetStatsAsync"/> to count delivered messages that are not settled yet, and,
     /// with <see cref="DelayedDelivery"/>, to warn about what holds up delayed delivery: queues whose policy makes them
-    /// refuse messages when full, policies that change the delay levels or the discard queue, and delay levels whose
-    /// expired messages wait for their next hop for a minute or more. Credentials in the URI are used for basic
-    /// authentication; without them, those of <see cref="ConnectionString"/> are. Without an endpoint, in-flight
-    /// messages are not counted and none of this is checked.
+    /// refuse messages when full, policies that change the delay levels, the landing queues (one per target of delayed
+    /// messages, which delivers them) or the discard queue, and delay levels and landing queues whose expired messages
+    /// wait for their next hop for a minute or more. Credentials in the URI are used for basic authentication; without
+    /// them, those of <see cref="ConnectionString"/> are. Without an endpoint, in-flight messages are not counted and
+    /// none of this is checked.
     /// </summary>
     public Uri? ManagementEndpoint { get; init; }
 
@@ -70,9 +71,9 @@ public sealed record RabbitMQMessageTransportOptions
     /// <summary>How many times a receiver replaces a consumer whose prefetch is used up by unsettled deliveries before it waits for settlements.</summary>
     internal int MaxRetiredConsumers { get; init; } = 64;
 
-    /// <summary>How often, at most, <see cref="RabbitMQMessageTransport.GetStatsAsync"/> has the delay levels inspected through the management API.</summary>
+    /// <summary>How often, at most, <see cref="RabbitMQMessageTransport.GetStatsAsync"/> has the delay levels, landing queues and discard queue inspected through the management API.</summary>
     internal TimeSpan DelayCheckInterval { get; init; } = TimeSpan.FromSeconds(15);
 
-    /// <summary>How long a delay level's dead-letter worker must have no room for more expired messages before the transport warns that the level is held up.</summary>
+    /// <summary>How long the dead-letter worker of a delay level or landing queue must have no room for more expired messages before the transport warns that it is held up.</summary>
     internal TimeSpan DelayStallWarningAfter { get; init; } = TimeSpan.FromMinutes(1);
 }
