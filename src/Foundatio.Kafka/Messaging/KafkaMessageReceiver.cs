@@ -1182,10 +1182,10 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
     private void WarnSkippedLimitReached(KafkaPartitionState state)
     {
-        long lowest = state.Skipped.LowestOffset;
-        state.Skipped.TryGetGroupAt(lowest, out string key);
-        _logger.LogWarning("{Source} skipped {Count} records of {Partition}, the oldest of them {Span} offsets back, of group {GroupKey}; it stops reading the partition until they are read again, which holds up the partition's other groups. Spread busy groups over more partitions",
-            Source, state.Skipped.Count, state.TopicPartition, state.SkippedSpan, key);
+        state.Skipped.TryGetGroupAt(state.Skipped.LowestOffset, out string oldest);
+        var (busiest, busiestCount) = state.Skipped.CountsByGroup().MaxBy(g => g.Count);
+        _logger.LogWarning("{Source} skipped {Count} records of {Partition}, the oldest of them {Span} offsets back: {GroupCount} of group {GroupKey}, which skipped the most, and the oldest of group {OldestGroupKey}. It stops reading the partition until they are read again, which holds up the partition's other groups. Spread busy groups over more partitions",
+            Source, state.Skipped.Count, state.TopicPartition, state.SkippedSpan, busiestCount, busiest, oldest);
     }
 
     /// <summary>Adds a record that may be handed out: to the buffer, or to its group, in the order the records were read.</summary>

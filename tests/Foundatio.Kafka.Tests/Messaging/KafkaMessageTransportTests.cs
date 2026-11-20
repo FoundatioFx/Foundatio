@@ -694,6 +694,7 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     [Fact]
     public async Task Receive_WithAGroupBacklogStartingToSkipNearItsPartitionsSkippedLimit_SkipsAllOfItAndKeepsTheGroupInOrder()
     {
+        Log.MaxLogEntriesToStore = 10_000;
         var transport = Track(new KafkaMessageTransport(CreateOptions() with
         {
             Partitions = 1,
@@ -735,6 +736,12 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal(5 + 8, skipped);
         Assert.Equal(10 + 9, held);
         Assert.Equal(8, receiver.ReadAgainCount);
+
+        // The warning names both the group that skipped the most and the one that skipped the oldest record.
+        var warning = Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("records of", StringComparison.Ordinal));
+        Assert.Contains("skipped 13 records", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("8 of group g,", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("the oldest of group other", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]
