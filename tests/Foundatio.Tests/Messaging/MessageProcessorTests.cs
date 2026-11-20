@@ -293,6 +293,8 @@ public class MessageProcessorTests : TestWithLoggingBase
     public async Task RetryHold_InAnOrderedGroup_KeepsTheGroupsLaterMessagesBehindItAndFreesTheirSlots()
     {
         var transport = new InterceptingMessageTransport(_transport, WithoutRetryDelays());
+        await PrefillAsync(Enumerable.Range(1, 3).Select(i => new GroupedCommand(i)), new SendOptions { GroupKey = "customer-1" });
+        await PrefillAsync(Enumerable.Range(10, 3).Select(i => new GroupedCommand(i)));
         var calls = new ConcurrentQueue<(int Id, int Attempt)>();
         var consumer = await StartAsync(transport, m => m.AddConsumer<GroupedCommand>((message, context, _) =>
         {
@@ -300,8 +302,6 @@ public class MessageProcessorTests : TestWithLoggingBase
             return message.Id == 1 && context.Attempt == 1 ? throw new InvalidOperationException("transient") : Task.CompletedTask;
         }, new HandlerOptions { MaxConcurrency = 3, RetryPolicy = LongRetries }));
 
-        await consumer.Client.SendBatchAsync(Enumerable.Range(1, 3).Select(i => new GroupedCommand(i)), new SendOptions { GroupKey = "customer-1" }, TestCancellationToken);
-        await consumer.Client.SendBatchAsync(Enumerable.Range(10, 3).Select(i => new GroupedCommand(i)), cancellationToken: TestCancellationToken);
         await WaitForAsync(() => calls.Count == 4, TimeSpan.FromSeconds(10));
         Assert.Equal([(1, 1), (10, 1), (11, 1), (12, 1)], calls.OrderBy(c => c.Id));
 
