@@ -292,8 +292,8 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
 
     /// <inheritdoc />
     /// <remarks>
-    /// Deletes the source's queue and its dead-letter queue, or only the dead-letter queue, with their landing queues.
-    /// Receivers open on a deleted queue, in any process, are cancelled by the broker and fault, so Foundatio replaces
+    /// Deletes the source's queue and its dead-letter queue, or only the dead-letter queue, with their landing queues,
+    /// which a process with delayed delivery may have declared even when this one has it off. Receivers open on a deleted queue, in any process, are cancelled by the broker and fault, so Foundatio replaces
     /// them and the queue is declared again. A subscription's topic exchange, and its landing queue, are kept.
     /// </remarks>
     public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)

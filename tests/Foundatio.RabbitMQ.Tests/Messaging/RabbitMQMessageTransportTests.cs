@@ -643,6 +643,37 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task DeleteAsync_WithDelayedDeliveryOff_DeletesTheLandingQueuesAnotherProcessDeclared()
+    {
+        Assert.SkipWhen(DelayedDelivery, "Runs with a transport that has delayed delivery off.");
+
+        // Arrange: a process with delayed delivery declared the landing queues of the source and of its dead-letter queue.
+        var withDelays = Track(new RabbitMQMessageTransport(CreateOptions() with { DelayedDelivery = true }));
+        var source = MessageSource.Queue(NewName("delete-landing-off"));
+        string landing = withDelays.Names.Landing(withDelays.Names.For(source));
+        string deadLetterLanding = withDelays.Names.Landing(withDelays.Names.DeadLetter(source));
+        try
+        {
+            await withDelays.SendAsync(MessageDestination.Queue(source.Name), [Message("delayed") with { DeliverAt = DateTimeOffset.UtcNow.AddSeconds(30) }], TestCancellationToken);
+            await withDelays.Topology.EnsureLandingAsync(withDelays.Names.DeadLetter(source), TestCancellationToken);
+            Assert.True(await QueueExistsAsync(landing));
+            Assert.True(await QueueExistsAsync(deadLetterLanding));
+
+            // Act
+            await Transport.DeleteAsync(source, TestCancellationToken);
+
+            // Assert
+            Assert.False(await QueueExistsAsync(RabbitTransport.Names.For(source)));
+            Assert.False(await QueueExistsAsync(landing));
+            Assert.False(await QueueExistsAsync(deadLetterLanding));
+        }
+        finally
+        {
+            await DeleteQueuesAsync(landing, deadLetterLanding);
+        }
+    }
+
+    [Fact]
     public async Task Names_ThatJoinTheSameOrPassTheLengthLimit_DoNotCollide()
     {
         // Arrange

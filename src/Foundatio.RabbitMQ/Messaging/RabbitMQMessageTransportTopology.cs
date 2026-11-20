@@ -178,17 +178,16 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         }, cancellationToken);
     }
 
-    /// <summary>Removes a queue with its messages, consumers and bindings, and its landing queue. Succeeds when they do not exist.</summary>
+    /// <summary>
+    /// Removes a queue with its messages, consumers and bindings, and its landing queue, which a process with delayed
+    /// delivery may have declared even when this one has it off. Succeeds when they do not exist.
+    /// </summary>
     public async Task DeleteQueueAsync(string queue, CancellationToken cancellationToken)
     {
         Forget(queue);
+        string landing = _names.Landing(queue);
         await RunAsync($"delete queue {queue}", async (channel, ct) => _ = await channel.QueueDeleteAsync(queue, ifUnused: false, ifEmpty: false, cancellationToken: ct).AnyContext(), cancellationToken).AnyContext();
-        if (_delays)
-        {
-            string landing = _names.Landing(queue);
-            await RunAsync($"delete queue {landing}", async (channel, ct) => _ = await channel.QueueDeleteAsync(landing, ifUnused: false, ifEmpty: false, cancellationToken: ct).AnyContext(), cancellationToken).AnyContext();
-        }
-
+        await RunAsync($"delete queue {landing}", async (channel, ct) => _ = await channel.QueueDeleteAsync(landing, ifUnused: false, ifEmpty: false, cancellationToken: ct).AnyContext(), cancellationToken).AnyContext();
         Forget(queue);
     }
 
