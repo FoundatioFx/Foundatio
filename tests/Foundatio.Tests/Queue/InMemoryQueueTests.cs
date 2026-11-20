@@ -57,6 +57,27 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public async Task AbandonAsync_WithImmediateRetry_LogsTheAbandonedAttempt()
+    {
+        // Arrange
+        Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Trace);
+        using var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "item" });
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+
+        // Act
+        await entry.AbandonAsync();
+        var retry = await queue.DequeueAsync(TestCancellationToken);
+
+        // Assert
+        Assert.NotNull(retry);
+        Assert.Equal(2, retry.Attempts);
+        Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Trace && String.Equals(log.Message, $"Adding item back to queue for retry: {entry.Id} Attempts: 1", StringComparison.Ordinal));
+        await retry.CompleteAsync();
+    }
+
+    [Fact]
     public override Task CanQueueAndDequeueWorkItemAsync()
     {
         return base.CanQueueAndDequeueWorkItemAsync();

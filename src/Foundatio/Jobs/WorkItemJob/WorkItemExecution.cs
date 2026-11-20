@@ -8,6 +8,7 @@ using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
@@ -16,7 +17,7 @@ namespace Foundatio.Jobs;
 /// overlapping renewals or catch a renewal error. The job waits for those renewals and checks ownership
 /// before it settles the entry and releases the work-item lock.
 /// </summary>
-internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, CancellationToken cancellationToken) : IDisposable
+internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, ILogger jobLogger, CancellationToken cancellationToken) : IDisposable
 {
     private RenewalState? _renewals = workItemLock.GetType() == typeof(EmptyLock) ? null : new RenewalState(CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
     private int _stopped;
@@ -54,7 +55,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
             ThrowIfRenewalFailed();
         }
 
-        await PublishProgressAsync(publisher, handler, entry, progress, message).AnyContext();
+        await PublishProgressAsync(publisher, handler, jobLogger, entry, progress, message).AnyContext();
         if (handler.Log.IsEnabled(LogLevel.Information))
             handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", dataType.Name, progress, message);
 
@@ -85,7 +86,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
 
     public void Dispose() => _renewals?.Cancellation?.Dispose();
 
-    internal static async Task PublishProgressAsync(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, int progress, string? message)
+    internal static async Task PublishProgressAsync(IMessagePublisher publisher, IWorkItemHandler handler, ILogger jobLogger, IQueueEntry<WorkItemData> entry, int progress, string? message)
     {
         try
         {
@@ -99,7 +100,22 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
         catch (Exception ex)
         {
-            handler.Log.LogError(ex, "Error sending progress report: {Message}", ex.Message);
+            TryLogDiagnostic(handler, jobLogger, ex, logger => logger.LogError(ex, "Error sending progress report: {Message}", ex.Message));
+        }
+    }
+
+    internal static void TryLogDiagnostic(IWorkItemHandler handler, ILogger jobLogger, Exception error, Action<ILogger> write)
+    {
+        try
+        {
+            var logger = handler.Log;
+            write(logger is NullLogger ? jobLogger : logger);
+        }
+        catch (Exception loggingError)
+        {
+            // A broken log sink must preserve the processing outcome and the original exception.
+            Activity.Current?.AddException(error);
+            Activity.Current?.AddException(loggingError);
         }
     }
 
@@ -143,7 +159,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
         catch (Exception ex) when (renewals.Failure is { } failure)
         {
-            // Even a failing diagnostic logger must leave the original loss of ownership visible to the handler.
+            // A concurrent fault must leave the first loss of ownership visible to the handler.
             if (!ReferenceEquals(failure.SourceException, ex))
                 Activity.Current?.AddException(ex);
 
@@ -170,7 +186,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
         catch (Exception ex)
         {
-            handler.Log.LogError(ex, "Unable to renew queue entry {QueueEntryId}", entry.Id);
+            LogRenewalFailure(ex);
         }
     }
 
@@ -185,23 +201,42 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
             if (!renewals.TryRecordFailure(ex))
                 return;
 
-            if (renewals.Cancellation is { } cancellation)
-                await CancelHandlerAsync(cancellation).AnyContext();
-
-            handler.Log.LogWarning(ex, "Unable to renew work-item lock for queue entry {QueueEntryId}", entry.Id);
+            // Signal loss immediately so a slow cancellation callback cannot delay the renewal error log.
+            var callbacks = renewals.Cancellation?.CancelAsync() ?? Task.CompletedTask;
+            try
+            {
+                LogRenewalFailure(ex, workItemLock);
+            }
+            finally
+            {
+                await ObserveCancellationCallbacksAsync(callbacks).AnyContext();
+            }
         }
     }
 
-    private async Task CancelHandlerAsync(CancellationTokenSource cancellation)
+    private void LogRenewalFailure(Exception error, ILock? failedWorkItemLock = null)
+    {
+        TryLogDiagnostic(handler, jobLogger, error, logger =>
+        {
+            var scope = new LogState().Property("QueueEntryId", entry.Id).Property("RenewalTarget", failedWorkItemLock is null ? "QueueEntry" : "WorkItemLock");
+            if (failedWorkItemLock is not null)
+                scope.Property("Resource", failedWorkItemLock.Resource);
+
+            using var _ = logger.BeginScope(scope);
+            logger.LogError(error, "Error renewing work item locks: {Message}", error.Message);
+        });
+    }
+
+    private async Task ObserveCancellationCallbacksAsync(Task callbacks)
     {
         try
         {
-            await cancellation.CancelAsync().AnyContext();
+            await callbacks.AnyContext();
         }
         catch (AggregateException ex)
         {
             Activity.Current?.AddException(ex);
-            handler.Log.LogWarning(ex, "Cancellation callback failed after losing the work-item lock for queue entry {QueueEntryId}", entry.Id);
+            TryLogDiagnostic(handler, jobLogger, ex, logger => logger.LogWarning(ex, "Cancellation callback failed after losing the work-item lock for queue entry {QueueEntryId}", entry.Id));
         }
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -70,9 +71,11 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ProcessAsync_WhenAbandonmentOutcomeIsUnknown_SkipsFailureStatus(bool markedAbandoned)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ProcessAsync_WhenAbandonmentOutcomeIsUnknown_SkipsFailureStatus(bool markedAbandoned, bool handlerThrows)
     {
         // Arrange
         using var queue = CreateQueue(retries: 0);
@@ -81,6 +84,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         var original = await queue.DequeueAsync(TestCancellationToken);
         Assert.NotNull(original);
         var error = new InvalidOperationException("Provider could not confirm abandonment");
+        var handlerError = new InvalidOperationException("Handler rejected the item");
         var entry = new Mock<IQueueEntry<WorkItemData>>();
         entry.SetupGet(e => e.Value).Returns(original.Value);
         entry.SetupGet(e => e.Id).Returns(original.Id);
@@ -98,15 +102,27 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         var handlers = new WorkItemHandlers();
         handlers.Register<string>(ctx =>
         {
-            ctx.Result = JobResult.FailedWithMessage("Handler rejected the item");
+            if (handlerThrows)
+                throw handlerError;
+
+            ctx.Result = JobResult.FailedWithMessage(handlerError.Message);
             return Task.CompletedTask;
         });
+        var job = new WorkItemJob(queue, bus, handlers, Log);
 
         // Act
-        var result = await new WorkItemJob(queue, bus, handlers, Log).ProcessAsync(entry.Object, TestCancellationToken);
+        var actualError = handlerThrows
+            ? await Assert.ThrowsAsync<InvalidOperationException>(() => job.ProcessAsync(entry.Object, TestCancellationToken))
+            : (await job.ProcessAsync(entry.Object, TestCancellationToken)).Error;
 
         // Assert
-        Assert.Same(error, result.Error);
+        Assert.Same(error, actualError);
+        var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, handlerThrows ? handlerError : error));
+        if (!handlerThrows)
+            Assert.Contains(handlerError.Message, diagnostic.Message, StringComparison.Ordinal);
+
+        Assert.Contains(original.Id, diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains(error.Message, diagnostic.Message, StringComparison.Ordinal);
         entry.Verify(e => e.AbandonAsync(), Times.Once);
         Assert.Equal([0], statuses);
     }
@@ -404,7 +420,13 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.NotNull(renewalError);
         Assert.Same(renewalError, result.Error);
         Assert.Contains($"{nameof(CacheLockProvider)}.{nameof(CacheLockProvider.RenewAsync)}", renewalError.StackTrace, StringComparison.Ordinal);
-        Assert.Single(Log.LogEntries, entry => entry.LogLevel == LogLevel.Warning && ReferenceEquals(entry.Exception, renewalError));
+        var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, renewalError));
+        var fields = Assert.IsAssignableFrom<IEnumerable<KeyValuePair<string, object?>>>(diagnostic.State).ToDictionary();
+        Assert.Equal("Error renewing work item locks: {Message}", fields["{OriginalFormat}"]);
+        Assert.Equal(renewalError.Message, fields["Message"]);
+        var scope = Assert.Single(diagnostic.Scopes.OfType<LogState>(), s => s.ContainsProperty("RenewalTarget"));
+        Assert.Equal("WorkItemLock", scope["RenewalTarget"]);
+        Assert.Equal(lease.Resource, scope["Resource"]);
         Assert.Equal(callbackThrows, Log.LogEntries.Any(entry => entry.LogLevel == LogLevel.Warning && entry.Exception is AggregateException aggregate && aggregate.InnerExceptions.Contains(callbackError)));
         if (trace)
         {
@@ -848,20 +870,22 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     public async Task RunAsync_WhenAutoRenewedWorkItemLockIsHeld_CompletesEntry(bool queueRenewalFails, bool sendProgressReports)
     {
         // Arrange
+        Log.DefaultLogLevel = LogLevel.Error;
         using var queue = CreateQueue();
         using var cache = CreateCache();
         using var bus = CreateMessageBus();
         var locker = new CacheLockProvider(cache, bus, Log);
         await using var lease = await locker.AcquireAsync("work-item", cancellationToken: TestCancellationToken);
+        var queueError = new InvalidOperationException("Queue renewal failed");
         var handlers = new WorkItemHandlers();
         handlers.Register<MyWorkItem>(new RenewingWorkItemHandler(lease, async context =>
         {
             using var observer = queueRenewalFails
-                ? queue.LockRenewed.AddHandler((_, _) => throw new InvalidOperationException("Queue renewal failed"))
+                ? queue.LockRenewed.AddHandler((_, _) => throw queueError)
                 : null;
             await context.ReportProgressAsync(50);
             context.CancellationToken.ThrowIfCancellationRequested();
-        }, _logger));
+        }, null));
 
         var job = new WorkItemJob(queue, bus, handlers, Log);
         IQueueEntry<WorkItemData>? entry = null;
@@ -878,6 +902,13 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.True(entry.IsCompleted);
         Assert.False(entry.IsAbandoned);
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Completed);
+        if (queueRenewalFails)
+        {
+            var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, queueError));
+            var scope = Assert.Single(diagnostic.Scopes.OfType<LogState>(), s => s.ContainsProperty("RenewalTarget"));
+            Assert.Equal("QueueEntry", scope["RenewalTarget"]);
+            Assert.Equal(entry.Id, scope["QueueEntryId"]);
+        }
     }
 
     private static ActivityListener ListenToJobActivities()
@@ -953,7 +984,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     {
         private readonly ILock _lease;
 
-        public RenewingWorkItemHandler(ILock lease, Func<WorkItemContext, Task> handle, ILogger logger) : base(handle, logger)
+        public RenewingWorkItemHandler(ILock lease, Func<WorkItemContext, Task> handle, ILogger? logger) : base(handle, logger)
         {
             _lease = lease;
             AutoRenewLockOnProgress = true;

@@ -295,14 +295,16 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         else
         {
             Retry(retryEntry);
+            _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId} Attempts: {QueueEntryAttempts}", entry.Id, entry.Attempts);
         }
     }
 
     private void Retry(QueueEntry<T> entry)
     {
+        int attempts = entry.Attempts;
         _queue.Enqueue(entry);
         _autoResetEvent.Set();
-        _logger.LogTrace("Queue {QueueName} retrying item: {QueueEntryId} Attempts: {QueueEntryAttempts}", _options.Name, entry.Id, entry.Attempts);
+        _logger.LogTrace("Queue {QueueName} retrying item: {QueueEntryId} Attempts: {QueueEntryAttempts}", _options.Name, entry.Id, attempts);
     }
 
     private TimeSpan GetRetryDelay(int attempts)

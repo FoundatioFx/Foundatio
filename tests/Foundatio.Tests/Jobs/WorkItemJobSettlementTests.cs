@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
+using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Resilience;
@@ -295,6 +296,85 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         Assert.Same(queue.ObserverError, result.Error);
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Working);
         Assert.Equal([0], statuses);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_WhenReleaseFailsAfterHandlerError_LogsOriginalFailure(bool alreadyCompleted)
+    {
+        // Arrange
+        using var queue = CreateQueue();
+        using var bus = CreateBus();
+        var handlerError = new InvalidOperationException("Handler failed");
+        var releaseError = new InvalidOperationException("Lock release failed");
+        var lease = new Mock<ILock>();
+        lease.Setup(l => l.ReleaseAsync()).ThrowsAsync(releaseError);
+        var handler = new Mock<IWorkItemHandler>();
+        handler.SetupGet(h => h.Log).Returns(_logger);
+        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(lease.Object);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(handler.Object);
+        await queue.EnqueueAsync("item");
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+        handler.Setup(h => h.HandleItemAsync(It.IsAny<WorkItemContext>())).Returns(async () =>
+        {
+            if (alreadyCompleted)
+                await entry.CompleteAsync();
+
+            throw handlerError;
+        });
+        var job = new WorkItemJob(queue, bus, handlers, Log);
+
+        // Act
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => job.ProcessAsync(entry, TestCancellationToken));
+
+        // Assert
+        Assert.Same(releaseError, error);
+        Assert.Equal(alreadyCompleted, entry.IsCompleted);
+        Assert.Equal(!alreadyCompleted, entry.IsAbandoned);
+        var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, handlerError));
+        Assert.Contains(entry.Id, diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains(releaseError.Message, diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_WhenTerminalProgressAndItsLoggerFail_PreservesProcessingOutcome(bool releaseFails)
+    {
+        // Arrange
+        using var queue = CreateQueue();
+        using var bus = CreateBus();
+        var releaseError = new InvalidOperationException("Lock release failed");
+        var logger = new Mock<ILogger>();
+        logger.Setup(l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()))
+            .Throws(new InvalidOperationException("Log writer failed"));
+        var lease = new Mock<ILock>();
+        lease.Setup(l => l.ReleaseAsync()).Returns(() =>
+        {
+            bus.Dispose();
+            return releaseFails ? Task.FromException(releaseError) : Task.CompletedTask;
+        });
+        var handler = new Mock<IWorkItemHandler>();
+        handler.SetupGet(h => h.Log).Returns(logger.Object);
+        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(lease.Object);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(handler.Object);
+        await queue.EnqueueAsync("item", true);
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+        var job = new WorkItemJob(queue, bus, handlers, Log);
+
+        // Act & Assert
+        if (releaseFails)
+            Assert.Same(releaseError, await Assert.ThrowsAsync<InvalidOperationException>(() => job.ProcessAsync(entry, TestCancellationToken)));
+        else
+            Assert.True((await job.ProcessAsync(entry, TestCancellationToken)).IsSuccess);
+
+        Assert.True(entry.IsCompleted);
+        logger.Verify(l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
