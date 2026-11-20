@@ -443,6 +443,21 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return await _distributedCache.GetExpirationAsync(key).AnyContext();
     }
 
+    public async Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
+        var local = await _localCache.GetExpirationInfoAsync(key).AnyContext();
+        if (local.HasValue)
+        {
+            Interlocked.Increment(ref _localCacheHits);
+            return local;
+        }
+
+        return await _distributedCache.GetExpirationInfoAsync(key).AnyContext();
+    }
+
     public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
@@ -671,10 +686,19 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             var value = await read(_distributedCache, key).AnyContext();
             if (value.HasValue && observation.IsCurrent)
             {
-                // A null TTL can also mean the key expired after the value was read.
-                var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-                if (expiration.HasValue || await TryGetDistributedKeyExistenceAsync(key).AnyContext() is true)
-                    await UpdateLocalAsync(observation, key, (value.Value, expiration), store).AnyContext();
+                CacheValue<TimeSpan?> expiration;
+                try
+                {
+                    expiration = await _distributedCache.GetExpirationInfoAsync(key).AnyContext();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Unable to get the expiration of {Key}, skipping the local update", key);
+                    return value;
+                }
+
+                if (expiration.HasValue)
+                    await UpdateLocalAsync(observation, key, (value.Value, expiration.Value), store).AnyContext();
             }
 
             return value;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 
 namespace Foundatio.Caching;
 
@@ -269,6 +270,22 @@ public interface ICacheClient : IDisposable
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
     Task<TimeSpan?> GetExpirationAsync(string key);
+
+    /// <summary>
+    /// Gets the remaining TTL and distinguishes a missing key from one that has no expiration.
+    /// </summary>
+    /// <returns>A missing value for an absent key, a present null for a persistent key, or its remaining TTL.</returns>
+    /// <remarks>The default implementation checks existence separately when the provider returns a null TTL.</remarks>
+    async Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        var expiration = await GetExpirationAsync(key).AnyContext();
+        if (expiration.HasValue)
+            return new CacheValue<TimeSpan?>(expiration, true);
+
+        return await ExistsAsync(key).AnyContext() ? CacheValue<TimeSpan?>.Null : CacheValue<TimeSpan?>.NoValue;
+    }
 
     /// <summary>
     /// Gets the remaining time-to-live (TTL) for multiple cache entries.

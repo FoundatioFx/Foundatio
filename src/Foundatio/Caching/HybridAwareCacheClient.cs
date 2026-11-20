@@ -190,6 +190,13 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return _distributedCache.GetExpirationAsync(key);
     }
 
+    public Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        return _distributedCache.GetExpirationInfoAsync(key);
+    }
+
     public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);

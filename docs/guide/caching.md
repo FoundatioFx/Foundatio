@@ -37,6 +37,7 @@ public interface ICacheClient : IDisposable
 
     // Expiration operations
     Task<TimeSpan?> GetExpirationAsync(string key);
+    Task<CacheValue<TimeSpan?>> GetExpirationInfoAsync(string key);
     Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys);
     Task SetExpirationAsync(string key, TimeSpan expiresIn);
     Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations);

@@ -187,6 +187,26 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetAsync_WhenOnlyProviderExpirationInfoIsAvailable_FillsLocalCacheIfKeyExists(bool exists)
+    {
+        // Arrange
+        const string key = "metadata";
+        var provider = new Mock<ICacheClient>(MockBehavior.Strict);
+        provider.Setup(c => c.GetAsync<int>(key)).ReturnsAsync(new CacheValue<int>(42, true));
+        provider.Setup(c => c.GetExpirationInfoAsync(key)).ReturnsAsync(exists ? CacheValue<TimeSpan?>.Null : CacheValue<TimeSpan?>.NoValue);
+        using var cache = CreateCache(distributedCache: provider.Object);
+
+        // Act
+        var result = await cache.GetAsync<int>(key);
+
+        // Assert
+        Assert.Equal(42, result.Value);
+        Assert.Equal(exists, await cache.LocalCache.ExistsAsync(key));
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
     [InlineData(true, true)]
@@ -1386,6 +1406,9 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         Task<bool> ICacheClient.ExistsAsync(string key) =>
             RejectExistenceChecks ? Task.FromException<bool>(new CacheException("Existence check unavailable")) : ExistsAsync(key);
+
+        Task<CacheValue<TimeSpan?>> ICacheClient.GetExpirationInfoAsync(string key) =>
+            RejectExistenceChecks ? Task.FromException<CacheValue<TimeSpan?>>(new CacheException("Expiration info unavailable")) : GetExpirationInfoAsync(key);
 
         Task<IDictionary<string, CacheValue<T>>> ICacheClient.GetAllAsync<T>(IEnumerable<string> keys) =>
             CompleteAsync(GetAllAsync<T>(keys), Interlocked.Exchange(ref _afterNextRead, null));
