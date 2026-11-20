@@ -1166,42 +1166,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.SetAllAsync_WithLargeNumberOfKeys_MeasuresThroughput();
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SetAllExpirationAsync_WhenOnlyFirstExpirationCommits_InvalidatesBothClients(bool useHybridAwareWriter)
-    {
-        // Arrange
-        var values = new Dictionary<string, int> { ["first"] = 1, ["second"] = 2 };
-        var expirations = new Dictionary<string, TimeSpan?> { ["first"] = TimeSpan.Zero, ["second"] = TimeSpan.Zero };
-        var error = new CacheException("Batch interrupted");
-        var provider = new Mock<ICacheClient>();
-        provider.Setup(c => c.SetAllExpirationAsync(expirations)).Returns(async () =>
-        {
-            await _distributedCache.SetExpirationAsync("first", TimeSpan.Zero);
-            throw error;
-        });
-
-        using var writer = CreateCache(distributedCache: provider.Object);
-        using var peer = CreateCache();
-        using var aware = new HybridAwareCacheClient(provider.Object, _messageBus, Log);
-        ICacheClient activeWriter = useHybridAwareWriter ? aware : writer;
-        await peer.SetAllAsync(values);
-        await writer.LocalCache.SetAllAsync(values);
-        Assert.Equal(1, (await writer.GetAsync<int>("first")).Value);
-
-        // Act
-        var thrown = await Assert.ThrowsAsync<CacheException>(() => activeWriter.SetAllExpirationAsync(expirations));
-
-        // Assert
-        Assert.Same(error, thrown);
-        Assert.Equal(0, writer.LocalCache.Count);
-        Assert.Equal(0, peer.LocalCache.Count);
-        var current = await peer.GetAllAsync<int>(values.Keys);
-        Assert.False(current["first"].HasValue);
-        Assert.Equal(2, current["second"].Value);
-    }
-
     [Fact]
     public override Task SetAllExpirationAsync_WithInvalidItems_ValidatesCorrectly()
     {
@@ -1394,6 +1358,51 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task SetAsync_WithShortExpiration_ExpiresCorrectly()
     {
         return base.SetAsync_WithShortExpiration_ExpiresCorrectly();
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task SetExpirationAsync_WhenProviderThrowsAfterExpiringFirstKey_EvictsRequestedKeys(bool batch, bool useHybridAwareWriter)
+    {
+        // Arrange
+        var values = new Dictionary<string, int> { ["first"] = 1, ["second"] = 2 };
+        var expirations = new Dictionary<string, TimeSpan?> { ["first"] = TimeSpan.Zero, ["second"] = TimeSpan.Zero };
+        var error = new CacheException("Expiration response lost");
+        var provider = new Mock<ICacheClient>();
+        provider.Setup(c => c.SetExpirationAsync("first", TimeSpan.Zero)).Returns(ExpireFirstAndThrowAsync);
+        provider.Setup(c => c.SetAllExpirationAsync(expirations)).Returns(ExpireFirstAndThrowAsync);
+
+        using var writer = CreateCache(distributedCache: provider.Object);
+        using var peer = CreateCache();
+        using var aware = new HybridAwareCacheClient(provider.Object, _messageBus, Log);
+        ICacheClient activeWriter = useHybridAwareWriter ? aware : writer;
+        await peer.SetAllAsync(values);
+        await writer.LocalCache.SetAllAsync(values);
+        Assert.Equal(1, (await writer.GetAsync<int>("first")).Value);
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => batch
+            ? activeWriter.SetAllExpirationAsync(expirations)
+            : activeWriter.SetExpirationAsync("first", TimeSpan.Zero));
+
+        // Assert
+        Assert.Same(error, thrown);
+        Assert.False(await writer.LocalCache.ExistsAsync("first"));
+        Assert.False(await peer.LocalCache.ExistsAsync("first"));
+        Assert.Equal(!batch, await writer.LocalCache.ExistsAsync("second"));
+        Assert.Equal(!batch, await peer.LocalCache.ExistsAsync("second"));
+        var current = await peer.GetAllAsync<int>(values.Keys);
+        Assert.False(current["first"].HasValue);
+        Assert.Equal(2, current["second"].Value);
+
+        async Task ExpireFirstAndThrowAsync()
+        {
+            await _distributedCache.SetExpirationAsync("first", TimeSpan.Zero);
+            throw error;
+        }
     }
 
     [Fact]
