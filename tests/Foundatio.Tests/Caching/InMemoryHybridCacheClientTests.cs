@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -49,6 +50,40 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task AddAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.AddAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task BatchWrite_WhenInputChangesWhileProviderIsWaiting_UsesTheOriginalEntries(bool expire, bool useHybridAwareWriter)
+    {
+        // Arrange
+        using var distributed = new DelayedCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        using var peer = CreateCache(distributedCache: distributed);
+        using var awareWriter = useHybridAwareWriter ? CreateHybridAwareCache(distributed) : null;
+        var writer = awareWriter ?? cache;
+        await cache.SetAllAsync(new Dictionary<string, int> { ["first"] = 1, ["late"] = 1 });
+        await peer.GetAllAsync<int>(["first", "late"]);
+        var values = new ConcurrentDictionary<string, int> { ["first"] = 2 };
+        var expirations = new ConcurrentDictionary<string, TimeSpan?> { ["first"] = TimeSpan.Zero };
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        distributed.BeforeBatchWrite = resume.Task;
+
+        // Act
+        Task write = expire ? writer.SetAllExpirationAsync(expirations) : writer.SetAllAsync(values);
+        values["late"] = 2;
+        expirations["late"] = TimeSpan.Zero;
+        resume.SetResult();
+        await write.WaitAsync(TestCancellationToken);
+
+        // Assert
+        Assert.Equal(expire ? -1 : 2, await peer.GetAsync("first", -1));
+        Assert.Equal(1, await distributed.GetAsync("late", -1));
+        Assert.Equal(1, await cache.GetAsync("late", -1));
+        Assert.Equal(1, await peer.GetAsync("late", -1));
     }
 
     [Fact]
@@ -418,7 +453,9 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         if (!useHybridAwareWriter)
             Assert.Equal(2L, (await cache.GetAsync<long>(key)).Value);
 
-        Assert.Contains(Log.LogEntries, entry => entry.Exception is MessageBusException);
+        Assert.Contains(Log.LogEntries, entry => entry.Exception is MessageBusException ex
+            && entry.State is IEnumerable<KeyValuePair<string, object?>> fields
+            && fields.Contains(new("Message", ex.Message)));
     }
 
     [Fact]
@@ -735,8 +772,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public async Task RemoveAllAsync_WhenRemovalResponseIsLost_EvictsOnlyAffectedEntries(string scope, bool useHybridAwareWriter)
     {
         // Arrange
-        const string removed = "remove:one";
-        const string other = "keep";
+        const string removed = "remove:*";
+        const string other = "remove:other";
         using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
@@ -751,7 +788,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         var thrown = await Assert.ThrowsAsync<TimeoutException>(() => scope switch
         {
             "keys" => writer.RemoveAllAsync([removed]),
-            "prefix" => writer.RemoveByPrefixAsync("remove:"),
+            "prefix" => writer.RemoveByPrefixAsync("remove:*"),
             "flush" => writer.RemoveAllAsync(),
             _ => throw new ArgumentOutOfRangeException(nameof(scope))
         });
@@ -1287,12 +1324,15 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public async Task SetAsync_WhenProviderCommitsAndLosesResponse_InvalidatesWarmClients(bool useHybridAwareWriter)
     {
         // Arrange
-        const string key = "uncertain-write";
+        const string key = "*";
+        const string other = "*neighbor";
         using var distributed = new DelayedCache(Log);
         using var cache = CreateCache(distributedCache: distributed);
         using var peer = CreateCache(distributedCache: distributed);
         using var awareWriter = useHybridAwareWriter ? CreateHybridAwareCache(distributed) : null;
         var writer = awareWriter ?? cache;
+        Assert.True(await cache.SetAsync(other, 7));
+        Assert.Equal(7, (await peer.GetAsync<int>(other)).Value);
         Assert.True(await cache.SetAsync(key, 1));
         Assert.Equal(1, (await peer.GetAsync<int>(key)).Value);
         var error = new TimeoutException("Write response lost");
@@ -1306,6 +1346,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.Equal(2, (await distributed.GetAsync<int>(key)).Value);
         Assert.Equal(2, (await cache.GetAsync<int>(key)).Value);
         Assert.Equal(2, (await peer.GetAsync<int>(key)).Value);
+        Assert.True(await peer.LocalCache.ExistsAsync(other));
     }
 
     [Fact]
@@ -1688,6 +1729,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         private Func<Task>? _afterNextWrite;
 
         public bool RejectExistenceChecks { get; init; }
+        public Task BeforeBatchWrite { get; set; } = Task.CompletedTask;
 
         public void AfterNextRead(Func<Task> action) => _afterNextRead = action;
 
@@ -1719,6 +1761,18 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         Task<bool> ICacheClient.SetAsync<T>(string key, T value, TimeSpan? expiresIn) =>
             CompleteAsync(SetAsync(key, value, expiresIn), Interlocked.Exchange(ref _afterNextWrite, null));
+
+        async Task<int> ICacheClient.SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn)
+        {
+            await BeforeBatchWrite;
+            return await SetAllAsync(values, expiresIn);
+        }
+
+        async Task ICacheClient.SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+        {
+            await BeforeBatchWrite;
+            await SetAllExpirationAsync(expirations);
+        }
 
         private static async Task<T> CompleteAsync<T>(Task<T> operation, Func<Task>? after)
         {

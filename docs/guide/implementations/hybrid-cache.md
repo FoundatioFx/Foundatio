@@ -108,6 +108,10 @@ Invalidation is **surgical** - only the affected keys are cleared on other insta
 | `RemoveByPrefixAsync("user:")` | Clears `user:*` pattern on other instances |
 | `RemoveAllAsync()` (no keys) | Clears **entire** local cache on all instances |
 
+Bulk writes take one snapshot of the supplied dictionary. The provider and the peer notification use those same entries even if the caller changes the dictionary while the write is pending.
+
+Key invalidations treat a trailing `*` literally. Only a prefix removal requests a prefix match. During a rolling upgrade, older writers still send ambiguous trailing asterisks. An older subscriber receiving a batch containing a literal trailing `*` from an upgraded writer evicts exactly the listed keys and can raise its local `ItemExpired` event with `SendNotification` set to `false`.
+
 ### Smart Cache Invalidation
 
 The hybrid cache optimizes message bus traffic by **only publishing invalidation messages when the distributed cache actually changed**. This reduces unnecessary network traffic and processing overhead.

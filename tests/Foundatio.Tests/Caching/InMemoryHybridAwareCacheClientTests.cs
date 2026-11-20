@@ -51,6 +51,17 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public void AddAsync_WithInvalidKey_ThrowsSynchronously()
+    {
+        // Arrange
+        using var writer = GetCacheClient();
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>("key", () => { _ = writer.AddAsync(null!, 1); });
+        Assert.Throws<ArgumentException>("key", () => { _ = writer.AddAsync(String.Empty, 1); });
+    }
+
+    [Fact]
     public override Task CacheOperations_WithMultipleTypes_MeasuresThroughput()
     {
         return base.CacheOperations_WithMultipleTypes_MeasuresThroughput();

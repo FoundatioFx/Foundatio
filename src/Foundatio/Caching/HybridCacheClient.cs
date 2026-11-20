@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -88,6 +89,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         if (message.Keys is { Length: > 0 })
         {
+            if (message.ExactKeys)
+            {
+                _fence.Invalidate(message.Keys);
+                return _localCache.RemoveAllAsync(message.Keys);
+            }
+
             var tasks = new List<Task>(message.Keys.Length);
             var keysToRemove = new List<string>(message.Keys.Length);
             foreach (string key in message.Keys)
@@ -176,7 +183,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = localKeys is null, Keys = items }).AnyContext();
+            await PublishInvalidationAsync(localKeys).AnyContext();
 
         return removed;
     }
@@ -200,7 +207,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await PublishInvalidationAsync([$"{prefix}*"]).AnyContext();
+            await _messageBus.PublishAsync(InvalidateCache.ForPrefix(_cacheId, prefix)).AnyContext();
 
         return removed;
     }
@@ -328,17 +335,18 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         await EnsureSubscribedAsync().AnyContext();
 
-        if (values.Count is 0)
+        var (batch, keys) = SnapshotBatch(values);
+        if (keys.Length is 0)
             return 0;
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
-            await RemoveAllAsync(values.Keys).AnyContext();
+            await RemoveAllAsync(keys).AnyContext();
             return 0;
         }
 
-        _logger.LogTrace("Setting keys {Keys} with expiration: {Expiration}", values.Keys, expiresIn);
-        return await WriteBatchAsync(GetBatchKeys(values.Keys), cache => cache.SetAllAsync(values, expiresIn)).AnyContext();
+        _logger.LogTrace("Setting keys {Keys} with expiration: {Expiration}", keys, expiresIn);
+        return await WriteBatchAsync(keys, cache => cache.SetAllAsync(batch, expiresIn)).AnyContext();
     }
 
     public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -521,13 +529,14 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         await EnsureSubscribedAsync().AnyContext();
 
-        if (expirations.Count is 0)
+        var (batch, keys) = SnapshotBatch(expirations);
+        if (keys.Length is 0)
             return;
 
-        await WriteBatchAsync(GetBatchKeys(expirations.Keys), async cache =>
+        await WriteBatchAsync(keys, async cache =>
         {
-            await cache.SetAllExpirationAsync(expirations).AnyContext();
-            return expirations.Count;
+            await cache.SetAllExpirationAsync(batch).AnyContext();
+            return keys.Length;
         }).AnyContext();
     }
 
@@ -687,7 +696,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Unable to refresh {Key} after an overlapping cache invalidation", key);
+            _logger.LogWarning(ex, "Unable to refresh {Key} after an overlapping cache invalidation: {Message}", key, ex.Message);
         }
 
         return result;
@@ -704,7 +713,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Unable to get the expiration of {Key}, skipping the local update", key);
+                    _logger.LogWarning(ex, "Unable to get the expiration of {Key}, skipping the local update: {Message}", key, ex.Message);
                     return value;
                 }
 
@@ -734,7 +743,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Unable to check whether {Key} exists in the distributed cache, skipping the local update", key);
+            _logger.LogWarning(ex, "Unable to check whether {Key} exists in the distributed cache, skipping the local update: {Message}", key, ex.Message);
             return null;
         }
     }
@@ -773,7 +782,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             if (!ticket.IsRead)
                 throw;
 
-            _logger.LogWarning(ex, "Unable to store {Key} in the local cache after a distributed read", key);
+            _logger.LogWarning(ex, "Unable to store {Key} in the local cache after a distributed read: {Message}", key, ex.Message);
         }
 
         if (notifyPeers)
@@ -872,25 +881,24 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error clearing the local cache after a failed distributed removal");
+            _logger.LogError(ex, "Error clearing the local cache after a failed distributed removal: {Message}", ex.Message);
         }
 
-        await TryPublishInvalidationAsync(null).AnyContext();
+        await TryPublishInvalidationAsync(InvalidateCache.ForKeys(_cacheId, null)).AnyContext();
     }
 
     private async Task InvalidatePrefixAfterDistributedFailureAsync(string prefix)
     {
-        _fence.InvalidateAll();
         try
         {
-            await _localCache.RemoveByPrefixAsync(prefix).AnyContext();
+            await InvalidateLocalPrefixAsync(prefix).AnyContext();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing prefix {Prefix} from the local cache after a failed distributed removal", prefix);
+            _logger.LogError(ex, "Error removing prefix {Prefix} from the local cache after a failed distributed removal: {Message}", prefix, ex.Message);
         }
 
-        await TryPublishInvalidationAsync([$"{prefix}*"]).AnyContext();
+        await TryPublishInvalidationAsync(InvalidateCache.ForPrefix(_cacheId, prefix)).AnyContext();
     }
 
     internal static string[] GetBatchKeys(IEnumerable<string> keys)
@@ -900,6 +908,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
 
         return items;
+    }
+
+    internal static (Dictionary<string, T> Batch, string[] Keys) SnapshotBatch<T>(IDictionary<string, T> entries)
+    {
+        var batch = new Dictionary<string, T>(entries, StringComparer.Ordinal);
+        return (batch, GetBatchKeys(batch.Keys));
     }
 
     private async Task InvalidateAfterFailureAsync(string[] keys, bool notify)
@@ -912,30 +926,28 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error removing {Key} from the local cache after a failed update", key);
+                _logger.LogError(ex, "Error removing {Key} from the local cache after a failed update: {Message}", key, ex.Message);
             }
         }
 
         if (notify)
-            await TryPublishInvalidationAsync(keys).AnyContext();
+            await TryPublishInvalidationAsync(InvalidateCache.ForKeys(_cacheId, keys)).AnyContext();
     }
 
-    private async Task TryPublishInvalidationAsync(string[]? keys)
+    private async Task TryPublishInvalidationAsync(InvalidateCache message)
     {
         try
         {
-            await PublishInvalidationAsync(keys).AnyContext();
+            await _messageBus.PublishAsync(message).AnyContext();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error publishing cache invalidation after a failed cache update");
+            _logger.LogError(ex, "Error publishing cache invalidation after a failed cache update: {Message}", ex.Message);
         }
     }
 
-    private Task PublishInvalidationAsync(string[]? keys)
-    {
-        return _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = keys, FlushAll = keys is null });
-    }
+    private Task PublishInvalidationAsync(string[]? keys) =>
+        _messageBus.PublishAsync(InvalidateCache.ForKeys(_cacheId, keys));
 
     /// <summary>
     /// A string binds <typeparamref name="T"/> to <see cref="char"/> but is one list member. It is passed through
@@ -967,5 +979,18 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         public string[]? Keys { get; set; }
         public bool FlushAll { get; set; }
         public bool Expired { get; set; }
+
+        /// <summary>Evict the literal keys without raising local expiration events, including keys ending in an asterisk.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ExactKeys { get; set; }
+
+        internal static InvalidateCache ForKeys(string cacheId, string[]? keys)
+        {
+            // Older subscribers need the expiration flag to treat a trailing asterisk as a literal.
+            bool hasLiteralAsterisk = keys is not null && Array.Exists(keys, static key => key.EndsWith('*'));
+            return new InvalidateCache { CacheId = cacheId, Keys = keys, FlushAll = keys is null, Expired = hasLiteralAsterisk, ExactKeys = hasLiteralAsterisk };
+        }
+
+        internal static InvalidateCache ForPrefix(string cacheId, string prefix) => new() { CacheId = cacheId, Keys = [prefix + "*"] };
     }
 }
