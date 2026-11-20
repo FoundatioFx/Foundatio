@@ -292,16 +292,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
         catch (Exception ex)
         {
-            try
-            {
-                logger.LogError(failure.Error ?? ex, "Cleanup failed for queue entry {QueueEntryId} with {CleanupMessage}, original processing result was {Message}", entry.Id, ex.Message, failure.Message);
-            }
-            catch (Exception logEx)
-            {
-                // The caller still needs the provider's cleanup exception if its diagnostic also fails.
-                Activity.Current?.AddException(logEx);
-            }
-
+            logger.LogError(failure.Error ?? ex, "Cleanup failed for queue entry {QueueEntryId} with {CleanupMessage}, original processing result was {Message}", entry.Id, ex.Message, failure.Message);
             throw;
         }
     }

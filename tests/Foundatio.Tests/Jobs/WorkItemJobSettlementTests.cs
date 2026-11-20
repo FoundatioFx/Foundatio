@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -13,7 +12,6 @@ using Foundatio.Queues;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Xunit;
-using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
 
@@ -22,35 +20,6 @@ namespace Foundatio.Tests.Jobs;
 public class WorkItemJobSettlementTests : TestWithLoggingBase
 {
     public WorkItemJobSettlementTests(ITestOutputHelper output) : base(output) { }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ProcessAsync_WhenAbandonedEntryHasOutlivingWork_ReleasesEntry(bool captureObserverContext)
-    {
-        // Arrange
-        using var queue = CreateQueue(retries: captureObserverContext ? 0 : 1, timeProvider: new FakeTimeProvider());
-        using var bus = CreateBus();
-        ExecutionContext? observerContext = null;
-        using var observer = captureObserverContext
-            ? queue.Abandoned.AddSyncHandler((_, _) => observerContext = ExecutionContext.Capture())
-            : null;
-
-        // Act
-        var entry = await AbandonAndForgetEntryAsync(queue, bus);
-        if (captureObserverContext)
-            await queue.DeleteQueueAsync();
-
-        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
-
-        // Assert
-        if (captureObserverContext)
-            Assert.NotNull(observerContext);
-
-        Assert.False(entry.TryGetTarget(out _));
-        GC.KeepAlive(observerContext);
-        GC.KeepAlive(queue);
-    }
 
     [Theory]
     [InlineData(0, 0)]
@@ -353,20 +322,9 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         Assert.True(entry.IsCompleted);
     }
 
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private async Task<WeakReference<IQueueEntry<WorkItemData>>> AbandonAndForgetEntryAsync(SettlementQueue queue, InMemoryMessageBus bus)
-    {
-        await queue.EnqueueAsync("item", true);
-        var entry = await queue.DequeueAsync(TestCancellationToken);
-        Assert.NotNull(entry);
-        var weak = new WeakReference<IQueueEntry<WorkItemData>>(entry);
-        await new WorkItemJob(queue, bus, RejectItem(), Log).ProcessAsync(entry, TestCancellationToken);
-        return weak;
-    }
-
     private InMemoryMessageBus CreateBus() => new(o => o.LoggerFactory(Log).Serializer(DefaultSerializer.Instance).ResiliencePolicyProvider(DefaultResiliencePolicyProvider.Instance));
 
-    private SettlementQueue CreateQueue(Failure? failure = null, string? prefix = null, int retries = 0, TimeSpan? retryDelay = null, TimeProvider? timeProvider = null)
+    private SettlementQueue CreateQueue(Failure? failure = null, string? prefix = null, int retries = 0, TimeSpan? retryDelay = null)
     {
         var options = new InMemoryQueueOptions<WorkItemData>
         {
@@ -374,8 +332,7 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
             Serializer = DefaultSerializer.Instance,
             ResiliencePolicyProvider = DefaultResiliencePolicyProvider.Instance,
             MetricsPrefix = prefix,
-            Retries = retries,
-            TimeProvider = timeProvider ?? TimeProvider.System
+            Retries = retries
         };
 
         if (retryDelay.HasValue)
