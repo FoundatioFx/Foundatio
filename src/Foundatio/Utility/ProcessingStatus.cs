@@ -22,7 +22,8 @@ public sealed record ProcessingStatus
 
     /// <summary>
     /// For a message processor that reads ahead (<see cref="Foundatio.Messaging.Transport.TransportCapabilities.ReceiveAhead"/>),
-    /// messages received and waiting, leased and renewed, for a free handler slot. The broker counts them as in flight.
+    /// messages received and waiting, leased and renewed, for a free handler slot. The broker counts them as unsettled:
+    /// in flight on SQS and Redis, queued on Service Bus.
     /// </summary>
     public int Buffered { get; init; }
 

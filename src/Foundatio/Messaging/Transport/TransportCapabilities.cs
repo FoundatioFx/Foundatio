@@ -98,10 +98,11 @@ public sealed record TransportCapabilities
     /// <para>
     /// How far Foundatio reads ahead, its depth, adapts to how long a message keeps its handler slot and how long a
     /// receive takes: what the handlers get through during one receive, plus a batch. It is capped so that a buffered
-    /// message normally waits at most a second, or a quarter of the lease (the shortest
-    /// <see cref="IncomingMessage.LeaseExpiresAt"/> seen, when the transport sets it), and it is zero until both times
-    /// have been measured, while handlers take longer than that, and while the buffered bodies exceed 16 MiB. At depth
-    /// zero, receives ask only for free slots, as without this capability. Up to 13 × <c>MaxConcurrency</c> plus the
+    /// message normally waits at most a second, or a quarter of the lease (the shortest a receive was granted, from when
+    /// it started to <see cref="IncomingMessage.LeaseExpiresAt"/>, when the transport sets it), and so that the buffered
+    /// bodies stay within 16 MiB at their recent size. It is zero until both times have been measured, while handlers take
+    /// longer than that, and for bodies over 16 MiB. At depth zero, receives ask only for free slots, as without this
+    /// capability. Up to 13 × <c>MaxConcurrency</c> plus the
     /// depth deliveries can then be unsettled at once.
     /// </para>
     /// <para>
@@ -111,7 +112,8 @@ public sealed record TransportCapabilities
     /// <see cref="MaxConcurrentReceives"/>.
     /// </para>
     /// <para>
-    /// A buffered message is an unsettled delivery like any other: the broker counts it in flight, and with
+    /// A buffered message is an unsettled delivery like any other: the broker counts it as unsettled (in flight on SQS
+    /// and Redis, queued on Service Bus, which does not count locked messages apart), and with
     /// <see cref="OrderedGroups"/> it holds back its group's later messages. Buffered messages are handled within the
     /// shutdown drain. Those still buffered when the drain times out, or when their receiver is replaced, are released
     /// without running their handlers, and are delivered again with a higher <see cref="IncomingMessage.DeliveryCount"/>.
