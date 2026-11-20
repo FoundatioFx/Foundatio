@@ -22,14 +22,21 @@ internal sealed class RabbitMQManagementClient : IDisposable
     private readonly HttpClient _http;
     private readonly string _virtualHost = "/";
 
-    public RabbitMQManagementClient(Uri endpoint, string? connectionString)
+    public RabbitMQManagementClient(Uri endpoint, string? connectionString) : this(endpoint, connectionString, null)
+    {
+    }
+
+    /// <param name="endpoint">The management API's base URI.</param>
+    /// <param name="connectionString">The AMQP connection string, for its virtual host and credentials.</param>
+    /// <param name="handler">Sends the requests instead of the default handler, for tests.</param>
+    internal RabbitMQManagementClient(Uri endpoint, string? connectionString, HttpMessageHandler? handler)
     {
         Uri? connectionUri = Uri.TryCreate(connectionString, UriKind.Absolute, out var parsed) ? parsed : null;
         if (connectionUri is not null)
             _virtualHost = new ConnectionFactory { Uri = connectionUri }.VirtualHost;
 
         string userInfo = endpoint.UserInfo.Length > 0 ? endpoint.UserInfo : connectionUri?.UserInfo ?? String.Empty;
-        _http = new HttpClient { BaseAddress = new Uri(new UriBuilder(endpoint) { UserName = String.Empty, Password = String.Empty }.Uri.AbsoluteUri.TrimEnd('/') + "/"), Timeout = RequestTimeout };
+        _http = new HttpClient(handler ?? new HttpClientHandler()) { BaseAddress = new Uri(new UriBuilder(endpoint) { UserName = String.Empty, Password = String.Empty }.Uri.AbsoluteUri.TrimEnd('/') + "/"), Timeout = RequestTimeout };
         if (userInfo.Length > 0)
             _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(Uri.UnescapeDataString(userInfo))));
     }
@@ -42,14 +49,17 @@ internal sealed class RabbitMQManagementClient : IDisposable
 
     /// <summary>
     /// The details of up to <paramref name="count"/> queues whose names match the regular expression
-    /// <paramref name="pattern"/>, those with the highest <paramref name="sortDescendingBy"/> first when it is set, as a
-    /// page whose <c>items</c> lists them.
+    /// <paramref name="pattern"/>, ordered by <paramref name="sortBy"/>, highest first when <paramref name="descending"/>
+    /// is set, and only their <paramref name="columns"/> (comma-separated fields) when it is set, as a page whose
+    /// <c>items</c> lists them and whose <c>filtered_count</c> counts every queue that matches. Ordering by a statistic
+    /// such as <c>messages_dlx</c> makes the broker read the statistics of every queue in the virtual host, whatever the
+    /// pattern matches, and choosing columns as well makes that slower still; ordering by <c>name</c> does neither.
     /// </summary>
-    public async Task<JsonDocument> GetQueuesAsync(string pattern, int count, string? sortDescendingBy, CancellationToken cancellationToken)
+    public async Task<JsonDocument> GetQueuesAsync(string pattern, int count, string sortBy, bool descending, string? columns, CancellationToken cancellationToken)
     {
-        string sort = sortDescendingBy is null ? String.Empty : $"&sort={Uri.EscapeDataString(sortDescendingBy)}&sort_reverse=true";
-        return await GetAsync($"api/queues/{Uri.EscapeDataString(_virtualHost)}?page=1&page_size={count}&use_regex=true&name={Uri.EscapeDataString(pattern)}{sort}", cancellationToken).AnyContext()
-            ?? throw new HttpRequestException($"The management API has no virtual host {_virtualHost}.");
+        string path = $"api/queues/{Uri.EscapeDataString(_virtualHost)}?page=1&page_size={count}&use_regex=true&name={Uri.EscapeDataString(pattern)}" +
+            $"&sort={Uri.EscapeDataString(sortBy)}{(descending ? "&sort_reverse=true" : String.Empty)}{(columns is null ? String.Empty : $"&columns={Uri.EscapeDataString(columns)}")}";
+        return await GetAsync(path, cancellationToken).AnyContext() ?? throw new HttpRequestException($"The management API has no virtual host {_virtualHost}.");
     }
 
     public void Dispose() => _http.Dispose();

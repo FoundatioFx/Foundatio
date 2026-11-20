@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,8 +27,14 @@ internal sealed class RabbitMQDelayInspector
     /// <summary>The broker's default <c>dead_letter_worker_consumer_prefetch</c>: a queue with this many expired messages waiting forwards no others.</summary>
     internal const int DeadLetterWorkerPrefetch = 32;
 
-    /// <summary>How many landing queues a check lists, those with the most expired messages waiting first.</summary>
+    /// <summary>How many landing queues a check inspects, those with the most expired messages waiting.</summary>
     private const int LandingQueuesPerCheck = 100;
+
+    /// <summary>The most queues the management API lists on a page.</summary>
+    private const int PageSize = 500;
+
+    /// <summary>The fields of a queue the inspector reads.</summary>
+    private const string Columns = "name,type,arguments,effective_policy_definition,policy,operator_policy,messages_dlx";
 
     /// <summary>
     /// The management API lists a queue's policy only from its first statistics, up to <c>collect_statistics_interval</c>
@@ -124,14 +131,14 @@ internal sealed class RabbitMQDelayInspector
     internal static bool HasPolicyDetails(JsonElement queue) => queue.TryGetProperty("effective_policy_definition", out _);
 
     /// <summary>
-    /// Inspects the landing queues of <paramref name="page"/>, a page of them with the most expired messages waiting
-    /// first: their policies, and how long their expired messages have waited for their targets. Those not listed have
-    /// fewer waiting than every listed one.
+    /// Inspects <paramref name="landingQueues"/>, the landing queues with the most expired messages waiting: their
+    /// policies, and how long their expired messages have waited for their targets. Those not listed have fewer
+    /// waiting than every listed one.
     /// </summary>
-    internal void InspectLandingQueues(JsonElement page)
+    internal void InspectLandingQueues(IEnumerable<JsonElement> landingQueues)
     {
         var listed = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var queue in page.GetProperty("items").EnumerateArray())
+        foreach (var queue in landingQueues)
         {
             if (Text(queue, "name") is not { } name)
                 continue;
@@ -152,19 +159,36 @@ internal sealed class RabbitMQDelayInspector
         }
     }
 
+    /// <summary>
+    /// Lists the delay levels, the discard queue and the landing queues on one page ordered by name, which puts the
+    /// levels and the discard queue first, and picks the landing queues with the most expired messages waiting from
+    /// it. When they do not all fit, it has the broker order them by their waiting messages instead, which costs it a
+    /// read of every queue's statistics in the virtual host.
+    /// </summary>
     /// <returns>Whether every delay level and the discard queue were listed with their policies.</returns>
     private async Task<bool> CheckDelaysOnceAsync()
     {
         string prefix = _prefix.Replace(".", "\\.", StringComparison.Ordinal);
-        using (var landing = await _management.GetQueuesAsync($"^{prefix}\\.landing\\.", LandingQueuesPerCheck, "messages_dlx", CancellationToken.None).AnyContext())
-            InspectLandingQueues(landing.RootElement);
+        string landingPrefix = $"{_prefix}.landing.";
+        using var page = await _management.GetQueuesAsync($"^{prefix}\\.(delay\\.[0-9][0-9]$|discard$|landing\\.)", PageSize, "name", descending: false, Columns,
+            CancellationToken.None).AnyContext();
+        var items = page.RootElement.GetProperty("items");
+        if (Number(page.RootElement, "filtered_count") is { } matching && matching > items.GetArrayLength())
+        {
+            using var landing = await _management.GetQueuesAsync($"^{prefix}\\.landing\\.", LandingQueuesPerCheck, "messages_dlx", descending: true, columns: null,
+                CancellationToken.None).AnyContext();
+            InspectLandingQueues(landing.RootElement.GetProperty("items").EnumerateArray());
+        }
+        else
+        {
+            InspectLandingQueues(MostWaiting(items.EnumerateArray().Where(IsLanding), LandingQueuesPerCheck));
+        }
 
-        using var page = await _management.GetQueuesAsync($"^{prefix}\\.(delay\\.[0-9][0-9]|discard)$", RabbitMQDelayLevels.Count + 1, null, CancellationToken.None).AnyContext();
         int inspected = 0;
-        foreach (var queue in page.RootElement.GetProperty("items").EnumerateArray())
+        foreach (var queue in items.EnumerateArray())
         {
             string? name = Text(queue, "name");
-            if (name is null || !HasPolicyDetails(queue))
+            if (name is null || IsLanding(queue) || !HasPolicyDetails(queue))
                 continue;
 
             if (name == _names.Discard)
@@ -182,6 +206,8 @@ internal sealed class RabbitMQDelayInspector
         }
 
         return inspected == RabbitMQDelayLevels.Count + 1;
+
+        bool IsLanding(JsonElement queue) => Text(queue, "name")?.StartsWith(landingPrefix, StringComparison.Ordinal) == true;
     }
 
     /// <summary>
@@ -251,6 +277,12 @@ internal sealed class RabbitMQDelayInspector
             return null;
 
         return $"{String.Join("; it ", problems)}{(PolicyNames(queue) is { } policies ? $" ({policies})" : String.Empty)}. Leave the delay levels out of the policy.";
+    }
+
+    /// <summary>The <paramref name="count"/> queues with the most expired messages waiting, by name among those with as many.</summary>
+    private static IEnumerable<JsonElement> MostWaiting(IEnumerable<JsonElement> queues, int count)
+    {
+        return queues.OrderByDescending(queue => Number(queue, "messages_dlx") ?? 0).ThenBy(queue => Text(queue, "name"), StringComparer.Ordinal).Take(count);
     }
 
     private async Task InspectAsync(string queue, Func<JsonElement, string?> describe)
