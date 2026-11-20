@@ -133,18 +133,13 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
             var context = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, execution);
-            try
-            {
-                await handler.HandleItemAsync(context).AnyContext();
-            }
-            finally
-            {
-                await execution.StopAndDrainRenewalsAsync().AnyContext();
-            }
+            await execution.RunHandlerAsync(context).AnyContext();
 
-            execution.ThrowIfRenewalFailed();
             if (queueEntry.IsAbandoned)
+            {
+                // The queue may have redelivered this entry while the handler was still running.
                 return context.Result.IsSuccess ? JobResult.FailedWithMessage($"Queue entry {queueEntry.Id} was already abandoned") : context.Result;
+            }
 
             var result = context.Result.IsSuccess ? JobResult.Success : context.Result;
             if (queueEntry.IsCompleted)
@@ -166,13 +161,10 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             var error = execution.GetProcessingError(ex, activity);
             activity?.SetErrorStatus(error);
-            bool abandon = !abandonAttempted && settledResult is null && !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
-            var result = JobResult.FromException(error, abandon
-                ? $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}"
-                : $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
-            if (!abandon)
-                return result;
+            if (abandonAttempted || settledResult is not null || queueEntry.IsAbandoned || queueEntry.IsCompleted)
+                return JobResult.FromException(error, $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
 
+            var result = JobResult.FromException(error, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}");
             abandonAttempted = true;
             await queueEntry.AbandonAsync().AnyContext();
             settledResult = result;

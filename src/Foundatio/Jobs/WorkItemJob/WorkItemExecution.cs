@@ -11,12 +11,32 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
+/// <summary>
+/// Coordinates lock renewals for one delivery handled by <see cref="WorkItemJob"/>. A handler can start
+/// overlapping renewals or catch a renewal error. The job waits for those renewals and checks ownership
+/// before it settles the entry and releases the work-item lock.
+/// </summary>
 internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, CancellationToken cancellationToken) : IDisposable
 {
     private RenewalState? _renewals = workItemLock.GetType() == typeof(EmptyLock) ? null : new RenewalState(CancellationTokenSource.CreateLinkedTokenSource(cancellationToken));
     private int _stopped;
 
     public CancellationToken GetHandlerToken(CancellationToken hostToken) => _renewals?.Cancellation?.Token ?? hostToken;
+
+    public async Task RunHandlerAsync(WorkItemContext context)
+    {
+        try
+        {
+            await handler.HandleItemAsync(context).AnyContext();
+        }
+        finally
+        {
+            await StopAndDrainRenewalsAsync().AnyContext();
+        }
+
+        // The handler may have caught the renewal exception and returned its default success result.
+        ThrowIfRenewalFailed();
+    }
 
     public async Task ReportProgressAsync(int progress, string? message)
     {
@@ -50,6 +70,20 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         if (!await RenewAsync(includeQueueEntry: false).AnyContext())
             throw new InvalidOperationException("The work item is no longer being processed");
     }
+
+    public Exception GetProcessingError(Exception error, Activity? activity)
+    {
+        // A handler observing cancellation can obscure the provider exception that triggered it.
+        if (error is OperationCanceledException && Volatile.Read(ref _renewals)?.Failure is { } failure && !ReferenceEquals(error, failure.SourceException))
+        {
+            activity?.AddException(error);
+            return failure.SourceException;
+        }
+
+        return error;
+    }
+
+    public void Dispose() => _renewals?.Cancellation?.Dispose();
 
     internal static async Task PublishProgressAsync(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, int progress, string? message)
     {
@@ -107,17 +141,13 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
             else
                 await RenewWorkItemLockAsync(renewals).AnyContext();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (renewals.Failure is { } failure)
         {
-            if (renewals.Failure is { } failure)
-            {
-                if (!ReferenceEquals(failure.SourceException, ex))
-                    Activity.Current?.AddException(ex);
+            // Even a failing diagnostic logger must leave the original loss of ownership visible to the handler.
+            if (!ReferenceEquals(failure.SourceException, ex))
+                Activity.Current?.AddException(ex);
 
-                failure.Throw();
-            }
-
-            throw;
+            failure.Throw();
         }
         finally
         {
@@ -152,27 +182,35 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
         catch (Exception ex)
         {
-            await renewals.RecordFailureAsync(ex).AnyContext();
+            if (!renewals.TryRecordFailure(ex))
+                return;
+
+            if (renewals.Cancellation is { } cancellation)
+                await CancelHandlerAsync(cancellation).AnyContext();
+
+            handler.Log.LogWarning(ex, "Unable to renew work-item lock for queue entry {QueueEntryId}", entry.Id);
         }
     }
 
-    public void ThrowIfRenewalFailed()
+    private async Task CancelHandlerAsync(CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await cancellation.CancelAsync().AnyContext();
+        }
+        catch (AggregateException ex)
+        {
+            Activity.Current?.AddException(ex);
+            handler.Log.LogWarning(ex, "Cancellation callback failed after losing the work-item lock for queue entry {QueueEntryId}", entry.Id);
+        }
+    }
+
+    private void ThrowIfRenewalFailed()
     {
         Volatile.Read(ref _renewals)?.Failure?.Throw();
     }
 
-    public Exception GetProcessingError(Exception error, Activity? activity)
-    {
-        if (error is OperationCanceledException && Volatile.Read(ref _renewals)?.Failure is { } failure && !ReferenceEquals(error, failure.SourceException))
-        {
-            activity?.AddException(error);
-            return failure.SourceException;
-        }
-
-        return error;
-    }
-
-    public Task StopAndDrainRenewalsAsync()
+    private Task StopAndDrainRenewalsAsync()
     {
         // A concurrent first renewal either sees the stop or has already registered its state.
         Interlocked.Exchange(ref _stopped, 1);
@@ -185,13 +223,12 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
             if (renewals.ActiveCount == 0)
                 return Task.CompletedTask;
 
+            // The last active renewal signals this task. Resume settlement outside the monitor.
             return (renewals.Drained ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
         }
     }
 
-    public void Dispose() => _renewals?.Cancellation?.Dispose();
-
-    // Concurrent renewals share the first ownership error. The monitor guards the active count and drain signal.
+    // The monitor protects registration and the drain signal. All provider I/O runs outside it.
     private sealed class RenewalState(CancellationTokenSource? cancellation)
     {
         private ExceptionDispatchInfo? _failure;
@@ -200,19 +237,10 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         public int ActiveCount { get; set; }
         public TaskCompletionSource? Drained { get; set; }
 
-        public async Task RecordFailureAsync(Exception error)
+        public bool TryRecordFailure(Exception error)
         {
-            if (Interlocked.CompareExchange(ref _failure, ExceptionDispatchInfo.Capture(error), null) is not null || Cancellation is null)
-                return;
-
-            try
-            {
-                await Cancellation.CancelAsync().AnyContext();
-            }
-            catch (Exception callbackError)
-            {
-                Activity.Current?.AddException(callbackError);
-            }
+            // Later callers must see the first exception with the stack from the provider that threw it.
+            return Interlocked.CompareExchange(ref _failure, ExceptionDispatchInfo.Capture(error), null) is null;
         }
     }
 }

@@ -360,11 +360,12 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task ProcessAsync_WhenExplicitRenewalFailureIsCaught_AbandonsWithProviderError(bool callbackThrows, bool otherOperationCancelled)
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public async Task ProcessAsync_WhenExplicitRenewalFailureIsCaught_AbandonsWithProviderError(bool callbackThrows, bool otherOperationCancelled, bool trace)
     {
         // Arrange
         using var cache = CreateCache();
@@ -374,8 +375,9 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         await using var lease = await locker.AcquireAsync("item", cancellationToken: TestCancellationToken);
         LockException? renewalError = null;
         var handlers = new WorkItemHandlers();
-        using var listener = ListenToJobActivities();
+        using var listener = trace ? ListenToJobActivities() : null;
         Activity? activity = null;
+        var callbackError = new InvalidOperationException("Cancellation observer failed");
         var cancellation = new OperationCanceledException("Other operation was cancelled", new CancellationToken(true));
         handlers.Register<string>(new RenewingWorkItemHandler(lease, async ctx =>
         {
@@ -383,7 +385,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             using var registration = ctx.CancellationToken.Register(() =>
             {
                 if (callbackThrows)
-                    throw new InvalidOperationException("Cancellation observer failed");
+                    throw callbackError;
             });
 
             await locker.ReleaseAsync(lease.Resource);
@@ -401,13 +403,20 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         // Assert
         Assert.NotNull(renewalError);
         Assert.Same(renewalError, result.Error);
-        Assert.NotNull(activity);
-        Assert.Equal(renewalError.Message, activity.StatusDescription);
-        var messages = activity.Events.SelectMany(e => e.Tags)
-            .Where(tag => String.Equals(tag.Key, "exception.message", StringComparison.Ordinal))
-            .Select(tag => (string?)tag.Value);
-        Assert.Equal(otherOperationCancelled, messages.Contains(cancellation.Message, StringComparer.Ordinal));
-        Assert.Equal(callbackThrows, messages.Any(message => message?.Contains("Cancellation observer failed", StringComparison.Ordinal) == true));
+        Assert.Contains($"{nameof(CacheLockProvider)}.{nameof(CacheLockProvider.RenewAsync)}", renewalError.StackTrace, StringComparison.Ordinal);
+        Assert.Single(Log.LogEntries, entry => entry.LogLevel == LogLevel.Warning && ReferenceEquals(entry.Exception, renewalError));
+        Assert.Equal(callbackThrows, Log.LogEntries.Any(entry => entry.LogLevel == LogLevel.Warning && entry.Exception is AggregateException aggregate && aggregate.InnerExceptions.Contains(callbackError)));
+        if (trace)
+        {
+            Assert.NotNull(activity);
+            Assert.Equal(renewalError.Message, activity.StatusDescription);
+            var messages = activity.Events.SelectMany(e => e.Tags)
+                .Where(tag => String.Equals(tag.Key, "exception.message", StringComparison.Ordinal))
+                .Select(tag => (string?)tag.Value);
+            Assert.Equal(otherOperationCancelled, messages.Contains(cancellation.Message, StringComparer.Ordinal));
+            Assert.Equal(callbackThrows, messages.Any(message => message?.Contains(callbackError.Message, StringComparison.Ordinal) == true));
+        }
+
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
     }
 

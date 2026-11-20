@@ -5,12 +5,16 @@ using Foundatio.Lock;
 
 namespace Foundatio.Jobs;
 
+/// <summary>Supplies a work-item handler with its data, lock, cancellation token and progress reporting.</summary>
 public class WorkItemContext
 {
     private readonly Func<int, string?, Task>? _progressCallback;
     private readonly WorkItemExecution? _execution;
 
-    /// <summary>Creates a context that forwards each progress report to <paramref name="progressCallback"/>.</summary>
+    /// <summary>
+    /// Creates a standalone context for a caller that owns the lock and cancellation token. Progress goes
+    /// directly to <paramref name="progressCallback"/> and renewal goes directly to <paramref name="workItemLock"/>.
+    /// </summary>
     public WorkItemContext(object data, string jobId, ILock? workItemLock, CancellationToken cancellationToken, Func<int, string?, Task> progressCallback)
         : this(data, jobId, workItemLock, cancellationToken)
     {
@@ -23,18 +27,16 @@ public class WorkItemContext
         _execution = execution;
     }
 
-    private WorkItemContext(object data, string jobId, ILock? workItemLock, CancellationToken cancellationToken)
-    {
-        Data = data;
-        JobId = jobId;
-        WorkItemLock = workItemLock;
-        CancellationToken = cancellationToken;
-    }
-
     public object Data { get; private set; }
     public string JobId { get; private set; }
     public ILock? WorkItemLock { get; private set; }
+
+    /// <summary>
+    /// The handler's result. <see cref="WorkItemJob"/> still fails this attempt if the entry was abandoned
+    /// or the work-item lock could not be renewed.
+    /// </summary>
     public JobResult Result { get; set; } = JobResult.Success;
+
     public CancellationToken CancellationToken { get; private set; }
 
     /// <summary>
@@ -67,5 +69,13 @@ public class WorkItemContext
     public T? GetData<T>() where T : class
     {
         return Data as T;
+    }
+
+    private WorkItemContext(object data, string jobId, ILock? workItemLock, CancellationToken cancellationToken)
+    {
+        Data = data;
+        JobId = jobId;
+        WorkItemLock = workItemLock;
+        CancellationToken = cancellationToken;
     }
 }

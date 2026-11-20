@@ -8,11 +8,13 @@ using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Jobs;
+using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
+using Moq;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs;
@@ -333,6 +335,32 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.Equal(0, await job.RunUntilEmptyAsync(cancellationToken: TestCancellationToken));
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WorkItemContext_WhenCreatedByCaller_UsesSuppliedCallbackLockAndToken(bool hasLock)
+    {
+        // Arrange
+        var reports = new List<(int Progress, string? Message)>();
+        var renewalError = new InvalidOperationException("Renewal failed");
+        var workItemLock = new Mock<ILock>();
+        workItemLock.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).ThrowsAsync(renewalError);
+        var context = new WorkItemContext("item", "job", hasLock ? workItemLock.Object : null, TestCancellationToken, (progress, message) =>
+        {
+            reports.Add((progress, message));
+            return Task.CompletedTask;
+        });
+
+        // Act
+        await context.ReportProgressAsync(50, "Halfway");
+        var error = await Record.ExceptionAsync(context.RenewLockAsync);
+
+        // Assert
+        Assert.Equal([(50, "Halfway")], reports);
+        Assert.Same(hasLock ? renewalError : null, error);
+        Assert.Equal(TestCancellationToken, context.CancellationToken);
     }
 }
 
