@@ -151,12 +151,11 @@ This architecture is similar to Microsoft's `HybridCache` (.NET 9+) and other di
 This ensures that:
 - L2 is always the **source of truth**
 - An operation that overlaps a write or invalidation on the same client never leaves an older value in L1; the key is evicted instead
-- Failed distributed writes don't leave stale data in local cache
 
-Another instance can still serve its warm L1 value until the invalidation message reaches it.
+Another instance can still serve its warm L1 value until the invalidation message reaches it. If L2 commits a write and its reply is lost, L1 can retain its previous value until invalidation, eviction or expiration.
 
 ::: info Consistency trade-offs
-- **Cold reads of keys without a TTL** make one extra existence check before filling L1. A null TTL can also mean the key expired after it was read, and caching that value would keep it in L1 indefinitely. Keys with a TTL don't pay this cost.
+- **Cold reads with a null TTL** check whether the key still exists before filling L1. If a writer changes L2 directly between the value, TTL and existence reads, L1 can cache the previous value with the wrong expiration. Use a hybrid or hybrid-aware client for writes that should invalidate L1.
 - **An invalidation from another instance during a cold read** discards that read's local fill. The client returns the value it read and reads L2 once more to fill L1, so later reads can be served locally. It retries only once and skips the retry while a write on the key is in flight.
 - **In-flight operations are tracked in 4,096 hash slots per client.** Keys that share a slot, and any prefix removal or flush, can skip a local fill and cause an extra L2 read later. They never leave a stale entry.
 - **A read that finishes as a write lands on the same client** can briefly store its older value before evicting it.
