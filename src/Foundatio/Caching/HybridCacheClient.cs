@@ -157,7 +157,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         await EnsureSubscribedAsync().AnyContext();
 
-        string[]? items = keys is null ? null : GetBatchKeys(keys);
+        string[]? items = keys is null ? null : HybridCacheWriter.GetBatchKeys(keys);
         int removed = await _writer.RemoveAllAsync(items).AnyContext();
         // A provider that removed entries for an empty collection treated it as a flush.
         string[]? localKeys = items is { Length: 0 } && removed > 0 ? null : items;
@@ -318,7 +318,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
 
         _logger.LogTrace("Setting keys {Keys} with expiration: {Expiration}", values.Keys, expiresIn);
-        return await WriteBatchAsync(GetBatchKeys(values.Keys), cache => cache.SetAllAsync(values, expiresIn)).AnyContext();
+        return await WriteBatchAsync(HybridCacheWriter.GetBatchKeys(values.Keys), cache => cache.SetAllAsync(values, expiresIn)).AnyContext();
     }
 
     public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -495,7 +495,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (expirations.Count is 0)
             return;
 
-        await WriteBatchAsync(GetBatchKeys(expirations.Keys), async cache =>
+        await WriteBatchAsync(HybridCacheWriter.GetBatchKeys(expirations.Keys), async cache =>
         {
             await cache.SetAllExpirationAsync(expirations).AnyContext();
             return expirations.Count;
@@ -786,14 +786,6 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         await PublishInvalidationAsync(keys).AnyContext();
         return count;
-    }
-
-    private static string[] GetBatchKeys(IEnumerable<string> keys)
-    {
-        string[] items = keys.ToArray();
-        foreach (string key in items)
-            ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
-        return items;
     }
 
     /// <summary>

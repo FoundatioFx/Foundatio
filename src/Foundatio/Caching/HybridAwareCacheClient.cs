@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Resilience;
@@ -77,7 +76,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
-        string[]? items = keys?.ToArray();
+        string[]? items = keys is null ? null : HybridCacheWriter.GetBatchKeys(keys);
         bool flushAll = items is null || items.Length == 0;
         int removed = await _writer.RemoveAllAsync(items).AnyContext();
 
@@ -137,7 +136,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         if (values.Count is 0)
             return 0;
 
-        string[] keys = values.Keys.ToArray();
+        string[] keys = HybridCacheWriter.GetBatchKeys(values.Keys);
         int set = await _writer.SetAllAsync(values, expiresIn, keys).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = keys }).AnyContext();
         return set;
@@ -215,7 +214,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         if (expirations.Count is 0)
             return;
 
-        string[] keys = expirations.Keys.ToArray();
+        string[] keys = HybridCacheWriter.GetBatchKeys(expirations.Keys);
         await _writer.SetAllExpirationAsync(expirations, keys).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = keys }).AnyContext();
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -10,6 +11,15 @@ namespace Foundatio.Caching;
 /// </summary>
 internal sealed class HybridCacheWriter(ICacheClient cache, Func<string[]?, string?, Task> invalidate)
 {
+    public static string[] GetBatchKeys(IEnumerable<string> keys)
+    {
+        string[] items = keys.ToArray();
+        foreach (string key in items)
+            ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
+
+        return items;
+    }
+
     public ValueTask<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn) =>
         WriteAsync((key, value, expiresIn), static (c, s) => c.AddAsync(s.key, s.value, s.expiresIn), key: key);
 

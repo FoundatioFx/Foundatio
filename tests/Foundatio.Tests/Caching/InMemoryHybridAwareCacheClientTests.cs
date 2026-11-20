@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Xunit;
@@ -298,6 +299,24 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task ListRemoveAsync_WithMultipleItems_RemovesCorrectly()
     {
         return base.ListRemoveAsync_WithMultipleItems_RemovesCorrectly();
+    }
+
+    [Fact]
+    public async Task RemoveAllAsync_WithInvalidKeyAfterWarmKey_LeavesBothCachesIntact()
+    {
+        // Arrange
+        const string key = "warm";
+        using var writer = GetCacheClient();
+        using var peer = GetDistributedHybridCacheClient();
+        await peer.SetAsync(key, 1);
+
+        // Act
+        await Assert.ThrowsAsync<ArgumentNullException>(() => writer.RemoveAllAsync([key, null!]));
+
+        // Assert
+        Assert.Equal(1, (await _distributedCache.GetAsync<int>(key)).Value);
+        Assert.Equal(1, (await peer.GetAsync<int>(key)).Value);
+        Assert.Equal(0, peer.InvalidateCacheCalls);
     }
 
     [Fact]
