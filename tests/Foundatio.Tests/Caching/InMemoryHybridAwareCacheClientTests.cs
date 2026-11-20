@@ -61,6 +61,29 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
         Assert.Throws<ArgumentException>("key", () => { _ = writer.AddAsync(String.Empty, 1); });
     }
 
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(4, false)]
+    [InlineData(5, true)]
+    public async Task AddAsync_WithWarmPeer_InvalidatesOnlyWhenExpirationRemovesKey(int milliseconds, bool shouldExist)
+    {
+        // Arrange
+        const string key = "warm";
+        using var writer = GetCacheClient();
+        using var peer = GetDistributedHybridCacheClient();
+        Assert.True(await peer.SetAsync(key, 1));
+        Assert.True(await peer.LocalCache.ExistsAsync(key));
+
+        // Act
+        bool added = await writer.AddAsync(key, 2, TimeSpan.FromMilliseconds(milliseconds));
+
+        // Assert
+        Assert.False(added);
+        Assert.Equal(shouldExist, await _distributedCache.ExistsAsync(key));
+        Assert.Equal(shouldExist, await peer.LocalCache.ExistsAsync(key));
+        Assert.Equal(shouldExist, (await peer.GetAsync<int>(key)).HasValue);
+    }
+
     [Fact]
     public override Task CacheOperations_WithMultipleTypes_MeasuresThroughput()
     {
