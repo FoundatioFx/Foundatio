@@ -121,7 +121,10 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
                 arguments: new Dictionary<string, object?> { ["alternate-exchange"] = _names.Discard }, cancellationToken: ct), token).AnyContext();
             string delivery = _names.DelayDelivery;
             await RunAsync($"declare exchange {delivery}", (channel, ct) => channel.ExchangeDeclareAsync(delivery, ExchangeType.Topic, durable: true, autoDelete: false,
-                arguments: new Dictionary<string, object?> { ["alternate-exchange"] = final }, cancellationToken: ct), token).AnyContext();
+                arguments: new Dictionary<string, object?> { ["alternate-exchange"] = final }, cancellationToken: ct), token,
+                $"An earlier preview, from before landing queues, declared it with every queue and topic bound to it: copy each of its bindings to {final}, with the same " +
+                "destination and routing key, then delete it and restart (see \"Upgrading from an earlier preview\" in the Foundatio.RabbitMQ README). Deleting it without copying them " +
+                "drops the delayed messages already waiting, and another Prefix strands everything queued or delayed under this one.").AnyContext();
 
             for (int level = 0; level < RabbitMQDelayLevels.Count; level++)
             {
@@ -253,7 +256,7 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         }
     }
 
-    private async Task RunAsync(string what, Func<IChannel, CancellationToken, Task> operation, CancellationToken cancellationToken)
+    private async Task RunAsync(string what, Func<IChannel, CancellationToken, Task> operation, CancellationToken cancellationToken, string? conflictAdvice = null)
     {
         var channel = await _channel.GetAsync(cancellationToken).AnyContext();
         try
@@ -263,7 +266,7 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         catch (OperationInterruptedException ex) when (ex.ShutdownReason is { ReplyCode: 406 } reason)
         {
             throw new MessageBusException($"RabbitMQ refused to {what} because it exists with different arguments: {reason.ReplyText}. " +
-                "Delete it so the transport can declare it again, or use another Prefix.", ex);
+                (conflictAdvice ?? "Delete it so the transport can declare it again, or use another Prefix."), ex);
         }
         catch (OperationInterruptedException ex) when (ex.ShutdownReason is { ReplyCode: 403 } reason)
         {

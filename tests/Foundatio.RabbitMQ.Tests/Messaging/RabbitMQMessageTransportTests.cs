@@ -841,6 +841,38 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task CreateReceiver_WithTheDelayExchangeOfAnEarlierPreview_FailsPointingToTheUpgradeSteps()
+    {
+        Assert.SkipUnless(DelayedDelivery, "Delayed delivery is off.");
+
+        // Arrange: a preview before landing queues declared <prefix>.delay with the discard exchange as its alternate exchange.
+        var transport = Track(new RabbitMQMessageTransport(CreateOptions() with { Prefix = $"{Prefix}-preview-{Guid.NewGuid():N}" }));
+        var names = transport.Names;
+        var source = MessageSource.Queue(NewName("preview"));
+        var connection = await ConnectAsync();
+        await using (var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken))
+        {
+            await channel.ExchangeDeclareAsync(names.DelayDelivery, ExchangeType.Topic, durable: true, autoDelete: false,
+                arguments: new Dictionary<string, object?> { ["alternate-exchange"] = names.Discard }, cancellationToken: TestCancellationToken);
+        }
+
+        try
+        {
+            // Act
+            var exception = await Assert.ThrowsAsync<MessageBusException>(() => transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken));
+
+            // Assert
+            Assert.Contains($"declare exchange {names.DelayDelivery}", exception.Message);
+            Assert.Contains($"copy each of its bindings to {names.DelayFinal}", exception.Message);
+            Assert.Contains("\"Upgrading from an earlier preview\"", exception.Message);
+        }
+        finally
+        {
+            await DeleteDefinitionsAsync(transport, source);
+        }
+    }
+
+    [Fact]
     public async Task Send_ToAQueueAnotherProcessDeleted_DeclaresItAgainAndKeepsTheMessage()
     {
         // Arrange
