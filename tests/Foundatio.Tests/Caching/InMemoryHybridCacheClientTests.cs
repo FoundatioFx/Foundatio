@@ -393,6 +393,34 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.GetUnixTimeSecondsAsync_WithUtcDateTime_ReturnsCorrectly();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IncrementAsync_WhenWriteAndNotificationFail_PreservesProviderErrorWithoutRetry(bool useHybridAwareWriter)
+    {
+        // Arrange
+        const string key = "uncertain-increment";
+        using var distributed = new DelayedCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        using var aware = new HybridAwareCacheClient(distributed, _messageBus, Log);
+        ICacheClient writer = useHybridAwareWriter ? aware : cache;
+        Assert.True(await cache.SetAsync(key, 1L));
+        var error = new TimeoutException("Increment response lost");
+        distributed.AfterNextWrite(() => Task.FromException(error));
+        _messageBus.Dispose();
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<TimeoutException>(() => writer.IncrementAsync(key, 1L));
+
+        // Assert
+        Assert.Same(error, thrown);
+        Assert.Equal(2L, (await distributed.GetAsync<long>(key)).Value);
+        if (!useHybridAwareWriter)
+            Assert.Equal(2L, (await cache.GetAsync<long>(key)).Value);
+
+        Assert.Contains(Log.LogEntries, entry => entry.Exception is MessageBusException);
+    }
+
     [Fact]
     public override Task IncrementAsync_WithConcurrentRequests_DoesNotLoseUpdates()
     {
@@ -695,6 +723,46 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.Equal(expected, (await _distributedCache.GetListAsync<string>(key)).Value.Order());
         Assert.Equal(expected, (await cache.GetListAsync<string>(key)).Value.Order());
         Assert.Equal(expected, (await peer.GetListAsync<string>(key)).Value.Order());
+    }
+
+    [Theory]
+    [InlineData("keys", false)]
+    [InlineData("keys", true)]
+    [InlineData("prefix", false)]
+    [InlineData("prefix", true)]
+    [InlineData("flush", false)]
+    [InlineData("flush", true)]
+    public async Task RemoveAllAsync_WhenRemovalResponseIsLost_EvictsOnlyAffectedEntries(string scope, bool useHybridAwareWriter)
+    {
+        // Arrange
+        const string removed = "remove:one";
+        const string other = "keep";
+        using var distributed = new DelayedCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        using var peer = CreateCache(distributedCache: distributed);
+        using var aware = new HybridAwareCacheClient(distributed, _messageBus, Log);
+        ICacheClient writer = useHybridAwareWriter ? aware : cache;
+        await cache.SetAllAsync(new Dictionary<string, int> { [removed] = 1, [other] = 2 });
+        await peer.GetAllAsync<int>([removed, other]);
+        var error = new TimeoutException("Removal response lost");
+        distributed.AfterNextWrite(() => Task.FromException(error));
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<TimeoutException>(() => scope switch
+        {
+            "keys" => writer.RemoveAllAsync([removed]),
+            "prefix" => writer.RemoveByPrefixAsync("remove:"),
+            "flush" => writer.RemoveAllAsync(),
+            _ => throw new ArgumentOutOfRangeException(nameof(scope))
+        });
+
+        // Assert
+        Assert.Same(error, thrown);
+        Assert.False(await distributed.ExistsAsync(removed));
+        Assert.False((await cache.GetAsync<int>(removed)).HasValue);
+        Assert.False((await peer.GetAsync<int>(removed)).HasValue);
+        Assert.Equal(scope != "flush", await cache.LocalCache.ExistsAsync(other));
+        Assert.Equal(scope != "flush", await peer.LocalCache.ExistsAsync(other));
     }
 
     [Theory]
@@ -1098,8 +1166,10 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.SetAllAsync_WithLargeNumberOfKeys_MeasuresThroughput();
     }
 
-    [Fact]
-    public async Task SetAllExpirationAsync_WhenOnlyFirstExpirationCommits_InvalidatesBothClients()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SetAllExpirationAsync_WhenOnlyFirstExpirationCommits_InvalidatesBothClients(bool useHybridAwareWriter)
     {
         // Arrange
         var values = new Dictionary<string, int> { ["first"] = 1, ["second"] = 2 };
@@ -1114,11 +1184,14 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         using var writer = CreateCache(distributedCache: provider.Object);
         using var peer = CreateCache();
+        using var aware = new HybridAwareCacheClient(provider.Object, _messageBus, Log);
+        ICacheClient activeWriter = useHybridAwareWriter ? aware : writer;
         await peer.SetAllAsync(values);
         await writer.LocalCache.SetAllAsync(values);
+        Assert.Equal(1, (await writer.GetAsync<int>("first")).Value);
 
         // Act
-        var thrown = await Assert.ThrowsAsync<CacheException>(() => writer.SetAllExpirationAsync(expirations));
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => activeWriter.SetAllExpirationAsync(expirations));
 
         // Assert
         Assert.Same(error, thrown);
@@ -1211,6 +1284,33 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         // Assert
         Assert.Equal(2, (await distributed.GetAsync<int>(key)).Value);
         Assert.Equal(2, (await cache.GetAsync<int>(key)).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SetAsync_WhenProviderCommitsAndLosesResponse_InvalidatesWarmClients(bool useHybridAwareWriter)
+    {
+        // Arrange
+        const string key = "uncertain-write";
+        using var distributed = new DelayedCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        using var peer = CreateCache(distributedCache: distributed);
+        using var aware = new HybridAwareCacheClient(distributed, _messageBus, Log);
+        ICacheClient writer = useHybridAwareWriter ? aware : cache;
+        Assert.True(await cache.SetAsync(key, 1));
+        Assert.Equal(1, (await peer.GetAsync<int>(key)).Value);
+        var error = new TimeoutException("Write response lost");
+        distributed.AfterNextWrite(() => Task.FromException(error));
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<TimeoutException>(() => writer.SetAsync(key, 2));
+
+        // Assert
+        Assert.Same(error, thrown);
+        Assert.Equal(2, (await distributed.GetAsync<int>(key)).Value);
+        Assert.Equal(2, (await cache.GetAsync<int>(key)).Value);
+        Assert.Equal(2, (await peer.GetAsync<int>(key)).Value);
     }
 
     [Fact]
@@ -1493,6 +1593,15 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         Task<long> ICacheClient.ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn) =>
             CompleteAsync(ListAddAsync(key, values, expiresIn), Interlocked.Exchange(ref _afterNextWrite, null));
+
+        Task<long> ICacheClient.IncrementAsync(string key, long amount, TimeSpan? expiresIn) =>
+            CompleteAsync(IncrementAsync(key, amount, expiresIn), Interlocked.Exchange(ref _afterNextWrite, null));
+
+        Task<int> ICacheClient.RemoveAllAsync(IEnumerable<string>? keys) =>
+            CompleteAsync(RemoveAllAsync(keys), Interlocked.Exchange(ref _afterNextWrite, null));
+
+        Task<int> ICacheClient.RemoveByPrefixAsync(string prefix) =>
+            CompleteAsync(RemoveByPrefixAsync(prefix), Interlocked.Exchange(ref _afterNextWrite, null));
 
         Task<bool> ICacheClient.SetAsync<T>(string key, T value, TimeSpan? expiresIn) =>
             CompleteAsync(SetAsync(key, value, expiresIn), Interlocked.Exchange(ref _afterNextWrite, null));
