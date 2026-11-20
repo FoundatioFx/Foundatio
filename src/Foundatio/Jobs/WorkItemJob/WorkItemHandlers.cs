@@ -66,15 +66,20 @@ public interface IWorkItemHandler
     /// Processes a single work item. The <paramref name="context"/> provides access to the
     /// deserialized payload via <see cref="WorkItemContext.GetData{T}"/> and supports reporting
     /// progress via <see cref="WorkItemContext.ReportProgressAsync(int, string?)"/>.
-    /// If this method completes without calling <see cref="IQueueEntry.CompleteAsync"/>,
-    /// the entry is auto-completed when <see cref="AutoRenewLockOnProgress"/> is <c>true</c>.
+    /// The job completes an unsettled entry after successful handling. If work-item lock renewal through the
+    /// context fails, the job attempts to abandon the entry even if the handler catches the exception.
     /// </summary>
     /// <param name="context">Context containing the queue entry, work item data, and progress reporting.</param>
     Task HandleItemAsync(WorkItemContext context);
 
     /// <summary>
-    /// When <c>true</c>, the lock on the queue entry is automatically renewed each time
-    /// the handler reports progress. This prevents long-running work items from timing out.
+    /// When <c>true</c>, the queue entry and work item lock are automatically renewed each time
+    /// the handler reports progress. Defaults to <c>false</c>. If work-item lock renewal fails,
+    /// the report throws before sending the update and <see cref="WorkItemContext.CancellationToken"/>
+    /// signals that protected work should stop. Queue-entry renewal errors are logged. While the handler is
+    /// active, the report throws <see cref="InvalidOperationException"/> if its entry is marked abandoned
+    /// before renewal, during renewal, or while the progress update is being delivered.
+    /// A provider can redeliver an item without updating the original entry.
     /// </summary>
     bool AutoRenewLockOnProgress { get; set; }
 

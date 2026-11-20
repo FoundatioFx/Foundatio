@@ -252,7 +252,6 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         queueEntry.MarkAbandoned();
         Interlocked.Increment(ref _abandonedCount);
-        _logger.LogTrace("Abandon complete: {QueueEntryId}", queueEntry.Id);
 
         try
         {
@@ -260,40 +259,52 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         }
         finally
         {
-            if (targetEntry.Attempts < _options.Retries + 1)
+            try
             {
-                var retryEntry = targetEntry.CreateRetryEntry();
-                if (_options.RetryDelay > TimeSpan.Zero)
-                {
-                    Interlocked.Decrement(ref _pendingRetryCount);
-                    _logger.LogTrace("Adding item to wait list for future retry: {QueueEntryId} Attempts: {QueueEntryAttempts}", queueEntry.Id, queueEntry.Attempts);
-                    _ = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () =>
-                    {
-                        Retry(retryEntry);
-                        return Task.CompletedTask;
-                    }, _timeProvider, DisposedCancellationToken);
-                }
-                else
-                {
-                    _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId} Attempts: {QueueEntryAttempts}", queueEntry.Id, queueEntry.Attempts);
-                    Retry(retryEntry);
-                    Interlocked.Decrement(ref _pendingRetryCount);
-                }
+                RetryOrDeadLetter(targetEntry);
             }
-            else
+            finally
             {
-                _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", targetEntry.Attempts, _options.Retries, queueEntry.Id);
                 Interlocked.Decrement(ref _pendingRetryCount);
-                _deadletterQueue.Enqueue(targetEntry);
             }
+        }
+
+        _logger.LogTrace("Abandon complete: {QueueEntryId}", queueEntry.Id);
+    }
+
+    private void RetryOrDeadLetter(QueueEntry<T> entry)
+    {
+        if (entry.Attempts >= _options.Retries + 1)
+        {
+            _deadletterQueue.Enqueue(entry);
+            _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", entry.Attempts, _options.Retries, entry.Id);
+            return;
+        }
+
+        var retryEntry = entry.CreateRetryEntry();
+        if (_options.RetryDelay > TimeSpan.Zero)
+        {
+            _ = Run.DelayedAsync(GetRetryDelay(entry.Attempts), () =>
+            {
+                Retry(retryEntry);
+                return Task.CompletedTask;
+            }, _timeProvider, DisposedCancellationToken);
+
+            _logger.LogTrace("Adding item to wait list for future retry: {QueueEntryId} Attempts: {QueueEntryAttempts}", entry.Id, entry.Attempts);
+        }
+        else
+        {
+            Retry(retryEntry);
+            _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId} Attempts: {QueueEntryAttempts}", entry.Id, entry.Attempts);
         }
     }
 
     private void Retry(QueueEntry<T> entry)
     {
-        _logger.LogTrace("Queue {QueueName} retrying item: {QueueEntryId} Attempts: {QueueEntryAttempts}", _options.Name, entry.Id, entry.Attempts);
+        int attempts = entry.Attempts;
         _queue.Enqueue(entry);
         _autoResetEvent.Set();
+        _logger.LogTrace("Queue {QueueName} retrying item: {QueueEntryId} Attempts: {QueueEntryAttempts}", _options.Name, entry.Id, attempts);
     }
 
     private TimeSpan GetRetryDelay(int attempts)

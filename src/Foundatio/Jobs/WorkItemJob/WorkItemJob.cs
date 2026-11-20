@@ -114,8 +114,12 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return result;
         }
 
+        var logger = handler.Log;
+        if (logger is NullLogger)
+            logger = _logger;
+
         if (queueEntry.Value.SendProgressReports)
-            await ReportProgressAsync(handler, queueEntry).AnyContext();
+            await WorkItemExecution.PublishProgressAsync(_publisher, logger, queueEntry).AnyContext();
 
         var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
         if (lockValue is null)
@@ -126,71 +130,76 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
-        var progressCallback = new Func<int, string?, Task>(async (progress, message) =>
-        {
-            if (handler.AutoRenewLockOnProgress)
-            {
-                try
-                {
-                    await Task.WhenAll(
-                        queueEntry.RenewLockAsync(),
-                        lockValue.RenewAsync()
-                    ).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
-                }
-            }
-
-            await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
-            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
-        });
-
+        using var execution = new WorkItemExecution(_publisher, handler, queueEntry, workItemDataType, lockValue, logger, cancellationToken);
+        JobResult processingResult = JobResult.Success;
+        bool abandonAttempted = false;
+        bool settledByJob = false;
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
-            var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback);
-            await handler.HandleItemAsync(workItemContext).AnyContext();
+            var context = new WorkItemContext(workItemData, JobId, lockValue, execution, cancellationToken);
+            await execution.RunHandlerAsync(context).AnyContext();
 
-            if (!workItemContext.Result.IsSuccess)
+            if (queueEntry.IsAbandoned)
             {
-                if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                {
-                    await queueEntry.AbandonAsync().AnyContext();
-                    return workItemContext.Result;
-                }
+                // The queue may have redelivered this entry while the handler was still running.
+                processingResult = context.Result.IsSuccess ? JobResult.FailedWithMessage($"Queue entry {queueEntry.Id} was already abandoned") : context.Result;
+                return processingResult;
             }
 
-            if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-            {
+            processingResult = context.Result.IsSuccess ? JobResult.Success : context.Result;
+            if (queueEntry.IsCompleted)
+                return processingResult;
+
+            abandonAttempted = !processingResult.IsSuccess;
+            if (abandonAttempted)
+                await CleanupAfterFailureAsync(queueEntry.AbandonAsync, processingResult, queueEntry, logger).AnyContext();
+            else
                 await queueEntry.CompleteAsync().AnyContext();
+
+            settledByJob = true;
+            if (!abandonAttempted)
                 handler.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItemData);
-            }
 
-            if (queueEntry.Value.SendProgressReports)
-                await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
-
-            return JobResult.Success;
+            return processingResult;
         }
         catch (Exception ex)
         {
-            activity?.SetErrorStatus(ex);
-
-            if (queueEntry.Value.SendProgressReports)
-                await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {ex.Message}").AnyContext();
-
-            if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+            var error = execution.GetProcessingError(ex, activity);
+            activity?.SetErrorStatus(error);
+            if (abandonAttempted || settledByJob || queueEntry.IsAbandoned || queueEntry.IsCompleted)
             {
-                await queueEntry.AbandonAsync().AnyContext();
-                return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}");
+                processingResult = JobResult.FromException(error, $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
+                return processingResult;
             }
 
-            return JobResult.FromException(ex, $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
+            processingResult = JobResult.FromException(error, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}");
+            abandonAttempted = true;
+            await CleanupAfterFailureAsync(queueEntry.AbandonAsync, processingResult, queueEntry, logger).AnyContext();
+            settledByJob = true;
+            return processingResult;
         }
         finally
         {
-            await lockValue.ReleaseAsync().AnyContext();
+            try
+            {
+                if (processingResult.IsSuccess)
+                    await lockValue.ReleaseAsync().AnyContext();
+                else
+                    await CleanupAfterFailureAsync(lockValue.ReleaseAsync, processingResult, queueEntry, logger).AnyContext();
+            }
+            finally
+            {
+                if (queueEntry.Value.SendProgressReports && settledByJob)
+                {
+                    var report = abandonAttempted
+                        ? WorkItemExecution.PublishProgressAsync(_publisher, logger, queueEntry, -1, $"Failed: {processingResult.Error?.Message ?? processingResult.Message}")
+                        : WorkItemExecution.PublishProgressAsync(_publisher, logger, queueEntry, 100);
+
+                    // A best-effort notification must preserve the queue outcome or release exception.
+                    await report.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                }
+            }
         }
     }
 
@@ -269,21 +278,22 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         return resolvedType;
     }
 
-    protected async Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string? message = null)
+    protected Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string? message = null)
+    {
+        var logger = handler.Log;
+        return WorkItemExecution.PublishProgressAsync(_publisher, logger is NullLogger ? _logger : logger, queueEntry, progress, message);
+    }
+
+    private static async Task CleanupAfterFailureAsync(Func<Task> cleanup, JobResult failure, IQueueEntry<WorkItemData> entry, ILogger logger)
     {
         try
         {
-            await _publisher.PublishAsync(new WorkItemStatus
-            {
-                WorkItemId = queueEntry.Value?.WorkItemId,
-                Type = queueEntry.Value?.Type,
-                Progress = progress,
-                Message = message
-            }).AnyContext();
+            await cleanup().AnyContext();
         }
         catch (Exception ex)
         {
-            handler.Log.LogError(ex, "Error sending progress report: {Message}", ex.Message);
+            logger.LogError(failure.Error ?? ex, "Cleanup failed for queue entry {QueueEntryId} with {CleanupMessage}, original processing result was {Message}", entry.Id, ex.Message, failure.Message);
+            throw;
         }
     }
 }

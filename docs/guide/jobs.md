@@ -408,7 +408,7 @@ public class DeleteEntityWorkItemHandler : WorkItemHandlerBase
 
         // Delete children with progress reporting
         var children = await _entityService.GetChildrenAsync(workItem.EntityId);
-        var total = children.Count;
+        var total = children.Count + 1;
         var current = 0;
 
         foreach (var child in children)
@@ -417,7 +417,7 @@ public class DeleteEntityWorkItemHandler : WorkItemHandlerBase
             current++;
             await ctx.ReportProgressAsync(
                 (current * 100) / total,
-                $"Deleted {current} of {total} children");
+                $"Deleted {current} of {children.Count} children");
         }
 
         await _entityService.DeleteAsync(workItem.EntityId);
@@ -437,18 +437,36 @@ public record DeleteEntityWorkItem
 
 | Member | Description |
 |--------|-------------|
-| `GetData<T>()` | Deserializes the raw payload to your work item type |
-| `Data` | The raw work item payload (use `GetData<T>()` instead) |
-| `JobId` | Unique identifier for this job run |
+| `GetData<T>()` | Returns the deserialized work item as `T`, or `null` for a different type |
+| `Data` | The deserialized work item as an object |
+| `JobId` | Identifies the `WorkItemJob` instance. Use `WorkItemStatus.WorkItemId` to correlate reports for an enqueued item |
 | `WorkItemLock` | Optional distributed lock for the work item |
-| `CancellationToken` | Signals that processing should stop |
+| `CancellationToken` | Signals shutdown or a failure to renew the handler's work-item lock. Pass it to cancellable work |
 | `Result` | Set to `JobResult.FailedWithMessage(...)` to indicate failure without throwing. As with `QueueJobBase`, a non-success `Result` abandons and retries the entry -- see [Retry vs Permanent Failure](#retry-vs-permanent-failure) |
-| `ReportProgressAsync(progress, message)` | Publishes `WorkItemStatus` updates via `IMessageBus` |
-| `RenewLockAsync()` | Extends the work item lock lease |
+| `ReportProgressAsync(progress, message)` | Sends a best-effort `WorkItemStatus` update. When `AutoRenewLockOnProgress` is enabled, it first renews the queue entry and the work-item lock |
+| `RenewLockAsync()` | Explicitly renews the work-item lock. A failed renewal throws the provider's exception |
+
+`AutoRenewLockOnProgress` defaults to `false`. Enabling it uses each explicit report as a renewal checkpoint. Choose checkpoints within the lease duration. The queue controls redelivery. The default handler uses `EmptyLock`; override `GetWorkItemLockAsync` when handlers need a shared, exclusive lock on a resource.
+
+Use the context methods for renewal so the job can observe failures. If the work-item lock renewal fails, the context signals the handler's cancellation token and throws the provider exception. Stop protected work at that point.
+
+Renewal failures use the existing Error message `Error renewing work item locks: {Message}`. Enable logging scopes to see the queue entry ID and `RenewalTarget` (`QueueEntry` or `WorkItemLock`). For an application lock, the scope also identifies the `Resource`. A throwing cancellation callback produces a separate Warning. These diagnostics use the handler's logger or the job's logger when the handler uses the default no-op logger.
+
+`Result` describes the handler's work. A handler can catch a renewal exception and return with `Result` still set to success. The job attempts to abandon an unsettled entry and returns a failed `JobResult` with the original provider exception. It also preserves that exception if the handler exits with `OperationCanceledException`. A separate non-cancellation handler exception takes precedence. If abandonment or lock release then fails, the job logs the earlier processing failure before the cleanup error reaches the caller. The queue's retry policy governs redelivery.
+
+Queue-entry renewal errors are logged. After delivery, an awaited auto-renewing report checks again for a recorded work-item lock failure or a locally abandoned entry before the handler continues. A subscriber may already have received the update at that point. A provider can redeliver an item without updating the original entry. Make side effects safe to repeat across attempts.
+
+Await each report whose delivery or order matters. The job waits for in-flight renewals before settling the entry and releasing the work-item lock. If the handler returns before awaiting a report, publication can be skipped or finish later.
+
+With `includeProgressReporting: true`, the job sends a start message before it tries to acquire the work-item lock. If it cannot acquire the lock, that can be the only message for the attempt. Explicit handler reports also work with automatic reports disabled.
+
+After the release attempt, the job sends `100` when its own `CompleteAsync` returned successfully or `-1` when its own `AbandonAsync` returned successfully. A failed completion can still lead to `-1` if the job then abandons the entry successfully. If the queue commits and an observer throws before the call returns, a subscriber can receive only the start message. Retries share a `WorkItemId`. Their updates can arrive out of order, including a failure from an earlier attempt after a successful retry.
+
+When you construct a `WorkItemContext` yourself, you own the cancellation token and optional lock. Each progress report calls your callback. `RenewLockAsync` calls your lock directly or completes immediately when you supply no lock. The job-created context also coordinates the dequeued entry and can trigger abandonment when renewal fails.
 
 ### WorkItemHandlers
 
-`WorkItemHandlers` is a registry mapping work item data types to their handlers. You can register handlers in several ways:
+`WorkItemHandlers` reuses one handler per registered type, including across concurrent attempts. Choose one registration style per type and keep per-attempt state in the handler method.
 
 ```csharp
 var handlers = new WorkItemHandlers();
@@ -457,7 +475,7 @@ var handlers = new WorkItemHandlers();
 handlers.Register<DeleteEntityWorkItem>(
     new DeleteEntityWorkItemHandler(entityService, logger));
 
-// Factory registration (lazy — creates a new handler per invocation)
+// Alternatively, resolve the handler once on first use.
 handlers.Register<DeleteEntityWorkItem>(
     () => sp.GetRequiredService<DeleteEntityWorkItemHandler>());
 
@@ -476,7 +494,8 @@ handlers.Register<SimpleWorkItem>(async ctx =>
 services.AddSingleton<IQueue<WorkItemData>>(sp => new InMemoryQueue<WorkItemData>());
 services.AddSingleton<IMessageBus>(sp => new InMemoryMessageBus());
 services.AddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
-services.AddScoped<DeleteEntityWorkItemHandler>();
+services.AddSingleton<DeleteEntityWorkItemHandler>();
+services.AddSingleton<WorkItemJob>();
 services.AddSingleton(sp =>
 {
     var handlers = new WorkItemHandlers();
@@ -497,20 +516,17 @@ Use the `EnqueueAsync<T>` extension method to enqueue strongly-typed work items:
 ```csharp
 var queue = serviceProvider.GetRequiredService<IQueue<WorkItemData>>();
 
-// Enqueue a work item (returns a job ID for tracking)
-string jobId = await queue.EnqueueAsync(new DeleteEntityWorkItem { EntityId = 123 });
-
-// With progress reporting enabled
-string jobId = await queue.EnqueueAsync(
-    new DeleteEntityWorkItem { EntityId = 123 },
-    includeProgressReporting: true);
-
-// Subscribe to progress updates
+// Subscribe before enqueueing so a fast worker's first update can be received.
 var messageBus = serviceProvider.GetRequiredService<IMessageBus>();
 await messageBus.SubscribeAsync<WorkItemStatus>(status =>
 {
     Console.WriteLine($"[{status.WorkItemId}] {status.Progress}% - {status.Message}");
 });
+
+// The returned ID matches WorkItemStatus.WorkItemId across retries.
+string workItemId = await queue.EnqueueAsync(
+    new DeleteEntityWorkItem { EntityId = 123 },
+    includeProgressReporting: true);
 ```
 
 ## Job Runner
@@ -925,4 +941,3 @@ services.AddJob<OrderProcessorJob>(o => o.InstanceCount(4));
 - [Locks](./locks) — Distributed locking for singleton jobs
 - [Resilience](./resilience) — Retry policies for job reliability
 - [Serialization](./serialization) — Serializer configuration and performance
-
