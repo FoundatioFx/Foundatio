@@ -1654,7 +1654,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     /// Gives up partitions: waits up to <paramref name="gracePeriod"/> for handed-out messages to be settled, copies
     /// those still unsettled (unless they are released in place) with an incremented delivery count, then commits.
     /// </summary>
-    private void Release(List<TopicPartition> partitions, TimeSpan gracePeriod)
+    internal void Release(List<TopicPartition> partitions, TimeSpan gracePeriod)
     {
         List<KafkaPartitionState> states;
         lock (_lock)
@@ -1927,7 +1927,9 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     /// Keeps a record read again if it is the first skipped record of its group and the group has room, up to one less
     /// than its budget, so records read again never stop the reading. Skipped records between
     /// <paramref name="expectedOffset"/>, where the reader was, and the record are no longer in Kafka (retention deleted
-    /// them), so they are dropped instead of waited for.
+    /// them), so they are dropped instead of waited for. A record of a partition that is being given up, or that has
+    /// nothing left to read again, is <see cref="KafkaReadAgainResult.Gone"/>, so the reader plans again instead of
+    /// reading on to the partition's end.
     /// </summary>
     internal KafkaReadAgainResult ReadAgain(ConsumeResult<byte[]?, byte[]?> result, long expectedOffset)
     {
@@ -1935,7 +1937,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         lock (_lock)
         {
             if (!_partitions.TryGetValue(result.TopicPartition, out var state) || state.Revoking || state.Revoked || state.Loading || state.Skipped.Count == 0)
-                return KafkaReadAgainResult.NotNeeded;
+                return KafkaReadAgainResult.Gone;
 
             if (offset > expectedOffset)
                 DropMissing(state, expectedOffset, offset);

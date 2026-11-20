@@ -868,6 +868,81 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Rebalance_OfAPartitionWhoseSkippedRecordsAreBeingReadAgain_StopsReadingItForTheGracePeriod()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverBufferLimit = 256, ReceiverGroupHeldLimit = 10 }));
+        var source = MessageSource.Queue(NewName("skip-revoking"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Each of the hot group's records is followed by 50 of other groups, fewer than the reader seeks over, so it reads
+        // through them to the group's next record.
+        const int hotCount = 400;
+        const int gap = 50;
+        var messages = Enumerable.Range(0, hotCount).SelectMany(i => Enumerable.Range(0, gap).Select(n => Message($"cold-{i}-{n}", $"cold-{i}-{n}")).Prepend(Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" })).ToList();
+        foreach (var chunk in messages.Chunk(1000))
+            await transport.SendAsync(destination, chunk, TestCancellationToken);
+        await transport.SendAsync(destination, [Message("pin", "pin")], TestCancellationToken);
+
+        // The hot group's first message is being handled, so its later records are skipped and the rest delivered. The
+        // last one stays unsettled, so a revocation waits out its whole grace period.
+        var hot = await ReceiveOneAsync(receiver);
+        Assert.Equal("hot-0", hot.MessageId);
+        KafkaIncomingMessage? pin = null;
+        int cold = 0;
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (cold < hotCount * gap || pin is null)
+        {
+            Assert.True(DateTime.UtcNow < deadline, $"Received {cold} of {hotCount * gap} messages of other groups.");
+            foreach (var message in await receiver.ReceiveAsync(100, TimeSpan.FromSeconds(1), TestCancellationToken))
+            {
+                if (message.MessageId == "pin")
+                {
+                    pin = (KafkaIncomingMessage)message;
+                    continue;
+                }
+
+                cold++;
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        // The group drains as fast as the reader reads its skipped records again, so the reader keeps reading.
+        await receiver.CompleteAsync(hot, TestCancellationToken);
+        using var draining = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        var drain = Task.Run(async () =>
+        {
+            while (true)
+            {
+                foreach (var message in await receiver.ReceiveAsync(10, TimeSpan.FromMilliseconds(100), draining.Token))
+                {
+                    try
+                    {
+                        await receiver.CompleteAsync(message, draining.Token);
+                    }
+                    catch (MessageLeaseLostException)
+                    {
+                    }
+                }
+            }
+        }, draining.Token);
+        Assert.True(SpinWait.SpinUntil(() => receiver.ReadAgainCount >= 20, TimeSpan.FromSeconds(30)));
+
+        // A rebalance takes the partition away meanwhile. Once the reader finds it revoking it stops reading it, instead
+        // of reading on through the grace period towards the end of the partition: it read the group's records it kept
+        // and those of other groups between them, and at most a record or two more.
+        receiver.Release([pin.Partition.TopicPartition], TimeSpan.FromSeconds(2));
+        await draining.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => drain);
+
+        var reader = receiver.CatchUpReader!;
+        long kept = receiver.ReadAgainCount;
+        _logger.LogInformation("The reader read {Reads} records and kept {Kept} of {Skipped} skipped", reader.Reads, kept, receiver.SkippedTotal);
+        Assert.InRange(reader.Reads, kept, (gap + 1) * kept + 2);
+        await WaitForAsync(() => reader.AssignedCount == 0);
+    }
+
+    [Fact]
     public async Task Commit_WithSkippedRecordsOutstanding_StopsAtTheOldestUnfinishedAndKeepsTheFinishedOnesInTheState()
     {
         var options = CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverGroupHeldLimit = 10 };

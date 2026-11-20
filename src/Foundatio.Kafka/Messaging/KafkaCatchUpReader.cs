@@ -281,7 +281,10 @@ internal sealed class KafkaCatchUpReader : IDisposable
         }
     }
 
-    /// <summary>Reads a record and hands it to the receiver. Returns whether what to read may have changed.</summary>
+    /// <summary>
+    /// Reads a record and hands it to the receiver. Returns whether what to read may have changed: the record was kept
+    /// or held back, or its partition is <see cref="KafkaReadAgainResult.Gone"/>.
+    /// </summary>
     private bool Read(IConsumer<byte[]?, byte[]?> consumer)
     {
         ConsumeResult<byte[]?, byte[]?>? result;
