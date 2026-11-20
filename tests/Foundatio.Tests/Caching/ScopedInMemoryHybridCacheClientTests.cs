@@ -191,7 +191,7 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.GetUnixTimeSecondsAsync_WithUtcDateTime_ReturnsCorrectly();
     }
 
-    [Fact(Skip = "Skip because HybridCacheClient can cache a stale local value under concurrent writes: https://github.com/FoundatioFx/Foundatio/issues/572")]
+    [Fact]
     public override Task IncrementAsync_WithConcurrentRequests_DoesNotLoseUpdates()
     {
         return base.IncrementAsync_WithConcurrentRequests_DoesNotLoseUpdates();
@@ -643,7 +643,7 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.SetExpirationAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
-    [Fact(Skip = "Skip because HybridCacheClient can cache a stale local value under concurrent writes: https://github.com/FoundatioFx/Foundatio/issues/572")]
+    [Fact]
     public override Task SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum()
     {
         return base.SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum();
@@ -673,7 +673,7 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.SetIfHigherAsync_WithLowerOrEqualValue_LeavesValueAndExpirationUnchanged();
     }
 
-    [Fact(Skip = "Skip because HybridCacheClient can cache a stale local value under concurrent writes: https://github.com/FoundatioFx/Foundatio/issues/572")]
+    [Fact]
     public override Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
     {
         return base.SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease();
