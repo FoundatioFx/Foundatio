@@ -8,7 +8,6 @@ using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
@@ -17,8 +16,9 @@ namespace Foundatio.Jobs;
 /// overlapping renewals or catch a renewal error. The job waits for those renewals and checks ownership
 /// before it settles the entry and releases the work-item lock. Provider calls run outside the lock so renewals can overlap.
 /// </summary>
-internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, ILogger jobLogger, CancellationToken cancellationToken) : IDisposable
+internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHandler handler, IQueueEntry<WorkItemData> entry, Type dataType, ILock workItemLock, ILogger logger, CancellationToken cancellationToken) : IDisposable
 {
+    private readonly ILogger _logger = logger;
     private readonly System.Threading.Lock _renewalLock = new();
     private readonly CancellationTokenSource? _cancellation = workItemLock.GetType() == typeof(EmptyLock) ? null : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     private volatile ExceptionDispatchInfo? _renewalFailure;
@@ -59,7 +59,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
             _renewalFailure?.Throw();
         }
 
-        await PublishProgressAsync(publisher, handler, jobLogger, entry, progress, message).AnyContext();
+        await PublishProgressAsync(publisher, _logger, entry, progress, message).AnyContext();
         if (handler.Log.IsEnabled(LogLevel.Information))
             handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", dataType.Name, progress, message);
 
@@ -90,7 +90,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
 
     public void Dispose() => _cancellation?.Dispose();
 
-    internal static async Task PublishProgressAsync(IMessagePublisher publisher, IWorkItemHandler handler, ILogger jobLogger, IQueueEntry<WorkItemData> entry, int progress, string? message)
+    internal static async Task PublishProgressAsync(IMessagePublisher publisher, ILogger logger, IQueueEntry<WorkItemData> entry, int progress = 0, string? message = null)
     {
         try
         {
@@ -104,14 +104,8 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
         catch (Exception ex)
         {
-            GetLogger(handler, jobLogger).LogError(ex, "Error sending progress report: {Message}", ex.Message);
+            logger.LogError(ex, "Error sending progress report: {Message}", ex.Message);
         }
-    }
-
-    internal static ILogger GetLogger(IWorkItemHandler handler, ILogger jobLogger)
-    {
-        var logger = handler.Log;
-        return logger is NullLogger ? jobLogger : logger;
     }
 
     private bool IsProcessing(bool throwIfAbandoned)
@@ -215,13 +209,12 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
 
     private void LogRenewalFailure(Exception ex, ILock? failedWorkItemLock = null)
     {
-        var logger = GetLogger(handler, jobLogger);
         var scope = new LogState().Property("QueueEntryId", entry.Id).Property("RenewalTarget", failedWorkItemLock is null ? "QueueEntry" : "WorkItemLock");
         if (failedWorkItemLock is not null)
             scope.Property("Resource", failedWorkItemLock.Resource);
 
-        using var _ = logger.BeginScope(scope);
-        logger.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
+        using var _ = _logger.BeginScope(scope);
+        _logger.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
     }
 
     private async Task ObserveCancellationCallbacksAsync(Task callbacks)
@@ -233,7 +226,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         catch (AggregateException ex)
         {
             Activity.Current?.AddException(ex);
-            GetLogger(handler, jobLogger).LogWarning(ex, "Cancellation callback failed after losing the work-item lock for queue entry {QueueEntryId}", entry.Id);
+            _logger.LogWarning(ex, "Cancellation callback failed after losing the work-item lock for queue entry {QueueEntryId}", entry.Id);
         }
     }
 

@@ -114,8 +114,12 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return result;
         }
 
+        var logger = handler.Log;
+        if (logger is NullLogger)
+            logger = _logger;
+
         if (queueEntry.Value.SendProgressReports)
-            await ReportProgressAsync(handler, queueEntry).AnyContext();
+            await WorkItemExecution.PublishProgressAsync(_publisher, logger, queueEntry).AnyContext();
 
         var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
         if (lockValue is null)
@@ -126,7 +130,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
-        using var execution = new WorkItemExecution(_publisher, handler, queueEntry, workItemDataType, lockValue, _logger, cancellationToken);
+        using var execution = new WorkItemExecution(_publisher, handler, queueEntry, workItemDataType, lockValue, logger, cancellationToken);
         JobResult processingResult = JobResult.Success;
         bool abandonAttempted = false;
         bool settledByJob = false;
@@ -149,7 +153,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
             abandonAttempted = !processingResult.IsSuccess;
             if (abandonAttempted)
-                await CleanupAfterFailureAsync(queueEntry.AbandonAsync, processingResult, queueEntry, handler).AnyContext();
+                await CleanupAfterFailureAsync(queueEntry.AbandonAsync, processingResult, queueEntry, logger).AnyContext();
             else
                 await queueEntry.CompleteAsync().AnyContext();
 
@@ -171,7 +175,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
             processingResult = JobResult.FromException(error, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}");
             abandonAttempted = true;
-            await CleanupAfterFailureAsync(queueEntry.AbandonAsync, processingResult, queueEntry, handler).AnyContext();
+            await CleanupAfterFailureAsync(queueEntry.AbandonAsync, processingResult, queueEntry, logger).AnyContext();
             settledByJob = true;
             return processingResult;
         }
@@ -182,15 +186,15 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
                 if (processingResult.IsSuccess)
                     await lockValue.ReleaseAsync().AnyContext();
                 else
-                    await CleanupAfterFailureAsync(lockValue.ReleaseAsync, processingResult, queueEntry, handler).AnyContext();
+                    await CleanupAfterFailureAsync(lockValue.ReleaseAsync, processingResult, queueEntry, logger).AnyContext();
             }
             finally
             {
                 if (queueEntry.Value.SendProgressReports && settledByJob)
                 {
                     var report = abandonAttempted
-                        ? ReportProgressAsync(handler, queueEntry, -1, $"Failed: {processingResult.Error?.Message ?? processingResult.Message}")
-                        : ReportProgressAsync(handler, queueEntry, 100);
+                        ? WorkItemExecution.PublishProgressAsync(_publisher, logger, queueEntry, -1, $"Failed: {processingResult.Error?.Message ?? processingResult.Message}")
+                        : WorkItemExecution.PublishProgressAsync(_publisher, logger, queueEntry, 100);
 
                     // A best-effort notification must preserve the queue outcome or release exception.
                     await report.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
@@ -276,10 +280,11 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
     protected Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string? message = null)
     {
-        return WorkItemExecution.PublishProgressAsync(_publisher, handler, _logger, queueEntry, progress, message);
+        var logger = handler.Log;
+        return WorkItemExecution.PublishProgressAsync(_publisher, logger is NullLogger ? _logger : logger, queueEntry, progress, message);
     }
 
-    private async Task CleanupAfterFailureAsync(Func<Task> cleanup, JobResult failure, IQueueEntry<WorkItemData> entry, IWorkItemHandler handler)
+    private static async Task CleanupAfterFailureAsync(Func<Task> cleanup, JobResult failure, IQueueEntry<WorkItemData> entry, ILogger logger)
     {
         try
         {
@@ -289,7 +294,6 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             try
             {
-                var logger = WorkItemExecution.GetLogger(handler, _logger);
                 logger.LogError(failure.Error ?? ex, "Cleanup failed for queue entry {QueueEntryId} with {CleanupMessage}, original processing result was {Message}", entry.Id, ex.Message, failure.Message);
             }
             catch (Exception logEx)
