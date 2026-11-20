@@ -7,11 +7,11 @@ namespace Foundatio.Messaging;
 /// <summary>
 /// Decides how many messages a processor that reads ahead (<see cref="TransportCapabilities.ReceiveAhead"/>) may have
 /// received beyond its free handler slots: its depth. By Little's law, from moving averages of how long a message keeps
-/// its handler slot (<c>s</c>) and how long a receive that returned everything it asked for took (<c>t</c>), the depth
-/// is what the handlers get through during one receive plus one batch, <c>min(⌈C·t/s⌉, b·R) + b</c>, at most
-/// <c>⌊C·H/s⌋</c> so that a buffered message waits about the horizon <c>H</c> at most. <c>H</c> is a second, or a
-/// quarter of the shortest lease a receive was granted, counted from when it started, when that is less, so a buffered
-/// message normally starts before its first renewal.
+/// its handler slot (<c>s</c>) and how long a receive that returned everything it asked for took (<c>t</c>, from receives
+/// within the horizon: a longer one waited for messages to arrive), the depth is what the handlers get through during
+/// one receive plus one batch, <c>min(⌈C·t/s⌉, b·R) + b</c>, at most <c>⌊C·H/s⌋</c> so that a buffered message waits
+/// about the horizon <c>H</c> at most. <c>H</c> is a second, or a quarter of the shortest lease a receive was granted,
+/// counted from when it started, when that is less, so a buffered message normally starts before its first renewal.
 /// The depth is zero until both times have been measured, and while a message keeps its slot longer than <c>H</c>, so
 /// slow handlers do not hoard messages. Buffered bodies are kept within <see cref="MaxBufferedBytes"/>: from the average
 /// body size, the depth covers the messages buffered and only as many more as fit.
@@ -81,8 +81,24 @@ internal sealed class ReceiveAhead
     /// <summary>Records how long a message kept its handler slot. Returns true when the depth rose.</summary>
     public bool RecordSlotTime(long ticks) => Record(ref _slotTicks, ticks, SlotTimeWeight);
 
-    /// <summary>Records how long a receive that returned every message it asked for took. Returns true when the depth rose.</summary>
-    public bool RecordReceiveTime(long ticks) => Record(ref _receiveTicks, ticks, ReceiveTimeWeight);
+    /// <summary>
+    /// Records how long a receive that returned every message it asked for took. One that took longer than the horizon
+    /// waited for messages to arrive, as a long poll of a drained source does, rather than for the broker: it counts only
+    /// as the first time measured, and then as the horizon. Returns true when the depth rose.
+    /// </summary>
+    public bool RecordReceiveTime(long ticks)
+    {
+        double horizon = GetHorizonTicks();
+        if (ticks > horizon)
+        {
+            if (Volatile.Read(ref _receiveTicks) >= 0)
+                return false;
+
+            ticks = (long)horizon;
+        }
+
+        return Record(ref _receiveTicks, ticks, ReceiveTimeWeight);
+    }
 
     /// <summary>
     /// Records the <paramref name="bytes"/> of the bodies of <paramref name="count"/> messages a receive returned. The

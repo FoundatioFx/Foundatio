@@ -1044,6 +1044,42 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Receive_WhenABurstFillsALongPollOfADrainedSource_DoesNotCountTheWaitAsTheReceiveTime()
+    {
+        // A clock that moves only when the test advances it keeps the depth at a batch, two.
+        var time = new FakeTimeProvider();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 2, maxConcurrentReceives: 1));
+        await PrefillAsync(WarmUp(2));
+        using var gate = new SemaphoreSlim(0);
+        int handled = 0, running = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, _, _) =>
+        {
+            if (message.Id >= 100)
+            {
+                Interlocked.Increment(ref running);
+                await gate.WaitAsync(TestCancellationToken);
+            }
+
+            Interlocked.Increment(ref handled);
+        }, new HandlerOptions { MaxConcurrency = 2 }), s => s.AddSingleton<TimeProvider>(time));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 2 && processor.InFlight == 0 && transport.ReceivesInFlight == 1, TimeSpan.FromSeconds(5));
+
+        // Five seconds into the long poll, a burst due at once fills the batch it asked for.
+        time.Advance(TimeSpan.FromSeconds(5));
+        await PrefillAsync(Enumerable.Range(0, 2).Select(i => new RenewedCommand(i)), new SendOptions { DeliverAt = DateTimeOffset.UtcNow.AddMilliseconds(100) });
+        await WaitForAsync(() => Volatile.Read(ref handled) == 4 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+
+        // Had the wait counted as a receive, the depth would cover the receive as well as a batch, four.
+        await consumer.Client.SendBatchAsync(Enumerable.Range(100, 8).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref running) == 2 && processor.Buffered > 0 && transport.ReceivesInFlight == 0, TimeSpan.FromSeconds(5));
+        Assert.Equal(2, processor.Buffered);
+
+        gate.Release(8);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 12 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task Receive_WithLargeBodies_BuffersNoMoreThanFitWithinTheByteCap()
     {
         // A clock that does not move keeps the depth at a batch, two, so only the bodies limit it.

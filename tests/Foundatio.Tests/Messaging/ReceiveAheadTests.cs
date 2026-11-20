@@ -130,6 +130,40 @@ public class ReceiveAheadTests
     }
 
     [Fact]
+    public void RecordReceiveTime_LongerThanTheHorizon_IsNotSampled()
+    {
+        var ahead = Create(maxConcurrency: 16, batchSize: 10, receives: 3);
+        ahead.RecordReceiveTime(Ticks(20));
+        ahead.RecordSlotTime(Ticks(50));
+        Assert.Equal(17, ahead.Depth);
+
+        // A long poll of a drained source that a burst filled after six seconds measured the wait, not the broker.
+        Assert.False(ahead.RecordReceiveTime(Ticks(6000)));
+        Assert.Equal(17, ahead.Depth);
+
+        // Within the horizon, a slower receive still counts: 20ms moves an eighth of the way to 180ms, 40ms.
+        Assert.True(ahead.RecordReceiveTime(Ticks(180)));
+        Assert.Equal(16 * 40 / 50 + 1 + 10, ahead.Depth);
+    }
+
+    [Fact]
+    public void RecordReceiveTime_LongerThanTheHorizonBeforeAnyOther_CountsAsTheHorizon()
+    {
+        var ahead = Create(maxConcurrency: 16, batchSize: 10, receives: 3);
+
+        ahead.RecordReceiveTime(Ticks(6000));
+        ahead.RecordSlotTime(Ticks(50));
+
+        // As if the receive took the horizon, a second: as many as the receives can carry, plus a batch.
+        Assert.Equal(10 * 3 + 10, ahead.Depth);
+
+        // Fast receives then bring it down from a second, not six: after 18, to 90ms, so 16 x 90 / 50 = 28.8, 29.
+        for (int i = 0; i < 18; i++)
+            ahead.RecordReceiveTime(0);
+        Assert.Equal(29 + 10, ahead.Depth);
+    }
+
+    [Fact]
     public void GetDepth_WithBufferedBytesOverTheCap_IsZero()
     {
         var ahead = Create(maxConcurrency: 16, batchSize: 10, receives: 3);
