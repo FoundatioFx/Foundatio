@@ -246,6 +246,37 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task SendAsync_WhenTheWokenReceiverIsNotReceiving_WakesTheNextIdleReceiver()
+    {
+        var source = MessageSource.Queue(NewName("wake-passed-on"));
+        DeleteAfterTest(source);
+        await using var idle = await StartIdleReceiversAsync(source, 1);
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        await using var busyTransport = new RedisMessageTransport(connection, SlowPollingOptions);
+        await using var busy = await busyTransport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var database = GetMuxer().GetDatabase();
+        string idleSet = $"{KeyPrefix}:{{q:{source.Name}}}:idle";
+
+        // The busy receiver registers as idle after the other, so a message wakes it first; it gets one of the ten it
+        // asked for, which leaves it registered, and then it stops receiving, as a processor that reads ahead may.
+        var first = busy.ReceiveAsync(10, DeliveryTimeout, TestCancellationToken);
+        var deadline = DateTime.UtcNow + DeliveryTimeout;
+        while (await database.SortedSetLengthAsync(idleSet) < 2)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The busy receiver did not register as idle.");
+            await Task.Delay(20, TestCancellationToken);
+        }
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("first")], TestCancellationToken);
+        Assert.Equal("first", Encoding.UTF8.GetString(Assert.Single(await first.WaitAsync(DeliveryTimeout, TestCancellationToken)).Body.Span));
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("second")], TestCancellationToken);
+
+        var passedOn = await idle.Receives[0].WaitAsync(DeliveryTimeout / 2, TestCancellationToken);
+        Assert.Equal("second", Encoding.UTF8.GetString(Assert.Single(passedOn).Body.Span));
+    }
+
+    [Fact]
     public async Task AbandonAsync_WithADelay_DoesNotWakeIdleReceiversOnOtherConnections()
     {
         var source = MessageSource.Queue(NewName("abandon-delay"));

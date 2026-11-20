@@ -15,6 +15,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private const int HeartbeatsPerTimeout = 6;
     private static readonly TimeSpan IdleRegistrationRefreshInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaxHeartbeatRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan WakePassOnDelay = TimeSpan.FromMilliseconds(5);
 
     private readonly RedisMessageTransport _transport;
     private readonly RedisSourceKeys _keys;
@@ -34,6 +35,11 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private bool _mayBeRegistered;
     private bool _registrationCurrent;
     private long _registeredAt;
+    private int _receiving;
+    private long _receiveStarts;
+    private long _signals;
+    private long _signalsAtLastPoll;
+    private int _passingOnWake;
     private Task _heartbeat = Task.CompletedTask;
     private int _disposed;
 
@@ -49,7 +55,10 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         {
             // A wake-up removed this receiver from the idle set.
             Volatile.Write(ref _registrationCurrent, false);
+            Interlocked.Increment(ref _signals);
             Wake();
+            if (Volatile.Read(ref _receiving) == 0)
+                _ = PassOnWakeAsync();
         };
         _pollInterval = transport.Options.MinPollInterval;
     }
@@ -80,6 +89,23 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     public async Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxMessages, 1);
+        Interlocked.Increment(ref _receiveStarts);
+        Interlocked.Increment(ref _receiving);
+        try
+        {
+            return await ReceiveUntilAnyAsync(maxMessages, maxWait, cancellationToken).AnyContext();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _receiving);
+            // A wake-up that came after the last poll was for messages this receive did not take.
+            if (Volatile.Read(ref _signals) != Volatile.Read(ref _signalsAtLastPoll))
+                _ = PassOnWakeAsync();
+        }
+    }
+
+    private async Task<IReadOnlyList<IncomingMessage>> ReceiveUntilAnyAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken)
+    {
         int count = Math.Min(maxMessages, _transport.Capabilities.MaxReceiveBatchSize);
         long started = Stopwatch.GetTimestamp();
         bool lastPoll = false;
@@ -104,6 +130,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             }
             else
             {
+                Volatile.Write(ref _signalsAtLastPoll, Volatile.Read(ref _signals));
                 wake = Volatile.Read(ref _wake).Task;
                 (var messages, nextChange, registration) = await ReceiveOnceAsync(count, wake).AnyContext();
                 if (messages.Count > 0)
@@ -425,6 +452,38 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     }
 
     private void Wake() => Interlocked.Exchange(ref _wake, NewWakeSignal()).TrySetResult();
+
+    /// <summary>
+    /// Passes on a wake-up that reached this receiver while no receive was running, or after the last poll of the one
+    /// that was, to the idle receiver busy most recently, unless a receive starts within <see cref="WakePassOnDelay"/>.
+    /// A processor that reads ahead may not receive again until its handlers free room, and the message would wait for it.
+    /// </summary>
+    private async Task PassOnWakeAsync()
+    {
+        if (Interlocked.Exchange(ref _passingOnWake, 1) == 1)
+            return;
+
+        try
+        {
+            long starts = Volatile.Read(ref _receiveStarts);
+            await Task.Delay(WakePassOnDelay, _disposing.Token).AnyContext();
+            if (Volatile.Read(ref _receiving) > 0 || Volatile.Read(ref _receiveStarts) != starts)
+                return;
+
+            await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.WakeScript, [_keys.Idle], [_keys.WakeChannelPrefix, _transport.PublishCommand]).AnyContext();
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException && Volatile.Read(ref _disposed) == 1)
+        {
+        }
+        catch (Exception ex)
+        {
+            _transport.Logger.LogDebug(ex, "Could not pass on a wake-up of receiver {Consumer} of {Source}; the message waits for the next receive or poll", _consumer, Source);
+        }
+        finally
+        {
+            Volatile.Write(ref _passingOnWake, 0);
+        }
+    }
 
     // Renews often enough to survive several missed or failed heartbeats, and retries a failed one sooner.
     private async Task HeartbeatLoopAsync()
