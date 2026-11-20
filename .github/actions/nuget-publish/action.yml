@@ -1,0 +1,44 @@
+name: Publish to NuGet
+description: >-
+  Pushes the release packages uploaded by build-workflow.yml to nuget.org using trusted publishing.
+  Run it from a job in the calling repository's own workflow (not a reusable workflow) so the OIDC
+  token's job_workflow_ref matches that repository's trusted publishing policy.
+
+inputs:
+  user:
+    description: The nuget.org username (not email) that owns the trusted publishing policy
+    required: true
+  artifact-name:
+    description: Name of the package artifact uploaded by build-workflow.yml
+    required: false
+    default: nuget-packages
+
+runs:
+  using: composite
+  steps:
+    - name: Download Packages
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/nuget-packages
+    - name: NuGet Login
+      id: login
+      uses: NuGet/login@v1
+      with:
+        user: ${{ inputs.user }}
+    - name: Publish Release Packages
+      shell: bash
+      env:
+        NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        PACKAGES_DIR: ${{ runner.temp }}/nuget-packages
+      run: |
+        shopt -s nullglob
+        packages=("$PACKAGES_DIR"/*.nupkg)
+        if [ ${#packages[@]} -eq 0 ]; then
+          echo "::error::No packages found in artifact '${{ inputs.artifact-name }}'"
+          exit 1
+        fi
+        for package in "${packages[@]}"; do
+          echo "Pushing $package..."
+          dotnet nuget push "$package" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
+        done

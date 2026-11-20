@@ -4,7 +4,19 @@ on: [push, pull_request]
 jobs:
   build:
     uses: ./.github/workflows/build-workflow.yml
-    secrets: inherit
+    secrets:
+      FEEDZ_KEY: ${{ secrets.FEEDZ_KEY }}
     with:
       solution: Foundatio.slnx
       new-test-runner: true
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+    - uses: FoundatioFx/Foundatio/.github/actions/nuget-publish@main
+      with:
+        user: ${{ secrets.NUGET_USER }}
