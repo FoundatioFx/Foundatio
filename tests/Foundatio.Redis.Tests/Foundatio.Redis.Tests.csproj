@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />

@@ -8,6 +8,7 @@
     <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
     <Project Path="samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
+    <Project Path="samples/Foundatio.QuickstartSample/Foundatio.QuickstartSample.csproj" />
     <Project Path="samples/Foundatio.RabbitMQ.Publish/Foundatio.RabbitMQ.Publish.csproj" />
     <Project Path="samples/Foundatio.RabbitMQ.Subscribe/Foundatio.RabbitMQ.Subscribe.csproj" />
     <Project Path="samples/Foundatio.SampleJob/Foundatio.SampleJob.csproj" />
@@ -32,6 +33,7 @@
     <Project Path="tests/Foundatio.RabbitMQ.AppHost/Foundatio.RabbitMQ.AppHost.csproj" />
     <Project Path="tests/Foundatio.RabbitMQ.Tests/Foundatio.RabbitMQ.Tests.csproj" />
     <Project Path="tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj" />
+    <Project Path="tests/Foundatio.SourceCompatibility/Foundatio.SourceCompatibility.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
   <Folder Name="/Benchmarks/">

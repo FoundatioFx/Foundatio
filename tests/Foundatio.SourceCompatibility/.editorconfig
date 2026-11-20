@@ -1,0 +1,3 @@
+[*.cs]
+# The imports are what this project checks, so keep them even where nothing uses them.
+dotnet_diagnostic.IDE0005.severity = none

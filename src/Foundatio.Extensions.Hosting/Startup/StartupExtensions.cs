@@ -97,6 +97,7 @@ public static partial class StartupExtensions
     public static IServiceCollection AddStartupAction<T>(this IServiceCollection services, int? priority = null) where T : IStartupAction
     {
         services.TryAddSingleton<StartupActionsContext>();
+        services.TryAddSingleton<IStartupGate>(sp => new StartupActionsGate(sp.GetRequiredService<StartupActionsContext>()));
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
             services.AddSingleton<IHostedService, RunStartupActionsService>();
         services.TryAddTransient(typeof(T));
@@ -108,6 +109,7 @@ public static partial class StartupExtensions
     public static IServiceCollection AddStartupAction<T>(this IServiceCollection services, string name, int? priority = null) where T : IStartupAction
     {
         services.TryAddSingleton<StartupActionsContext>();
+        services.TryAddSingleton<IStartupGate>(sp => new StartupActionsGate(sp.GetRequiredService<StartupActionsContext>()));
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
             services.AddSingleton<IHostedService, RunStartupActionsService>();
         services.TryAddTransient(typeof(T));
@@ -129,6 +131,7 @@ public static partial class StartupExtensions
     public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider, CancellationToken> action, int? priority = null)
     {
         services.TryAddSingleton<StartupActionsContext>();
+        services.TryAddSingleton<IStartupGate>(sp => new StartupActionsGate(sp.GetRequiredService<StartupActionsContext>()));
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
             services.AddSingleton<IHostedService, RunStartupActionsService>();
         services.AddTransient(s => new StartupActionRegistration(name, (sp, ct) =>
@@ -153,6 +156,7 @@ public static partial class StartupExtensions
     public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null)
     {
         services.TryAddSingleton<StartupActionsContext>();
+        services.TryAddSingleton<IStartupGate>(sp => new StartupActionsGate(sp.GetRequiredService<StartupActionsContext>()));
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
             services.AddSingleton<IHostedService, RunStartupActionsService>();
         services.AddTransient(s => new StartupActionRegistration(name, action, priority));

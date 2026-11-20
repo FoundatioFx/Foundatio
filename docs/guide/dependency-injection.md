@@ -287,6 +287,16 @@ public class CacheHealthCheck : IHealthCheck
 }
 ```
 
+### Messaging and Jobs
+
+Foundatio.Extensions.Hosting reports message processors, the job worker and the CRON scheduler. Retried errors are Degraded; only stopped processing, or errors lasting longer than `unhealthyAfter`, are Unhealthy. See [Durable Jobs: health checks](./durable-jobs#health-checks).
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddFoundatioMessaging(tags: ["live"])
+    .AddFoundatioJobs(tags: ["live"]);
+```
+
 ## Testing
 
 ### Test-Friendly Registration

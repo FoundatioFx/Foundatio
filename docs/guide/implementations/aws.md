@@ -9,6 +9,7 @@ Foundatio provides AWS implementations for file storage, queuing, and messaging 
 | `S3FileStorage` | `IFileStorage` | Foundatio.AWS |
 | `SQSMessageBus` | `IMessageBus` | Foundatio.AWS |
 | `SQSQueue<T>` | `IQueue<T>` | Foundatio.AWS |
+| `SqsMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.AWS |
 
 ## Installation
 
@@ -177,6 +178,34 @@ Things to know:
 `SQSQueue` creates a `<name>-deadletter` queue with a native SQS redrive policy, and moves a message there itself once `Retries` is exceeded. FIFO queues use `<name>-deadletter.fifo`, because AWS requires the dead-letter queue of a FIFO queue to be a FIFO queue ([CreateQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_CreateQueue.html)). Without a dead-letter queue, the message is deleted once `Retries` is exceeded. If the dead-letter queue can't be resolved, the error is logged and the message stays on the source queue to be retried. `GetDeadletterItemsAsync` is not supported for SQS; read the dead-letter queue directly. The dead-letter queue uses the same encryption settings as the source queue, and its name must fit the 80-character SQS limit, so a source queue name can be at most 69 characters (including `.fifo`). Moving a message is at-least-once: the copy is sent before the original is deleted, so a failed delete can leave the message in both queues. `RetryDelay` is applied as the visibility timeout and capped at the SQS maximum of 12 hours.
 
 Deleting a queue takes up to 60 seconds in SQS, and a send during that window can succeed and then be lost with the queue ([DeleteQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteQueue.html)). Stop producers and workers before `DeleteQueueAsync` and wait at least 60 seconds before reusing the name. After a `QueueDoesNotExistException`, the cached queue url is cleared so the next call recreates the queue.
+
+## Messages and Events
+
+`SqsMessageTransport` runs [Messages and Events](/guide/messages) on SQS queues and SNS topics. Register it with `UseSqs`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseSqs(new SqsMessageTransportOptions { ConnectionString = "Region=us-east-1", Prefix = "prod-" })
+    .AddConsumer<SendReceiptHandler>());
+```
+
+- **Delays**: sends and publishes can be delayed by up to 13 days. SQS delays a send to a standard queue for its first 15 minutes. The rest of a longer delay, publish delays and FIFO delays are applied by hiding the message when it arrives early, and again every 11 hours, until it is due. Only sends delayed by more than 13 days are sent again, after 13 days.
+- **In-flight quota**: hidden messages count toward SQS's quota of about 120,000 in flight per queue, past which SQS refuses every receive of the queue with `OverLimit`. On a standard queue with 50,000 in flight, an early message is sent again with a delay of up to 15 minutes instead, at a send, a receive and a delete every 15 minutes. Receivers read the count again after every 1,000 hides, so receivers hiding a burst of long delays together stop near 50,000 plus 1,000 each. A receiver refused with `OverLimit` sends early messages again for a minute and releases the last 1,000 it hid. FIFO queues can only hide. Use jobs for long or high-volume delays.
+- **Receives**: a receive long-polls for up to 20 seconds and returns at most 10 messages, so a receiver takes up to 16 receives at once (`MaxConcurrentReceives`) to keep handlers busy, and Foundatio receives ahead of free handler slots (`ReceiveAhead`): messages wait, leased and renewed, until a handler is free. While the queue is drained, only one receive long-polls; each that returns a full batch lets one more poll. The 16 receives and reading ahead were measured on the Floci emulator, not yet on real AWS, which may return short batches from a backlog and so park receives sooner. SQS hands each message, and each FIFO group with a message in flight, to one receive at a time. The early messages a receive gets are hidden with one `ChangeMessageVisibilityBatch` call, or sent again with one `SendMessageBatch` and one `DeleteMessageBatch`.
+- **Settlement**: completions, renewals and abandons are sent as batch calls of up to 10 messages, as a group commit: at once while no call is in flight, otherwise with the next call.
+
+See [Using SQS](/guide/messages#using-sqs) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for options, delays, quotas and IAM actions.
+
+### Monitoring Messages
+
+The transport's `GetStatsAsync` reads SQS's approximate counts for the source's queue and its `-dlq` queue, two `GetQueueAttributes` calls. They can take a minute to catch up after sends and settlements.
+
+- **Queued**: visible messages. That includes delayed messages SQS could not delay itself, until a receiver first hides them.
+- **Delayed**: the delays SQS applies, on standard queues for up to 15 minutes (the first 15 minutes of a longer delay). Null in FIFO mode.
+- **InFlight**: every hidden message, so retries waiting out their delay and early messages hidden until due count here too.
+- **DeadLettered**: every message in the `-dlq` queue.
+
+Instance subscriptions are not counted (null), and a queue that does not exist counts as empty.
 
 ## Running the Tests
 

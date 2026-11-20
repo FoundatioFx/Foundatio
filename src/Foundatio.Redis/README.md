@@ -55,6 +55,105 @@ IFileStorage storage = new RedisFileStorage(o => o.ConnectionMultiplexer(muxer))
 await storage.SaveFileAsync("docs/readme.txt", "Hello World");
 ```
 
+## Redis message transport
+
+`RedisMessageTransport` runs Foundatio messaging (`IMessageClient`, consumers, durable and instance subscriptions) on Redis Streams. Register it with `UseRedis`, on the multiplexer your app already uses:
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioMessaging(m => m
+    .UseRedis(new RedisMessageTransportOptions
+    {
+        Prefix = "myapp:messaging",
+        DeadLetterRetention = TimeSpan.FromDays(14)
+    })
+    .AddConsumer<SendReceiptHandler>());
+```
+
+- `UseRedis()`, with no options, uses the defaults. `UseRedis(sp => new RedisMessageTransportOptions { ... })` builds the options from the service provider, for example from configuration.
+- Both use the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. `UseRedis(connection, options)` takes the connection instead.
+- The service provider creates the transport and disposes it at shutdown. The connection stays yours.
+
+It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and durable subscription lives on one cluster slot; a topic's instance subscriptions all live on the topic's slot. It needs Redis 6.2 or later, or Valkey.
+
+### Options
+
+| Option | Default | |
+|---|---|---|
+| `Prefix` | `foundatio:messaging` | Prepended to every key and wake-up channel. Cannot contain `{` or `}`. |
+| `Database` | `-1` | The database to use; `-1` is the connection's default. |
+| `MaxMessageSize` | 16 MiB | The largest message, measured by `MessageSize.Of`. Can be raised to 256 MiB. |
+| `DeduplicationWindow` | 5 minutes | How long a `DeduplicationId` is remembered. |
+| `MinPollInterval` / `MaxPollInterval` | 20 ms / 500 ms | The backoff between polls of an empty source. |
+| `InstanceSubscriptionTimeout` | 30 seconds | How long an instance subscription survives without a heartbeat. |
+| `DeadLetterMaxLength` | none | The most dead letters kept per dead-letter queue; the oldest are removed first. |
+| `DeadLetterRetention` | none | How long a dead letter is kept. |
+| `TimeProvider`, `LoggerFactory` | from DI | Without `UseRedis`, the system clock and no logging. |
+
+### Redis must not evict its keys
+
+Each source is a stream with a few sorted sets and hashes beside it. If Redis evicts one, its messages are lost, and an ordered group can be left waiting on a message that no longer exists.
+
+- Use `maxmemory-policy noeviction`, or a Redis that holds only messaging data. Under the `volatile-*` policies, instance subscriptions and deduplication ids go first, because they have expiry times. Under `allkeys-*`, any key can go, including a whole queue.
+- The transport logs a warning when it starts if a primary has a `maxmemory` limit and another policy.
+- When it finds that a stream or a delayed message was lost, it releases the groups that waited on it and logs a warning. The lost messages themselves can't be recovered.
+- Redis replicates asynchronously, so a failover can lose a send or settle that was already acknowledged.
+
+### Memory and retention
+
+Everything is kept in Redis memory, which is often shared with the app's cache and locks.
+
+- **Fan-out:** publishing to a topic copies the full message into every durable and instance subscription of that topic.
+- **Settled messages** are removed at once.
+- **Dead letters** are kept until they are replayed or purged, unless you set `DeadLetterMaxLength` or `DeadLetterRetention`. Expired dead letters are removed when another message is dead-lettered into the same queue, or when the queue is read.
+- **Durable subscriptions** stay on their topic, and keep getting a copy of every publish, until you delete them with `IMessageAdmin.DeleteAsync`. Delete the subscription of a service you rename or retire. The transport logs a warning when a subscription has 1,000 or more messages and none sent to it in the last hour has been received.
+- **Instance subscriptions** are removed when their receiver is disposed. Publishers remove those that miss their heartbeats for `InstanceSubscriptionTimeout`, for example after a crash. A process that stalls longer than that misses what was published meanwhile, and logs a warning when its subscription is restored.
+
+### Latency and cost
+
+- Receivers poll their sources with Lua scripts on the shared multiplexer; there are no blocking reads.
+- A receive that drains its source, while its receiver has room for more messages, registers the receiver as idle. Each message then made available, by a send, a publish, an abandon without a delay, the next message of a group or a disposed receiver's messages, wakes one idle receiver in any process, the one most recently busy, over that receiver's own pub/sub channel (`<Prefix>:{q:<queue>}:wake:<consumer>`, and so on). Delivery normally takes about a millisecond, and the other idle receivers don't poll. A delayed send wakes one idle receiver, so it learns when the message is due; a retry wakes none, as the receiver that abandoned it learns that.
+- Wake-ups use sharded pub/sub (`SPUBLISH`) on Redis Cluster 7 or later, so only the source's shard sends them, and classic `PUBLISH` on a single Redis, Sentinel or an older cluster. They are published by the scripts themselves, so they cost no round trip.
+- Polling backs off from `MinPollInterval` to `MaxPollInterval`, and is the fallback when a wake-up is lost, for example while a connection reconnects, or goes to a receiver that crashed. Each idle receiver runs about one script per `MaxPollInterval`.
+- Publishing to a topic runs one script on the topic's slot that copies the message into every instance subscription, plus one script per durable subscription. With many instance subscriptions on a busy topic, that slot's shard does all of their work: their copies, receives and settles.
+- Completes that a receiver's handlers call while one of its completes is running are sent together, as one script, when it ends.
+- One receive returns at most about 8 MiB, but always at least one message. Large messages still block Redis while scripts copy them, so store large payloads elsewhere and send a reference.
+
+### Monitoring
+
+`GetStatsAsync` counts a queue's or durable subscription's messages with one script on its cluster slot, a handful of O(1) and O(log n) commands, so it is cheap to call every few seconds for every source. The counts are read at one moment and do not lag:
+
+| Count | On Redis |
+|---|---|
+| `Queued` | Stream entries the consumer group has not read, plus messages held behind an unsettled message of their group, abandoned messages, messages whose lease lapsed and delayed messages that are due, until a receiver takes them. |
+| `Delayed` | Messages sent with a later delivery time, and retries waiting out their delay. |
+| `InFlight` | Messages leased to a receiver whose lease has not lapsed. |
+| `DeadLettered` | The length of the source's dead-letter stream, once dead letters past `DeadLetterRetention` are removed. |
+
+- No count is null. Instance subscriptions are not counted (`GetStatsAsync` returns null), since each belongs to one receiver.
+- A source that does not exist counts as empty, and nothing is created.
+- Unread entries are the group's `lag` where Redis reports it. Redis 6.2 does not, and Redis 7+ cannot after some deletes, such as completing the newest message read while an older one is pending. The transport then counts the stream's entries less the group's pending ones, which is the same number, because a settle acknowledges and deletes its entry together.
+
+## Redis job store
+
+`RedisJobStore` stores Foundatio durable jobs (`IJobClient`, `AddJob`, `AddCronJob`) in Redis, so every instance shares them and they survive restarts. Register it with `UseRedis`:
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioJobs(j => j
+    .UseRedis(new RedisJobStoreOptions { Prefix = "myapp:jobs" })
+    .AddJob<GenerateReportJob>());
+```
+
+It has the same overloads as the transport: `UseRedis()`, `UseRedis(sp => options)` and `UseRedis(connection, options)`.
+
+| Option | Default | |
+|---|---|---|
+| `Prefix` | `foundatio:jobs` | Prepended to every key and used as the store's hash tag, so on a cluster the whole store lives on one slot. Cannot contain `{` or `}`. |
+| `Database` | `-1` | The database to use; `-1` is the connection's default. |
+
+Every process that enqueues or runs the same jobs must use the same `Prefix` and `Database`.
+
 ## 📦 Provider Implementations
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |

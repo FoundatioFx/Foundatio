@@ -10,6 +10,7 @@ Foundatio provides Azure implementations for storage, queuing, and messaging usi
 | `AzureStorageQueue<T>` | `IQueue<T>` | Foundatio.AzureStorage |
 | `AzureServiceBusQueue<T>` | `IQueue<T>` | Foundatio.AzureServiceBus |
 | `AzureServiceBusMessageBus` | `IMessageBus` | Foundatio.AzureServiceBus |
+| `AzureServiceBusMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.AzureServiceBus |
 
 ## Installation
 
@@ -130,9 +131,37 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 
 For additional options, see [AzureServiceBusMessageBusOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBusOptions.cs).
 
+## Messages and Events
+
+`AzureServiceBusMessageTransport` runs [Messages and Events](/guide/messages) on Service Bus queues, topics and subscriptions. Register it with `UseAzureServiceBus`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureServiceBus(new AzureServiceBusMessageTransportOptions { ConnectionString = connectionString, Prefix = "prod-" })
+    .AddConsumer<SendReceiptHandler>());
+```
+
+- Queues are named `{Prefix}queue.{name}` and topics `{Prefix}topic.{name}`, since Service Bus queues and topics share one namespace; durable subscriptions are named after the service, and instance subscriptions are created per receiver and removed by Service Bus once idle.
+- Leases are peek-lock locks with the entity's lock duration (`LockDuration`, 1 minute by default), renewed by Foundatio. Delays are scheduled messages; a delayed retry is a scheduled copy.
+- `RequiresSession = true` orders groups with sessions; `RequiresDuplicateDetection = true` drops repeated deduplication ids.
+- `CreateEntities = false` uses entities created ahead of time, for applications without Manage rights.
+
+See [Using Azure Service Bus](/guide/messages#using-azure-service-bus) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for the mapping, sessions, sizes and limits.
+
+### Monitoring Messages
+
+The transport's `GetStatsAsync` reads the queue's or subscription's runtime properties, one administration call.
+
+- **Queued**: `ActiveMessageCount`. Service Bus counts locked messages as active, so messages being handled count here.
+- **Delayed**: a queue's `ScheduledMessageCount`, delayed sends and retries. Null for subscriptions, whose scheduled messages wait in the topic.
+- **InFlight**: null.
+- **DeadLettered**: `DeadLetterMessageCount`.
+
+Instance subscriptions are not counted (null), and a source that does not exist counts as empty. The emulator reports zero for every count, so on it the transport returns null.
+
 ## Running the Tests
 
-The Azure Service Bus provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.AzureServiceBus`, with its tests in `tests/Foundatio.AzureServiceBus.Tests`. The tests run against the [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) at `localhost:5672`, with the queues and topics defined in `build/servicebus-emulator/Config.json`. Start it from the repository root and run them:
+The Azure Service Bus provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.AzureServiceBus`, with its tests in `tests/Foundatio.AzureServiceBus.Tests`. The tests run against the [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) at `localhost:5672`, with the queues and topics defined in `build/servicebus-emulator/Config.json`. The message transport tests create their own entities through the emulator's management API on `localhost:5300` and delete them when each test ends, since the emulator holds at most 50 queues. Start it from the repository root and run them:
 
 ```bash
 docker compose up -d servicebus-emulator

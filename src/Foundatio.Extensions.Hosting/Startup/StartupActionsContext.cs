@@ -9,6 +9,7 @@ namespace Foundatio.Extensions.Hosting.Startup;
 public class StartupActionsContext
 {
     private readonly ILogger _logger;
+    private readonly TaskCompletionSource<RunStartupActionsResult> _completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _waitCount = 0;
 
     public StartupActionsContext(ILogger<StartupActionsContext> logger)
@@ -25,7 +26,11 @@ public class StartupActionsContext
 
         IsStartupComplete = true;
         Result = result;
+        _completed.TrySetResult(result);
     }
+
+    /// <summary>Completes with the result once startup actions have run, however long they take.</summary>
+    internal Task<RunStartupActionsResult> Completion => _completed.Task;
 
     public async Task<RunStartupActionsResult> WaitForStartupAsync(CancellationToken cancellationToken, TimeSpan? maxTimeToWait = null)
     {

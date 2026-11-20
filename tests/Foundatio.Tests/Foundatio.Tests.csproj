@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Exceptionless.RandomData" Version="2.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.15" />

@@ -115,12 +115,38 @@ jobs:
       if: hashFiles('docker-compose.yml') != ''
       run: ${{ inputs.compose-command }}
     - name: Run Tests
+      env:
+        DOTNET_DbgEnableMiniDump: '1'
+        DOTNET_DbgMiniDumpType: '1'
+        DOTNET_DbgMiniDumpName: ${{ runner.temp }}/crash/%e.%p.dmp
+        DOTNET_EnableCrashReport: '1'
       run: |
+        mkdir -p "${{ runner.temp }}/crash"
+        sudo sysctl -q -w kernel.core_pattern="${{ runner.temp }}/crash/core.%e.%p" || true
+        ulimit -c unlimited || true
         if [ "${{ inputs.new-test-runner }}" = "true" ]; then
           dotnet test --solution ${{ steps.slnx.outputs.file }} --configuration Release --no-build --report-github
         else
           dotnet test ${{ steps.slnx.outputs.file }} --configuration Release --no-build --logger GitHubActions
         fi
+    - name: Show Test Host Crash Reports
+      if: failure()
+      run: |
+        for report in "${{ runner.temp }}"/crash/*.crashreport.json; do
+          [ -f "$report" ] || continue
+          echo "::group::$(basename "$report")"
+          jq -r '(.payload.threads | sort_by(.crashed != "true"))[] | "--- thread \(.native_thread_id) crashed=\(.crashed)", (.stack_frames[] | if .is_managed == "true" then "  \(.filename // "?")!\(.method_name // "?")" else "  \(.native_module // "?")!\(.unmanaged_name // .native_image_offset)" end)' "$report" || cat "$report"
+          echo "::endgroup::"
+        done
+        sudo dmesg | grep -iE "segfault|traps:|general protection" | tail -20 || true
+        for core in "${{ runner.temp }}"/crash/core.*; do
+          [ -f "$core" ] || continue
+          command -v gdb > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb > /dev/null; }
+          exe=$(file -b "$core" | sed -n "s/.*execfn: '\([^']*\)'.*/\1/p")
+          echo "::group::$(basename "$core") ($exe)"
+          gdb -batch -ex "info sharedlibrary" -ex "bt 40" -ex "info threads" -ex "thread apply all bt 12" "$exe" "$core" 2>&1 | grep -v "^warning:" || true
+          echo "::endgroup::"
+        done
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack ${{ steps.slnx.outputs.file }} --configuration Release --no-build
