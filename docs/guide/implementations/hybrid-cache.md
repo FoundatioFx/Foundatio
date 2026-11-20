@@ -152,6 +152,8 @@ L2 is the source of truth. An in-flight read can return the value it fetched bef
 
 Other clients can serve an existing local value until their invalidation arrives. Set a TTL to bound how long a missed message can leave an entry stale.
 
+Peer invalidations interpret a trailing `*` as a prefix. Writing the literal key `account:*` also evicts a peer's local `account:42` entry. Its next read reloads the value from L2.
+
 On a cold scalar or unpaged list read, L2 reports the same null TTL for a persistent key and a missing key. The client checks existence in that case so an entry that expired during the read cannot acquire a permanent local copy. Bulk reads get existence and TTL from the same expiration lookup.
 
 For a list read from L2, `GetListAsync` supplies the members and `GetExpirationAsync` supplies the whole key's TTL. If the members expire at different times, L1 can continue returning an expired member until the cached list expires or is invalidated. A list containing a permanent member can retain that stale value indefinitely.

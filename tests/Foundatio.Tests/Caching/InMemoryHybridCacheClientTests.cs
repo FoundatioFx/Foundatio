@@ -187,9 +187,10 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task GetAsync_WhenWriteOverlapsReadThrough_DoesNotCacheStaleValue(bool usePeer)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task GetAsync_WhenWriteOverlapsReadThrough_DoesNotCacheStaleValue(bool usePeer, bool refreshFails)
     {
         // Arrange
         const string key = "read-through-race";
@@ -198,7 +199,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         using var peer = CreateCache(distributedCache: distributed);
         var writer = usePeer ? peer : cache;
         await distributed.SetAsync(key, 1);
-        distributed.AfterNextRead(async () => Assert.True(await writer.SetAsync(key, 2)));
+        distributed.AfterNextRead(async () =>
+        {
+            Assert.True(await writer.SetAsync(key, 2));
+            if (refreshFails)
+                distributed.AfterNextRead(() => Task.FromException(new CacheException("Refresh failed")));
+        });
 
         // Act
         var staleRead = await cache.GetAsync<int>(key).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
@@ -209,7 +215,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.Equal(2, nextRead.Value);
         Assert.Equal(2, (await distributed.GetAsync<int>(key)).Value);
         if (usePeer)
-            Assert.Equal(1, cache.LocalCacheHits);
+            Assert.Equal(refreshFails ? 0 : 1, cache.LocalCacheHits);
     }
 
     [Fact]
@@ -384,6 +390,24 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
         // Act
         long added = await cache.ListAddAsync(key, [1]).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        // Assert
+        Assert.Equal(1, added);
+        Assert.Equal([1, 2], (await cache.GetListAsync<int>(key)).Value.Order());
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WhenLocalEntryIsEvictedDuringWrite_NextReadReturnsAllMembers()
+    {
+        // Arrange
+        const string key = "evicted-list";
+        using var distributed = new DelayedCache(Log);
+        using var cache = CreateCache(distributedCache: distributed);
+        Assert.Equal(1, await cache.ListAddAsync(key, [1]));
+        distributed.AfterNextWrite(async () => Assert.True(await cache.LocalCache.RemoveAsync(key)));
+
+        // Act
+        long added = await cache.ListAddAsync(key, [2]);
 
         // Assert
         Assert.Equal(1, added);
@@ -606,7 +630,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         {
             await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => write);
             Assert.False((await cache.LocalCache.GetListAsync<string>(key)).HasValue);
-            rejectLocalWrites = false;
         }
         else
         {
@@ -915,6 +938,48 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.Equal("new", (await distributed.GetAsync<string>(key)).Value);
         Assert.Equal("new", (await cache.GetAsync<string>(key)).Value);
         Assert.Equal("new", (await peer.GetAsync<string>(key)).Value);
+    }
+
+    [Fact]
+    public async Task SetAllAsync_WhenPeerWritesDuringLocalUpdate_ReadsLatestValue()
+    {
+        // Arrange
+        var sizing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var resume = new ManualResetEventSlim();
+        using var cache = CreateCache(SizeLimitedOptions(value =>
+        {
+            if (value is 1)
+            {
+                sizing.TrySetResult();
+                if (!resume.Wait(TimeSpan.FromSeconds(10), TestCancellationToken))
+                    throw new TimeoutException("Timed out waiting for the peer write");
+            }
+
+            return 1;
+        }));
+
+        using var peer = CreateCache();
+        var values = new Dictionary<string, int> { ["changed"] = 1, ["stable"] = 3 };
+
+        // Act
+        var batch = Task.Run(() => cache.SetAllAsync(values), TestCancellationToken);
+        int count;
+        try
+        {
+            await sizing.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+            Assert.True(await peer.SetAsync("changed", 2).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+        }
+        finally
+        {
+            resume.Set();
+            count = await batch.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        }
+
+        // Assert
+        Assert.Equal(2, count);
+        var current = await cache.GetAllAsync<int>(values.Keys);
+        Assert.Equal(2, current["changed"].Value);
+        Assert.Equal(3, current["stable"].Value);
     }
 
     [Fact]
@@ -1259,7 +1324,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         {
             await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => write);
             Assert.False((await cache.LocalCache.GetAsync<long>(key)).HasValue);
-            rejectLocalWrites = false;
         }
         else
         {
