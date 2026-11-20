@@ -150,7 +150,7 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
         catch (Exception ex) when (_renewalFailure is not null)
         {
-            // Preserve the provider failure if its diagnostics also throw.
+            // The renewal methods log provider errors. If the logger throws, keep its error on the trace and rethrow the provider exception below.
             Activity.Current?.AddException(ex);
         }
         finally
@@ -186,16 +186,22 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
         catch (Exception ex)
         {
+            CancellationTokenSource? cancellation = null;
             lock (_renewalLock)
             {
-                if (_renewalFailure is not null)
+                if (_renewalFailure is null)
+                {
+                    _renewalFailure = ExceptionDispatchInfo.Capture(ex);
+                    cancellation = _cancellation;
+                }
+                else if (ReferenceEquals(_renewalFailure.SourceException, ex))
+                {
                     return;
-
-                _renewalFailure = ExceptionDispatchInfo.Capture(ex);
+                }
             }
 
             // Signal loss immediately so a slow cancellation callback cannot delay the renewal error log.
-            var callbacks = _cancellation?.CancelAsync() ?? Task.CompletedTask;
+            var callbacks = cancellation?.CancelAsync() ?? Task.CompletedTask;
             try
             {
                 LogRenewalFailure(ex, workItemLock);
