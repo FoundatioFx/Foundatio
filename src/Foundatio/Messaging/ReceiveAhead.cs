@@ -10,7 +10,8 @@ namespace Foundatio.Messaging;
 /// its handler slot (<c>s</c>) and how long a receive that returned everything it asked for took (<c>t</c>), the depth
 /// is what the handlers get through during one receive plus one batch, <c>min(⌈C·t/s⌉, b·R) + b</c>, at most
 /// <c>⌊C·H/s⌋</c> so that a buffered message waits about the horizon <c>H</c> at most. <c>H</c> is a second, or a
-/// quarter of the shortest lease seen when that is less, so a buffered message normally starts before its first renewal.
+/// quarter of the shortest lease a receive was granted, counted from when it started, when that is less, so a buffered
+/// message normally starts before its first renewal.
 /// The depth is zero until both times have been measured, and while a message keeps its slot longer than <c>H</c>, so
 /// slow handlers do not hoard messages.
 /// </summary>
@@ -66,8 +67,9 @@ internal sealed class ReceiveAhead
     public bool RecordReceiveTime(long ticks) => Record(ref _receiveTicks, ticks, ReceiveTimeWeight);
 
     /// <summary>
-    /// Records a lease the broker granted (from <see cref="IncomingMessage.LeaseExpiresAt"/>). The horizon follows the
-    /// shortest one seen. Returns true when the depth rose.
+    /// Records a lease the broker granted (from <see cref="IncomingMessage.LeaseExpiresAt"/>), counted from when its
+    /// receive started, so a long poll's wait does not shorten it. The horizon follows the shortest one seen. Returns true
+    /// when the depth rose.
     /// </summary>
     public bool RecordLease(TimeSpan lease)
     {

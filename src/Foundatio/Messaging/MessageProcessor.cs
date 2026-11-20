@@ -509,7 +509,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     continue;
                 }
 
-                var deliveries = CreateDeliveries(receiver, messages);
+                var deliveries = CreateDeliveries(receiver, messages, started);
                 _renewer.Track(deliveries);
                 Interlocked.Add(ref _inFlight, deliveries.Length);
                 if (!holdsSlots)
@@ -800,19 +800,23 @@ internal sealed class MessageProcessor : IAsyncDisposable
             OnDepthRaised();
     }
 
-    /// <summary>Wraps received messages for reading ahead, and records the leases a broker that decides them granted.</summary>
-    private MessageDelivery[] CreateDeliveries(IMessageReceiver receiver, IReadOnlyList<IncomingMessage> messages)
+    /// <summary>
+    /// Wraps received messages for reading ahead, and records the leases a broker that decides them granted, counted from
+    /// when the receive began, at timestamp <paramref name="started"/>: a broker may count a lease from the request, so
+    /// counting from now would lose however long a long poll waited.
+    /// </summary>
+    private MessageDelivery[] CreateDeliveries(IMessageReceiver receiver, IReadOnlyList<IncomingMessage> messages, long started)
     {
         var deliveries = new MessageDelivery[messages.Count];
-        DateTimeOffset? now = null;
+        DateTimeOffset? receiveStartedAt = null;
         for (int i = 0; i < messages.Count; i++)
         {
             var message = messages[i];
             deliveries[i] = new MessageDelivery(receiver, message, _renewer, _holds, _settlements, _timeProvider);
             if (message.LeaseExpiresAt is { } expiresAt)
             {
-                now ??= _timeProvider.GetUtcNow();
-                if (_ahead!.RecordLease(expiresAt - now.Value))
+                receiveStartedAt ??= _timeProvider.GetUtcNow() - _timeProvider.GetElapsedTime(started);
+                if (_ahead!.RecordLease(expiresAt - receiveStartedAt.Value))
                     OnDepthRaised();
             }
         }

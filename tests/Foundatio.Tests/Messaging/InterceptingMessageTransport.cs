@@ -26,6 +26,15 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
     /// </summary>
     public TimeSpan? BrokerLeaseDuration { get; init; }
 
+    /// <summary>
+    /// When true, <see cref="BrokerLeaseDuration"/> counts from when the receive or renewal was requested, as Service Bus
+    /// counts a lock whose duration it knows, so a message that a long poll waited for reports less than the whole lease.
+    /// </summary>
+    public bool BrokerLeaseFromRequest { get; init; }
+
+    /// <summary>The clock the reported leases are on.</summary>
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
     /// <summary>How long each receive takes before it reaches the inner receiver, like a broker round trip.</summary>
     public TimeSpan ReceiveDelay { get; init; }
 
@@ -121,6 +130,7 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
         public async Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default)
         {
+            var requestedAt = transport.TimeProvider.GetUtcNow();
             Interlocked.Increment(ref transport._receiveCalls);
             RaiseMax(ref transport._maxReceivesInFlight, Interlocked.Increment(ref transport._receivesInFlight));
 
@@ -137,7 +147,7 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
                 var wait = transport.MaxReceiveWait is { } maxReceiveWait && maxReceiveWait < maxWait ? maxReceiveWait : maxWait;
                 var messages = await inner.ReceiveAsync(maxMessages, wait, linked.Token);
                 foreach (var message in messages)
-                    ReportBrokerLease(message);
+                    ReportBrokerLease(message, requestedAt);
 
                 RaiseMax(ref transport._maxUnsettled, Interlocked.Add(ref transport._unsettled, messages.Count));
                 return messages;
@@ -181,8 +191,9 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
             if (transport.OnRenew is { } onRenew)
                 await onRenew(message, cancellationToken);
 
+            var requestedAt = transport.TimeProvider.GetUtcNow();
             await inner.RenewAsync(message, cancellationToken);
-            ReportBrokerLease(message);
+            ReportBrokerLease(message, requestedAt);
         }
 
         private async Task SettlingAsync(string operation, IncomingMessage message)
@@ -200,10 +211,10 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
             }
         }
 
-        private void ReportBrokerLease(IncomingMessage message)
+        private void ReportBrokerLease(IncomingMessage message, DateTimeOffset requestedAt)
         {
             if (transport.BrokerLeaseDuration is { } brokerLease)
-                message.LeaseExpiresAt = DateTimeOffset.UtcNow.Add(brokerLease);
+                message.LeaseExpiresAt = (transport.BrokerLeaseFromRequest ? requestedAt : transport.TimeProvider.GetUtcNow()).Add(brokerLease);
         }
 
         public ValueTask DisposeAsync()

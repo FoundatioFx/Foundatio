@@ -1002,6 +1002,45 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Receive_WhenALongPollOutlastsALeaseCountedFromTheRequest_KeepsReadingAhead()
+    {
+        var time = new FakeTimeProvider();
+        var lockDuration = TimeSpan.FromSeconds(30);
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 2, maxConcurrentReceives: 1))
+        {
+            BrokerLeaseDuration = lockDuration,
+            BrokerLeaseFromRequest = true,
+            TimeProvider = time
+        };
+        await PrefillAsync(WarmUp(2));
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int handled = 0, running = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, _, _) =>
+        {
+            if (message.Id >= 0)
+            {
+                Interlocked.Increment(ref running);
+                await gate.Task;
+            }
+
+            Interlocked.Increment(ref handled);
+        }, new HandlerOptions { MaxConcurrency = 2 }), s => s.AddSingleton<TimeProvider>(time));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 2 && processor.InFlight == 0 && transport.ReceivesInFlight == 1, TimeSpan.FromSeconds(5));
+
+        // The idle long poll outlasts the lock before a message arrives, so the message reports a lease that is already over.
+        time.Advance(lockDuration + TimeSpan.FromSeconds(1));
+        await consumer.Client.SendAsync(new RenewedCommand(-3), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 3 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, 4).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref running) == 2 && processor.GetStatus().Buffered > 0, TimeSpan.FromSeconds(5));
+
+        gate.SetResult();
+        await WaitForAsync(() => Volatile.Read(ref handled) == 7 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task OrderedGroupBatch_WhenBuffered_HandlesEachGroupInOrderOneAtATime()
     {
         const int maxConcurrency = 4;
