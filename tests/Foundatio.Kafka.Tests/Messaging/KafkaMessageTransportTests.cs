@@ -1116,6 +1116,18 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         var warning = Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("one partition", StringComparison.Ordinal));
         Assert.Contains(single.Names.Queue(grouped), warning.Message, StringComparison.Ordinal);
         Assert.Contains("busy group", warning.Message, StringComparison.Ordinal);
+
+        // A transport that does not create its topics looks one up on the first grouped send to it.
+        var unmanaged = Track(new KafkaMessageTransport(CreateOptions() with { CreateTopics = false, DelayedDelivery = false }));
+        string provisioned = NewName("one-provisioned");
+        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build())
+            await admin.CreateTopicsAsync([new TopicSpecification { Name = unmanaged.Names.Queue(provisioned), NumPartitions = 1, ReplicationFactor = 1 }]);
+
+        await unmanaged.SendAsync(MessageDestination.Queue(provisioned), [Message("e") with { GroupKey = "customer-1" }], TestCancellationToken);
+        await unmanaged.SendAsync(MessageDestination.Queue(spread), [Message("f") with { GroupKey = "customer-1" }], TestCancellationToken);
+        await WaitForAsync(() => Log.LogEntries.Any(e => e.LogLevel == LogLevel.Warning && e.Message.Contains(unmanaged.Names.Queue(provisioned), StringComparison.Ordinal)));
+        await unmanaged.SendAsync(MessageDestination.Queue(provisioned), [Message("g") with { GroupKey = "customer-2" }], TestCancellationToken);
+        Assert.Equal(2, Log.LogEntries.Count(e => e.LogLevel == LogLevel.Warning && e.Message.Contains("one partition", StringComparison.Ordinal)));
     }
 
     [Fact]

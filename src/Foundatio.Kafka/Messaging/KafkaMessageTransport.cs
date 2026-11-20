@@ -67,6 +67,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
     /// <summary>The topics found to have one partition, and whether a grouped send to them was warned about.</summary>
     private readonly ConcurrentDictionary<string, bool> _onePartitionTopics = new(StringComparer.Ordinal);
+
+    /// <summary>The topics the transport does not create whose partitions a grouped send looked up, or is looking up.</summary>
+    private readonly ConcurrentDictionary<string, byte> _partitionLookups = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<KafkaMessageReceiver, byte> _receivers = new();
     private readonly object _forwarderLock = new();
     private Task<KafkaDelayForwarder>? _forwarder;
@@ -140,8 +143,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// destination when due; delayed messages with one go to the destination at once, and receivers hold them (and the
     /// group's later messages) until they are due. A receiver holds a bounded number of them in memory and stops
     /// reading their partitions past that, so long delays are better sent without a group key. A message to one
-    /// subscription goes to that subscription's own topic, which only it reads. The first grouped send to a topic this
-    /// transport created or found with one partition logs a warning, since all its groups then share one partition.
+    /// subscription goes to that subscription's own topic, which only it reads. The first grouped send to a topic with
+    /// one partition logs a warning, since all its groups then share one partition; when the transport does not create
+    /// topics, it looks the topic up in the background on that send.
     /// </remarks>
     /// <exception cref="MessageTooLargeException">A message is larger than <see cref="TransportCapabilities.MaxMessageSize"/>.</exception>
     public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
@@ -206,8 +210,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
 
         await EnsureTopicsAsync([topic]).AnyContext();
-        if (grouped && _onePartitionTopics.TryUpdate(topic, true, false))
-            Logger.LogWarning("Grouped messages are sent to {Topic}, which has one partition: one receiver of each queue or subscription reads all its groups, and a busy group can then delay every other group. Create it with more partitions (KafkaMessageTransportOptions.Partitions)", topic);
+        if (grouped)
+            WarnIfOnePartition(topic);
 
         if (delayed)
             await EnsureForwarderAsync(cancellationToken).AnyContext();
@@ -327,6 +331,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
         {
             _topics.TryRemove(topic, out _);
             _onePartitionTopics.TryRemove(topic, out _);
+            _partitionLookups.TryRemove(topic, out _);
         }
 
         try
@@ -834,6 +839,44 @@ public sealed class KafkaMessageTransport : IMessageTransport
         return ex.Error.Code is ErrorCode.MsgSizeTooLarge or ErrorCode.InvalidMsgSize
             ? new MessageTooLargeException($"Kafka rejected a message to {topic} as too large: {ex.Error.Reason}", ex)
             : new MessageBusException($"Could not send to {topic}: {ex.Error.Reason}", ex);
+    }
+
+    /// <summary>
+    /// Warns once that grouped messages are sent to a topic with one partition. A topic the transport creates was looked
+    /// up when it was created; one it does not create is looked up in the background, once it exists, without
+    /// delaying the send.
+    /// </summary>
+    private void WarnIfOnePartition(string topic)
+    {
+        if (!Options.CreateTopics && _partitionLookups.TryAdd(topic, 0))
+        {
+            _ = LookUpPartitionsAsync(topic);
+            return;
+        }
+
+        if (_onePartitionTopics.TryUpdate(topic, true, false))
+            Logger.LogWarning("Grouped messages are sent to {Topic}, which has one partition: one receiver of each queue or subscription reads all its groups, and a busy group can then delay every other group. Create it with more partitions (KafkaMessageTransportOptions.Partitions)", topic);
+    }
+
+    private async Task LookUpPartitionsAsync(string topic)
+    {
+        try
+        {
+            var metadata = await Task.Run(() => _admin.GetMetadata(topic, AdminTimeout)).AnyContext();
+            if (metadata.Topics.FirstOrDefault(t => t.Topic == topic) is not { Error.IsError: false, Partitions.Count: > 0 } found)
+            {
+                _partitionLookups.TryRemove(topic, out _);
+                return;
+            }
+
+            if (found.Partitions.Count == 1 && _onePartitionTopics.TryAdd(topic, false))
+                WarnIfOnePartition(topic);
+        }
+        catch (Exception ex)
+        {
+            _partitionLookups.TryRemove(topic, out _);
+            Logger.LogDebug(ex, "Could not look up the partitions of {Topic}", topic);
+        }
     }
 
     private async Task EnsureTopicsAsync(IReadOnlyList<string> names)
