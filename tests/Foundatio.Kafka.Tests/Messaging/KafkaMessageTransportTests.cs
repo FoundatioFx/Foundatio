@@ -1021,6 +1021,55 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Receive_PastTheReceiversSkippedTotalLimit_StopsSkippingOnEveryPartitionAndPausesThoseWithSkippedRecords()
+    {
+        Log.MaxLogEntriesToStore = 10_000;
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 2,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverGroupHeldLimit = 5,
+            ReceiverSkippedTotalLimit = 30
+        }));
+        var source = MessageSource.Queue(NewName("skip-total"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // A busy group on each partition.
+        await transport.SendAsync(destination, Enumerable.Range(0, 20).Select(i => Message("probe", $"probe-{i}") with { GroupKey = $"key-{i}" }).ToList(), TestCancellationToken);
+        var probes = await ReceiveAsync(receiver, 20);
+        foreach (var probe in probes)
+            await receiver.CompleteAsync(probe, TestCancellationToken);
+
+        string[] keys = [.. probes.GroupBy(m => ((KafkaIncomingMessage)m).Partition.TopicPartition.Partition.Value).Select(g => g.First().GroupKey!)];
+        Assert.Equal(2, keys.Length);
+        await transport.SendAsync(destination, keys.SelectMany(k => Enumerable.Range(0, 60).Select(i => Message($"{k}-{i}", $"{k}-{i}") with { GroupKey = k })).ToList(), TestCancellationToken);
+        IncomingMessage[] heads = [await ReceiveOneAsync(receiver), await ReceiveOneAsync(receiver)];
+        Assert.Equal(keys.Order(), heads.Select(m => m.GroupKey!).Order());
+
+        // Their first messages are being handled, so both groups skip, within their partitions' own limits, until the
+        // receiver has skipped 30 records on them together. It then pauses the partitions with skipped records, and a
+        // group that has not started skipping holds its records instead.
+        await WaitForAsync(() => receiver.SkippedTotal >= 30);
+        await WaitForAsync(() => receiver.PausedCount > 0 || receiver.SkippedCount > 32);
+        Assert.InRange(receiver.SkippedCount, 30, 32);
+        Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("on all its partitions", StringComparison.Ordinal));
+
+        // Once the groups are handled, the partitions are read again, and nothing is lost or reordered.
+        foreach (var head in heads)
+            await receiver.CompleteAsync(head, TestCancellationToken);
+
+        var received = heads.Select(m => m.MessageId).ToList();
+        received.AddRange(await DrainAsync(receiver, 118, TimeSpan.FromSeconds(60)));
+        foreach (string key in keys)
+            Assert.Equal(Enumerable.Range(0, 60).Select(i => $"{key}-{i}"), received.Where(id => id.StartsWith($"{key}-", StringComparison.Ordinal)));
+
+        await WaitForAsync(() => receiver.PausedCount == 0);
+        Assert.Equal(receiver.SkippedTotal, receiver.ReadAgainCount);
+    }
+
+    [Fact]
     public async Task Receive_WithSkippedRecordsDeletedFromKafka_DropsThemAndDeliversTheRest()
     {
         Log.MaxLogEntriesToStore = 10_000;

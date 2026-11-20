@@ -36,7 +36,8 @@ namespace Foundatio.Messaging.Transport;
 /// the group drains (<see cref="KafkaSkippedRecords"/>). A slow group then holds up neither its partition's other
 /// groups nor librdkafka's prefetch. A partition skips at most <see cref="KafkaMessageTransportOptions.ReceiverSkippedLimit"/>
 /// records, none of them further back than <see cref="KafkaMessageTransportOptions.ReceiverSkippedSpanLimit"/>
-/// offsets, which bounds what its next owner reads again after a crash.
+/// offsets, which bounds what its next owner reads again after a crash, and the receiver at most
+/// <see cref="KafkaMessageTransportOptions.ReceiverSkippedTotalLimit"/> on all its partitions together.
 /// </para>
 /// <para>
 /// A partition holding <see cref="KafkaMessageTransportOptions.ReceiverHeldLimit"/> records or
@@ -44,7 +45,7 @@ namespace Foundatio.Messaging.Transport;
 /// limits, stops the reading the same way until it is back within half of them. If it does not drain within the stop
 /// timeout, the partition is paused instead and the others are read on; it is then paused at once the next time. All
 /// partitions together holding <see cref="HeldBytesLimit"/> stop the reading the same way, and then pause every
-/// partition holding records.
+/// partition holding records; the receiver reaching its total skip limit does so for the partitions with skipped records.
 /// </para>
 /// <para>
 /// Records that wait for their delivery time (delayed messages with a group key, and records released with a delay)
@@ -85,6 +86,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private readonly int _heldLimit;
     private readonly int _groupHeldLimit;
     private readonly int _skippedLimit;
+    private readonly int _skippedTotalLimit;
     private readonly long _skippedSpanLimit;
     private readonly TimeSpan _heldStopTimeout;
     private readonly bool _ordered;
@@ -101,6 +103,9 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private readonly Dictionary<TopicPartition, KafkaPartitionState> _partitions = [];
     private readonly HashSet<TopicPartition> _paused = [];
     private readonly KafkaHeldBudget _heldBudget = new();
+
+    /// <summary>What the receiver does once it has skipped <see cref="KafkaMessageTransportOptions.ReceiverSkippedTotalLimit"/> records on all its partitions together.</summary>
+    private readonly KafkaHeldBudget _skippedBudget = new();
 
     /// <summary>The partitions whose held records stop the reading until they drain.</summary>
     private readonly HashSet<KafkaPartitionState> _heldStopped = [];
@@ -127,6 +132,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private bool _pauseAll;
     private bool _pauseTimed;
     private bool _pauseHeld;
+    private bool _pauseSkipped;
     private Exception? _failure;
     private int _pausedCount;
     private int _pauses;
@@ -149,6 +155,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         _heldLimit = Math.Max(1, transport.Options.ReceiverHeldLimit);
         _groupHeldLimit = Math.Max(2, transport.Options.ReceiverGroupHeldLimit);
         _skippedLimit = Math.Max(1, transport.Options.ReceiverSkippedLimit);
+        _skippedTotalLimit = Math.Max(1, transport.Options.ReceiverSkippedTotalLimit);
         _skippedSpanLimit = Math.Max(1, transport.Options.ReceiverSkippedSpanLimit);
         _heldStopTimeout = transport.Options.ReceiverHeldStopTimeout;
         _ordered = topology.Source.Kind != MessageSourceKind.DeadLetter;
@@ -570,18 +577,20 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             bool pauseAll = overfull || _pauseAll && bufferFull;
             bool pauseTimed = timedOver || _pauseTimed && !timedDrained;
             recheck = UpdateHeldBudgets();
-            full = bufferFull || _heldStopped.Count > 0 || _heldBudget.Stopped || _groupStopped.Count > 0;
+            full = bufferFull || _heldStopped.Count > 0 || _heldBudget.Stopped || _groupStopped.Count > 0 || _skippedBudget.Stopped;
             bool pauseHeld = _heldBudget.Paused;
-            if (pauseAll != _pauseAll || pauseTimed != _pauseTimed || pauseHeld != _pauseHeld || _pausesChanged)
+            bool pauseSkipped = _skippedBudget.Paused;
+            if (pauseAll != _pauseAll || pauseTimed != _pauseTimed || pauseHeld != _pauseHeld || pauseSkipped != _pauseSkipped || _pausesChanged)
             {
                 _pauseAll = pauseAll;
                 _pauseTimed = pauseTimed;
                 _pauseHeld = pauseHeld;
+                _pauseSkipped = pauseSkipped;
                 _pausesChanged = false;
                 paused = [];
                 foreach (var state in _partitions.Values)
                 {
-                    if (state.HeldBudget.Paused || pauseHeld && state.HeldCount > 0 || pauseTimed && state.TimedCount > 0)
+                    if (state.HeldBudget.Paused || pauseHeld && state.HeldCount > 0 || pauseTimed && state.TimedCount > 0 || pauseSkipped && state.Skipped.Count > 0)
                         paused.Add(state.TopicPartition);
                 }
             }
@@ -615,15 +624,21 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     }
 
     /// <summary>
-    /// Updates the budget of all held records, and acts on what stopped the reading for longer than the stop timeout: a
-    /// group's later records are skipped from then on, and a partition, or every partition holding records, is paused.
-    /// Returns how long until the next of them would be.
+    /// Updates the budgets of all held and all skipped records, and acts on what stopped the reading for longer than the
+    /// stop timeout: a group's later records are skipped from then on, and a partition, or every partition holding
+    /// records or with skipped records, is paused. Returns how long until the next of them would be.
     /// </summary>
     private TimeSpan UpdateHeldBudgets()
     {
         _heldBudget.Update(_heldBytes >= HeldBytesLimit, _heldBytes <= HeldBytesLimit / 2, _heldStopTimeout);
+        if (_skippedBudget.Update(_skippedCount >= _skippedTotalLimit, _skippedCount <= _skippedTotalLimit / 2, _heldStopTimeout) && (_skippedBudget.Stopped || _skippedBudget.Paused))
+        {
+            _logger.LogWarning("{Source} skipped {Count} records on all its partitions, as many as it may: no more groups start skipping, and it stops reading the partitions with skipped records until half of them are read again, which holds up those partitions' other groups. Spread busy groups over more partitions and receivers",
+                Source, _skippedCount);
+        }
+
         var recheck = KeepAliveInterval;
-        if (_heldStopped.Count == 0 && !_heldBudget.Stopped && _groupStopped.Count == 0)
+        if (_heldStopped.Count == 0 && !_heldBudget.Stopped && !_skippedBudget.Stopped && _groupStopped.Count == 0)
             return recheck;
 
         long now = Stopwatch.GetTimestamp();
@@ -650,6 +665,9 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
         if (_heldBudget.Stopped)
             recheck = Min(recheck, _heldBudget.PauseIfStoppedFor(_heldStopTimeout, now));
+
+        if (_skippedBudget.Stopped)
+            recheck = Min(recheck, _skippedBudget.PauseIfStoppedFor(_heldStopTimeout, now));
 
         List<KafkaPartitionState>? paused = null;
         foreach (var state in _heldStopped)
@@ -816,8 +834,9 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     /// <summary>
     /// Whether a record just read is left unfinished in Kafka instead of held: its group has skipped records on the
     /// partition already, so it stays in order behind them; or the group holds its budget, did not drain within the
-    /// stop timeout, and the partition is within its skip limits. A record with a delivery count kept for it does not
-    /// start a group skipping, and neither does a partition whose state is loading, whose groups cannot drain yet.
+    /// stop timeout, and the partition and the receiver are within their skip limits. A record with a delivery count
+    /// kept for it does not start a group skipping, and neither does a partition whose state is loading, whose groups
+    /// cannot drain yet.
     /// </summary>
     private bool ShouldSkip(KafkaRecord record, KafkaPartitionState state, bool mayStart)
     {
@@ -827,7 +846,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         if (state.Skipped.Contains(key))
             return true;
 
-        if (!mayStart || record.Released || state.Loading || IsSkipFull(state))
+        if (!mayStart || record.Released || state.Loading || IsSkipFull(state) || IsSkipTotalFull)
             return false;
 
         return _groups.TryGetValue(key, out var group) && group.Budget.Paused && group.Records.Count >= _groupHeldLimit;
@@ -896,14 +915,21 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     }
 
     /// <summary>
-    /// Whether a partition within its count limit may skip a record at <paramref name="offset"/>, which becomes its
-    /// oldest skipped record if it is older than those, and stay within its span limit.
+    /// Whether a partition within its count limit, of a receiver within its total limit, may skip a record at
+    /// <paramref name="offset"/>, which becomes its oldest skipped record if it is older than those, and stay within
+    /// its span limit.
     /// </summary>
     private bool MaySkipFrom(KafkaPartitionState state, long offset)
     {
         long lowest = state.Skipped.Count > 0 ? Math.Min(state.Skipped.LowestOffset, offset) : offset;
-        return state.Skipped.Count < _skippedLimit && state.NextOffset - lowest < _skippedSpanLimit;
+        return state.Skipped.Count < _skippedLimit && !IsSkipTotalFull && state.NextOffset - lowest < _skippedSpanLimit;
     }
+
+    /// <summary>
+    /// Whether the receiver has skipped as many records on all its partitions as it may, and has not read half of them
+    /// again since. No group starts skipping then, so only the partitions it pauses for them have skipped records.
+    /// </summary>
+    private bool IsSkipTotalFull => _skippedCount >= _skippedTotalLimit || _skippedBudget.Stopped || _skippedBudget.Paused;
 
     /// <summary>Whether a partition is back within half its skip limits.</summary>
     private bool IsSkipDrained(KafkaPartitionState state)

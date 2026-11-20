@@ -110,6 +110,13 @@ public sealed record KafkaMessageTransportOptions
     internal int ReceiverSkippedLimit { get; init; } = 10_000;
 
     /// <summary>
+    /// How many records a receiver skips on all its partitions together, about 16 MB of their message ids and offsets,
+    /// before no more groups start skipping and it stops reading the partitions with skipped records, then pauses them,
+    /// until half are read again.
+    /// </summary>
+    internal int ReceiverSkippedTotalLimit { get; init; } = 100_000;
+
+    /// <summary>
     /// How far behind a partition's last read offset its oldest skipped record may be, which is how much the
     /// partition's next owner reads again after a crash, before the receiver stops reading that partition until it is
     /// half as far.
