@@ -13,7 +13,6 @@ using Foundatio.Queues;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Xunit;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
@@ -57,34 +56,23 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
     [InlineData(0, 0)]
     [InlineData(1, 0)]
     [InlineData(1, 25)]
-    public async Task ProcessAsync_WhenAbandonmentLoggingThrows_PreservesDeadLetterOrRetry(int retries, int retryDelayMs)
+    public async Task ProcessAsync_WhenAbandonmentObserverThrows_PreservesDeadLetterOrRetry(int retries, int retryDelayMs)
     {
         // Arrange
-        IQueueEntry<WorkItemData>? entry = null;
-        var error = new InvalidOperationException("Log writer failed");
-        var logger = new Mock<ILogger>();
-        logger.Setup(l => l.Log(It.IsAny<LogLevel>(), It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()))
-            .Callback(new InvocationAction(_ =>
-            {
-                if (entry?.IsAbandoned == true)
-                    throw error;
-            }));
-
-        var factory = Mock.Of<ILoggerFactory>(f => f.CreateLogger(It.IsAny<string>()) == logger.Object);
-        using var queue = CreateQueue(retries: retries, loggerFactory: factory, retryDelay: TimeSpan.FromMilliseconds(retryDelayMs));
+        var error = new InvalidOperationException("Abandonment observer failed");
+        using var queue = CreateQueue(retries: retries, retryDelay: TimeSpan.FromMilliseconds(retryDelayMs));
+        using var observer = queue.Abandoned.AddHandler((_, _) => throw error);
         using var bus = CreateBus();
         var statuses = new ConcurrentQueue<int>();
         await bus.SubscribeAsync<WorkItemStatus>(s => statuses.Enqueue(s.Progress), TestCancellationToken);
         await queue.EnqueueAsync("item", true);
-        entry = await queue.DequeueAsync(TestCancellationToken);
+        var entry = await queue.DequeueAsync(TestCancellationToken);
         Assert.NotNull(entry);
-        string entryId = entry.Id;
 
         // Act
         var result = await new WorkItemJob(queue, bus, RejectItem(), Log).ProcessAsync(entry, TestCancellationToken);
 
         // Assert
-        entry = null;
         var stats = await queue.GetQueueStatsAsync();
         Assert.Same(error, result.Error);
         Assert.Equal(1, stats.Abandoned);
@@ -94,7 +82,7 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         {
             var retry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
             Assert.NotNull(retry);
-            Assert.Equal(entryId, retry.Id);
+            Assert.Equal(entry.Id, retry.Id);
             Assert.Equal(2, retry.Attempts);
             await retry.CompleteAsync();
         }
@@ -301,7 +289,7 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ProcessAsync_WhenReleaseFailsAfterHandlerError_LogsOriginalFailure(bool alreadyCompleted)
+    public async Task ProcessAsync_WhenReleaseFailsAfterHandlerError_PropagatesReleaseFailure(bool alreadyCompleted)
     {
         // Arrange
         using var queue = CreateQueue();
@@ -310,21 +298,18 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         var releaseError = new InvalidOperationException("Lock release failed");
         var lease = new Mock<ILock>();
         lease.Setup(l => l.ReleaseAsync()).ThrowsAsync(releaseError);
-        var handler = new Mock<IWorkItemHandler>();
-        handler.SetupGet(h => h.Log).Returns(_logger);
-        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(lease.Object);
-        var handlers = new WorkItemHandlers();
-        handlers.Register<string>(handler.Object);
         await queue.EnqueueAsync("item");
         var entry = await queue.DequeueAsync(TestCancellationToken);
         Assert.NotNull(entry);
-        handler.Setup(h => h.HandleItemAsync(It.IsAny<WorkItemContext>())).Returns(async () =>
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(new RenewingWorkItemHandler(lease.Object, async _ =>
         {
             if (alreadyCompleted)
                 await entry.CompleteAsync();
 
             throw handlerError;
-        });
+        }, _logger));
+
         var job = new WorkItemJob(queue, bus, handlers, Log);
 
         // Act
@@ -334,34 +319,26 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         Assert.Same(releaseError, error);
         Assert.Equal(alreadyCompleted, entry.IsCompleted);
         Assert.Equal(!alreadyCompleted, entry.IsAbandoned);
-        var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, handlerError));
-        Assert.Contains(entry.Id, diagnostic.Message, StringComparison.Ordinal);
-        Assert.Contains(releaseError.Message, diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ProcessAsync_WhenTerminalProgressAndItsLoggerFail_PreservesProcessingOutcome(bool releaseFails)
+    public async Task ProcessAsync_WhenTerminalProgressDeliveryFails_PreservesProcessingOutcome(bool releaseFails)
     {
         // Arrange
         using var queue = CreateQueue();
         using var bus = CreateBus();
         var releaseError = new InvalidOperationException("Lock release failed");
-        var logger = new Mock<ILogger>();
-        logger.Setup(l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()))
-            .Throws(new InvalidOperationException("Log writer failed"));
         var lease = new Mock<ILock>();
         lease.Setup(l => l.ReleaseAsync()).Returns(() =>
         {
             bus.Dispose();
             return releaseFails ? Task.FromException(releaseError) : Task.CompletedTask;
         });
-        var handler = new Mock<IWorkItemHandler>();
-        handler.SetupGet(h => h.Log).Returns(logger.Object);
-        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(lease.Object);
+
         var handlers = new WorkItemHandlers();
-        handlers.Register<string>(handler.Object);
+        handlers.Register<string>(new RenewingWorkItemHandler(lease.Object, _ => Task.CompletedTask, _logger));
         await queue.EnqueueAsync("item", true);
         var entry = await queue.DequeueAsync(TestCancellationToken);
         Assert.NotNull(entry);
@@ -374,7 +351,6 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
             Assert.True((await job.ProcessAsync(entry, TestCancellationToken)).IsSuccess);
 
         Assert.True(entry.IsCompleted);
-        logger.Verify(l => l.Log(LogLevel.Error, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -390,11 +366,11 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
 
     private InMemoryMessageBus CreateBus() => new(o => o.LoggerFactory(Log).Serializer(DefaultSerializer.Instance).ResiliencePolicyProvider(DefaultResiliencePolicyProvider.Instance));
 
-    private SettlementQueue CreateQueue(Failure? failure = null, string? prefix = null, int retries = 0, ILoggerFactory? loggerFactory = null, TimeSpan? retryDelay = null, TimeProvider? timeProvider = null)
+    private SettlementQueue CreateQueue(Failure? failure = null, string? prefix = null, int retries = 0, TimeSpan? retryDelay = null, TimeProvider? timeProvider = null)
     {
         var options = new InMemoryQueueOptions<WorkItemData>
         {
-            LoggerFactory = loggerFactory ?? Log,
+            LoggerFactory = Log,
             Serializer = DefaultSerializer.Instance,
             ResiliencePolicyProvider = DefaultResiliencePolicyProvider.Instance,
             MetricsPrefix = prefix,

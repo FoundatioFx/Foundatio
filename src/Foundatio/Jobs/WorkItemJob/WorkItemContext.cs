@@ -16,15 +16,18 @@ public class WorkItemContext
     /// directly to <paramref name="progressCallback"/> and renewal goes directly to <paramref name="workItemLock"/>.
     /// </summary>
     public WorkItemContext(object data, string jobId, ILock? workItemLock, CancellationToken cancellationToken, Func<int, string?, Task> progressCallback)
-        : this(data, jobId, workItemLock, cancellationToken)
+        : this(data, jobId, workItemLock, null, cancellationToken)
     {
         _progressCallback = progressCallback;
     }
 
-    internal WorkItemContext(object data, string jobId, ILock workItemLock, CancellationToken cancellationToken, WorkItemExecution execution)
-        : this(data, jobId, workItemLock, execution.GetHandlerToken(cancellationToken))
+    internal WorkItemContext(object data, string jobId, ILock? workItemLock, WorkItemExecution? execution, CancellationToken cancellationToken)
     {
+        Data = data;
+        JobId = jobId;
+        WorkItemLock = workItemLock;
         _execution = execution;
+        CancellationToken = execution?.GetHandlerToken(cancellationToken) ?? cancellationToken;
     }
 
     public object Data { get; private set; }
@@ -69,13 +72,5 @@ public class WorkItemContext
     public T? GetData<T>() where T : class
     {
         return Data as T;
-    }
-
-    private WorkItemContext(object data, string jobId, ILock? workItemLock, CancellationToken cancellationToken)
-    {
-        Data = data;
-        JobId = jobId;
-        WorkItemLock = workItemLock;
-        CancellationToken = cancellationToken;
     }
 }

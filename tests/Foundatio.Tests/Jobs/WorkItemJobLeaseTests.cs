@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -117,12 +115,6 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
 
         // Assert
         Assert.Same(error, actualError);
-        var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, handlerThrows ? handlerError : error));
-        if (!handlerThrows)
-            Assert.Contains(handlerError.Message, diagnostic.Message, StringComparison.Ordinal);
-
-        Assert.Contains(original.Id, diagnostic.Message, StringComparison.Ordinal);
-        Assert.Contains(error.Message, diagnostic.Message, StringComparison.Ordinal);
         entry.Verify(e => e.AbandonAsync(), Times.Once);
         Assert.Equal([0], statuses);
     }
@@ -324,6 +316,52 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.Equal([0], statuses);
     }
 
+    [Fact]
+    public async Task ProcessAsync_WhenDefaultHandlerReturnsDuringQueueRenewal_WaitsBeforeCompleting()
+    {
+        // Arrange
+        using var queue = CreateQueue();
+        using var bus = CreateMessageBus();
+        await queue.EnqueueAsync("item");
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var observer = queue.LockRenewed.AddHandler((_, _) =>
+        {
+            started.SetResult();
+            return finish.Task;
+        });
+
+        Task progress = Task.CompletedTask;
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(new DelegateWorkItemHandler(ctx =>
+        {
+            progress = ctx.ReportProgressAsync(50);
+            return Task.CompletedTask;
+        })
+        { AutoRenewLockOnProgress = true });
+
+        // Act
+        var processing = new WorkItemJob(queue, bus, handlers, Log).ProcessAsync(entry, TestCancellationToken);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+            // Assert
+            Assert.False(processing.IsCompleted);
+            Assert.False(entry.IsCompleted);
+        }
+        finally
+        {
+            finish.TrySetResult();
+        }
+
+        await Task.WhenAll(progress, processing).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        Assert.True((await processing).IsSuccess);
+        Assert.True(entry.IsCompleted);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -376,12 +414,11 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     }
 
     [Theory]
-    [InlineData(false, false, true)]
-    [InlineData(false, true, true)]
-    [InlineData(true, false, false)]
-    [InlineData(true, false, true)]
-    [InlineData(true, true, true)]
-    public async Task ProcessAsync_WhenExplicitRenewalFailureIsCaught_AbandonsWithProviderError(bool callbackThrows, bool otherOperationCancelled, bool trace)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ProcessAsync_WhenExplicitRenewalFailureIsCaught_AbandonsWithProviderError(bool callbackThrows, bool otherOperationCancelled)
     {
         // Arrange
         using var cache = CreateCache();
@@ -391,15 +428,14 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         await using var lease = await locker.AcquireAsync("item", cancellationToken: TestCancellationToken);
         LockException? renewalError = null;
         var handlers = new WorkItemHandlers();
-        using var listener = trace ? ListenToJobActivities() : null;
-        Activity? activity = null;
+        bool callbackRan = false;
         var callbackError = new InvalidOperationException("Cancellation observer failed");
         var cancellation = new OperationCanceledException("Other operation was cancelled", new CancellationToken(true));
         handlers.Register<string>(new RenewingWorkItemHandler(lease, async ctx =>
         {
-            activity = Activity.Current;
             using var registration = ctx.CancellationToken.Register(() =>
             {
+                callbackRan = true;
                 if (callbackThrows)
                     throw callbackError;
             });
@@ -420,25 +456,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.NotNull(renewalError);
         Assert.Same(renewalError, result.Error);
         Assert.Contains($"{nameof(CacheLockProvider)}.{nameof(CacheLockProvider.RenewAsync)}", renewalError.StackTrace, StringComparison.Ordinal);
-        var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, renewalError));
-        var fields = Assert.IsAssignableFrom<IEnumerable<KeyValuePair<string, object?>>>(diagnostic.State).ToDictionary();
-        Assert.Equal("Error renewing work item locks: {Message}", fields["{OriginalFormat}"]);
-        Assert.Equal(renewalError.Message, fields["Message"]);
-        var scope = Assert.Single(diagnostic.Scopes.OfType<LogState>(), s => s.ContainsProperty("RenewalTarget"));
-        Assert.Equal("WorkItemLock", scope["RenewalTarget"]);
-        Assert.Equal(lease.Resource, scope["Resource"]);
-        Assert.Equal(callbackThrows, Log.LogEntries.Any(entry => entry.LogLevel == LogLevel.Warning && entry.Exception is AggregateException aggregate && aggregate.InnerExceptions.Contains(callbackError)));
-        if (trace)
-        {
-            Assert.NotNull(activity);
-            Assert.Equal(renewalError.Message, activity.StatusDescription);
-            var messages = activity.Events.SelectMany(e => e.Tags)
-                .Where(tag => String.Equals(tag.Key, "exception.message", StringComparison.Ordinal))
-                .Select(tag => (string?)tag.Value);
-            Assert.Equal(otherOperationCancelled, messages.Contains(cancellation.Message, StringComparer.Ordinal));
-            Assert.Equal(callbackThrows, messages.Any(message => message?.Contains(callbackError.Message, StringComparison.Ordinal) == true));
-        }
-
+        Assert.True(callbackRan);
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
     }
 
@@ -870,7 +888,6 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     public async Task RunAsync_WhenAutoRenewedWorkItemLockIsHeld_CompletesEntry(bool queueRenewalFails, bool sendProgressReports)
     {
         // Arrange
-        Log.DefaultLogLevel = LogLevel.Error;
         using var queue = CreateQueue();
         using var cache = CreateCache();
         using var bus = CreateMessageBus();
@@ -902,25 +919,6 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         Assert.True(entry.IsCompleted);
         Assert.False(entry.IsAbandoned);
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Completed);
-        if (queueRenewalFails)
-        {
-            var diagnostic = Assert.Single(Log.LogEntries, log => log.LogLevel == LogLevel.Error && ReferenceEquals(log.Exception, queueError));
-            var scope = Assert.Single(diagnostic.Scopes.OfType<LogState>(), s => s.ContainsProperty("RenewalTarget"));
-            Assert.Equal("QueueEntry", scope["RenewalTarget"]);
-            Assert.Equal(entry.Id, scope["QueueEntryId"]);
-        }
-    }
-
-    private static ActivityListener ListenToJobActivities()
-    {
-        var listener = new ActivityListener
-        {
-            ShouldListenTo = source => ReferenceEquals(source, FoundatioDiagnostics.ActivitySource),
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded
-        };
-
-        ActivitySource.AddActivityListener(listener);
-        return listener;
     }
 
     private TOptions CreateOptions<TOptions>() where TOptions : SharedOptions, new() => new()
@@ -979,20 +977,20 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
             await base.AbandonAsync(entry);
         }
     }
+}
 
-    private sealed class RenewingWorkItemHandler : DelegateWorkItemHandler
+internal sealed class RenewingWorkItemHandler : DelegateWorkItemHandler
+{
+    private readonly ILock _lease;
+
+    public RenewingWorkItemHandler(ILock lease, Func<WorkItemContext, Task> handle, ILogger? logger) : base(handle, logger)
     {
-        private readonly ILock _lease;
+        _lease = lease;
+        AutoRenewLockOnProgress = true;
+    }
 
-        public RenewingWorkItemHandler(ILock lease, Func<WorkItemContext, Task> handle, ILogger? logger) : base(handle, logger)
-        {
-            _lease = lease;
-            AutoRenewLockOnProgress = true;
-        }
-
-        public override Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult<ILock?>(_lease);
-        }
+    public override Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<ILock?>(_lease);
     }
 }

@@ -133,7 +133,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
-            var context = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, execution);
+            var context = new WorkItemContext(workItemData, JobId, lockValue, execution, cancellationToken);
             await execution.RunHandlerAsync(context).AnyContext();
 
             if (queueEntry.IsAbandoned)
@@ -188,10 +188,12 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             {
                 if (queueEntry.Value.SendProgressReports && settledByJob)
                 {
-                    if (abandonAttempted)
-                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {processingResult.Error?.Message ?? processingResult.Message}").AnyContext();
-                    else
-                        await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
+                    var report = abandonAttempted
+                        ? ReportProgressAsync(handler, queueEntry, -1, $"Failed: {processingResult.Error?.Message ?? processingResult.Message}")
+                        : ReportProgressAsync(handler, queueEntry, 100);
+
+                    // A best-effort notification must preserve the queue outcome or release exception.
+                    await report.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
                 }
             }
         }
@@ -283,11 +285,19 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             await cleanup().AnyContext();
         }
-        catch (Exception cleanupError)
+        catch (Exception ex)
         {
-            // Cleanup can displace the handler's result before the job runner sees it.
-            var error = failure.Error ?? cleanupError;
-            WorkItemExecution.TryLogDiagnostic(handler, _logger, error, logger => logger.LogError(error, "Cleanup failed for queue entry {QueueEntryId} with {CleanupMessage}, original processing result was {Message}", entry.Id, cleanupError.Message, failure.Message));
+            try
+            {
+                var logger = WorkItemExecution.GetLogger(handler, _logger);
+                logger.LogError(failure.Error ?? ex, "Cleanup failed for queue entry {QueueEntryId} with {CleanupMessage}, original processing result was {Message}", entry.Id, ex.Message, failure.Message);
+            }
+            catch (Exception logEx)
+            {
+                // The caller still needs the provider's cleanup exception if its diagnostic also fails.
+                Activity.Current?.AddException(logEx);
+            }
+
             throw;
         }
     }
