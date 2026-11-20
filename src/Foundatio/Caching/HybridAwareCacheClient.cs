@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Resilience;
@@ -22,7 +23,6 @@ public interface IHybridAwareCacheClient : ICacheClient
 public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
     protected readonly ICacheClient _distributedCache;
-    private readonly HybridCacheWriter _writer;
     protected readonly IMessagePublisher _messagePublisher;
     private readonly string _cacheId = Guid.NewGuid().ToString("N");
     private readonly ILogger _logger;
@@ -37,7 +37,6 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? TimeProvider.System;
         _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _distributedCache = distributedCacheClient;
-        _writer = new HybridCacheWriter(distributedCacheClient, InvalidateAfterDistributedFailureAsync);
         _messagePublisher = messagePublisher;
     }
 
@@ -50,7 +49,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        bool removed = await _writer.RemoveAsync(key).AnyContext();
+        bool removed = await WriteDistributedAsync(key, key, static (c, k) => c.RemoveAsync(k)).AnyContext();
 
         // Only notify other nodes if the key actually existed and was removed from distributed cache.
         // If removed == false, the key didn't exist, so no other node needs to be notified.
@@ -64,7 +63,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        bool removed = await _writer.RemoveIfEqualAsync(key, expected).AnyContext();
+        bool removed = await WriteDistributedAsync(key, (key, expected), static (c, s) => c.RemoveIfEqualAsync(s.key, s.expected)).AnyContext();
 
         // Only notify other nodes if the key was actually removed from distributed cache.
         // If removed == false, either the key didn't exist or the value didn't match.
@@ -76,9 +75,18 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
-        string[]? items = keys is null ? null : HybridCacheWriter.GetBatchKeys(keys);
+        string[]? items = keys is null ? null : HybridCacheClient.GetBatchKeys(keys);
         bool flushAll = items is null || items.Length == 0;
-        int removed = await _writer.RemoveAllAsync(items).AnyContext();
+        int removed;
+        try
+        {
+            removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
+        }
+        catch
+        {
+            await PublishAfterDistributedFailureAsync(flushAll ? null : items).AnyContext();
+            throw;
+        }
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
@@ -89,7 +97,16 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
-        int removed = await _writer.RemoveByPrefixAsync(prefix).AnyContext();
+        int removed;
+        try
+        {
+            removed = await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();
+        }
+        catch
+        {
+            await PublishAfterDistributedFailureAsync([prefix + "*"]).AnyContext();
+            throw;
+        }
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
@@ -112,18 +129,18 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return _distributedCache.GetAllAsync<T>(keys);
     }
 
-    public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
+    public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        return _writer.AddAsync(key, value, expiresIn).AsTask();
+        return await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.AddAsync(s.key, s.value, s.expiresIn)).AnyContext();
     }
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        bool set = await _writer.SetAsync(key, value, expiresIn).AnyContext();
+        bool set = await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.SetAsync(s.key, s.value, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
 
         return set;
@@ -136,8 +153,18 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         if (values.Count is 0)
             return 0;
 
-        string[] keys = HybridCacheWriter.GetBatchKeys(values.Keys);
-        int set = await _writer.SetAllAsync(values, expiresIn, keys).AnyContext();
+        string[] keys = HybridCacheClient.GetBatchKeys(values.Keys);
+        int set;
+        try
+        {
+            set = await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
+        }
+        catch
+        {
+            await PublishAfterDistributedFailureAsync(keys).AnyContext();
+            throw;
+        }
+
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = keys }).AnyContext();
         return set;
     }
@@ -146,7 +173,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        bool replaced = await _writer.ReplaceAsync(key, value, expiresIn).AnyContext();
+        bool replaced = await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.ReplaceAsync(s.key, s.value, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return replaced;
     }
@@ -155,7 +182,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        bool replaced = await _writer.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
+        bool replaced = await WriteDistributedAsync(key, (key, value, expected, expiresIn), static (c, s) => c.ReplaceIfEqualAsync(s.key, s.value, s.expected, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return replaced;
     }
@@ -164,7 +191,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        double incremented = await _writer.IncrementAsync(key, amount, expiresIn).AnyContext();
+        double incremented = await WriteDistributedAsync(key, (key, amount, expiresIn), static (c, s) => c.IncrementAsync(s.key, s.amount, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return incremented;
     }
@@ -173,7 +200,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        long incremented = await _writer.IncrementAsync(key, amount, expiresIn).AnyContext();
+        long incremented = await WriteDistributedAsync(key, (key, amount, expiresIn), static (c, s) => c.IncrementAsync(s.key, s.amount, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return incremented;
     }
@@ -203,7 +230,16 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        await _writer.SetExpirationAsync(key, expiresIn).AnyContext();
+        try
+        {
+            await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
+        }
+        catch
+        {
+            await PublishAfterDistributedFailureAsync([key]).AnyContext();
+            throw;
+        }
+
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
     }
 
@@ -214,8 +250,17 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         if (expirations.Count is 0)
             return;
 
-        string[] keys = HybridCacheWriter.GetBatchKeys(expirations.Keys);
-        await _writer.SetAllExpirationAsync(expirations, keys).AnyContext();
+        string[] keys = HybridCacheClient.GetBatchKeys(expirations.Keys);
+        try
+        {
+            await _distributedCache.SetAllExpirationAsync(expirations).AnyContext();
+        }
+        catch
+        {
+            await PublishAfterDistributedFailureAsync(keys).AnyContext();
+            throw;
+        }
+
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = keys }).AnyContext();
     }
 
@@ -223,7 +268,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        double difference = await _writer.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+        double difference = await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.SetIfHigherAsync(s.key, s.value, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return difference;
     }
@@ -232,7 +277,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        long difference = await _writer.SetIfHigherAsync(key, value, expiresIn).AnyContext();
+        long difference = await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.SetIfHigherAsync(s.key, s.value, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return difference;
     }
@@ -241,7 +286,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        double difference = await _writer.SetIfLowerAsync(key, value, expiresIn).AnyContext();
+        double difference = await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.SetIfLowerAsync(s.key, s.value, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return difference;
     }
@@ -250,7 +295,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        long difference = await _writer.SetIfLowerAsync(key, value, expiresIn).AnyContext();
+        long difference = await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.SetIfLowerAsync(s.key, s.value, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return difference;
     }
@@ -260,7 +305,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        long added = await _writer.ListAddAsync(key, values, expiresIn).AnyContext();
+        long added = await WriteDistributedAsync(key, (key, values, expiresIn), static (c, s) => c.ListAddAsync(s.key, s.values, s.expiresIn)).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return added;
     }
@@ -270,7 +315,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        long removed = await _writer.ListRemoveAsync(key, values).AnyContext();
+        long removed = await WriteDistributedAsync(key, (key, values), static (c, s) => c.ListRemoveAsync(s.key, s.values)).AnyContext();
         if (removed > 0)
             await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
 
@@ -286,11 +331,31 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return _distributedCache.GetListAsync<T>(key, page, pageSize);
     }
 
-    private async Task InvalidateAfterDistributedFailureAsync(string[]? keys, string? prefix)
+    /// <summary>
+    /// Runs a single-key distributed write once. The provider can commit before it throws, so a failure notifies
+    /// hybrid clients before the original exception propagates. The pooled builder keeps the success path from
+    /// allocating when the provider completes asynchronously.
+    /// </summary>
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+    private async ValueTask<TResult> WriteDistributedAsync<TState, TResult>(string key, TState state, Func<ICacheClient, TState, Task<TResult>> write)
     {
-        if (prefix is not null)
-            keys = [$"{prefix}*"];
+        try
+        {
+            return await write(_distributedCache, state).AnyContext();
+        }
+        catch
+        {
+            await PublishAfterDistributedFailureAsync([key]).AnyContext();
+            throw;
+        }
+    }
 
+    /// <summary>
+    /// Asks hybrid clients to evict the keys, or every entry when <paramref name="keys"/> is null. A publish failure is
+    /// logged so the caller still receives the provider's exception.
+    /// </summary>
+    private async Task PublishAfterDistributedFailureAsync(string[]? keys)
+    {
         try
         {
             await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = keys, FlushAll = keys is null }).AnyContext();

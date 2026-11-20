@@ -761,8 +761,8 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.False(await distributed.ExistsAsync(removed));
         Assert.False((await cache.GetAsync<int>(removed)).HasValue);
         Assert.False((await peer.GetAsync<int>(removed)).HasValue);
-        Assert.Equal(scope != "flush", await cache.LocalCache.ExistsAsync(other));
-        Assert.Equal(scope != "flush", await peer.LocalCache.ExistsAsync(other));
+        Assert.Equal(scope is not "flush", await cache.LocalCache.ExistsAsync(other));
+        Assert.Equal(scope is not "flush", await peer.LocalCache.ExistsAsync(other));
     }
 
     [Theory]
@@ -1167,6 +1167,37 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public async Task SetAllExpirationAsync_WhenOnlyFirstExpirationCommits_InvalidatesBothClients()
+    {
+        // Arrange
+        var values = new Dictionary<string, int> { ["first"] = 1, ["second"] = 2 };
+        var expirations = new Dictionary<string, TimeSpan?> { ["first"] = TimeSpan.Zero, ["second"] = TimeSpan.Zero };
+        var error = new CacheException("Batch interrupted");
+        var provider = new Mock<ICacheClient>();
+        provider.Setup(c => c.SetAllExpirationAsync(expirations)).Returns(async () =>
+        {
+            await _distributedCache.SetExpirationAsync("first", TimeSpan.Zero);
+            throw error;
+        });
+
+        using var writer = CreateCache(distributedCache: provider.Object);
+        using var peer = CreateCache();
+        await peer.SetAllAsync(values);
+        await writer.LocalCache.SetAllAsync(values);
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => writer.SetAllExpirationAsync(expirations));
+
+        // Assert
+        Assert.Same(error, thrown);
+        Assert.Equal(0, writer.LocalCache.Count);
+        Assert.Equal(0, peer.LocalCache.Count);
+        var current = await peer.GetAllAsync<int>(values.Keys);
+        Assert.False(current["first"].HasValue);
+        Assert.Equal(2, current["second"].Value);
+    }
+
+    [Fact]
     public override Task SetAllExpirationAsync_WithInvalidItems_ValidatesCorrectly()
     {
         return base.SetAllExpirationAsync_WithInvalidItems_ValidatesCorrectly();
@@ -1363,7 +1394,6 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
-    [InlineData(true, false)]
     [InlineData(true, true)]
     public async Task SetExpirationAsync_WhenProviderThrowsAfterExpiringFirstKey_EvictsRequestedKeys(bool batch, bool useHybridAwareWriter)
     {
@@ -1544,6 +1574,79 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
             Assert.Equal(expected, (await peer.GetAsync<long>(key)).Value);
         if (operation is ScalarWrite.SetAll)
             Assert.Equal(42L, (await cache.GetAsync<long>("accepted-local-write")).Value);
+    }
+
+    public static MatrixTheoryData<FailedWrite, bool> FailedWriteCases =>
+        new(Enum.GetValues<FailedWrite>(), [false, true]);
+
+    [Theory]
+    [MemberData(nameof(FailedWriteCases))]
+    public async Task WriteAsync_WhenProviderThrows_EvictsWarmClientsAndRethrows(FailedWrite operation, bool useHybridAwareWriter)
+    {
+        // Arrange
+        const string key = "uncertain-write";
+        var error = new CacheException("Write response lost");
+        var provider = new Mock<ICacheClient>();
+        provider.SetReturnsDefault(Task.FromException(error));
+        provider.SetReturnsDefault(Task.FromException<bool>(error));
+        provider.SetReturnsDefault(Task.FromException<int>(error));
+        provider.SetReturnsDefault(Task.FromException<long>(error));
+        provider.SetReturnsDefault(Task.FromException<double>(error));
+
+        using var writer = CreateCache(distributedCache: provider.Object);
+        using var peer = CreateCache();
+        var activeWriter = useHybridAwareWriter ? CreateHybridAwareCache(provider.Object) : writer;
+        Assert.True(await peer.SetAsync(key, 10L));
+        Assert.True(await writer.LocalCache.SetAsync(key, 10L));
+        Assert.Equal(10L, (await writer.GetAsync<long>(key)).Value);
+
+        // Act
+        Task write = operation switch
+        {
+            FailedWrite.Add => activeWriter.AddAsync(key, 15L),
+            FailedWrite.Set => activeWriter.SetAsync(key, 15L),
+            FailedWrite.SetAll => activeWriter.SetAllAsync(new Dictionary<string, long> { [key] = 15L }),
+            FailedWrite.Replace => activeWriter.ReplaceAsync(key, 15L),
+            FailedWrite.ReplaceIfEqual => activeWriter.ReplaceIfEqualAsync(key, 15L, 10L),
+            FailedWrite.Remove => activeWriter.RemoveAsync(key),
+            FailedWrite.RemoveIfEqual => activeWriter.RemoveIfEqualAsync(key, 10L),
+            FailedWrite.IncrementLong => activeWriter.IncrementAsync(key, 5L),
+            FailedWrite.IncrementDouble => activeWriter.IncrementAsync(key, 5d),
+            FailedWrite.HigherLong => activeWriter.SetIfHigherAsync(key, 15L),
+            FailedWrite.HigherDouble => activeWriter.SetIfHigherAsync(key, 15d),
+            FailedWrite.LowerLong => activeWriter.SetIfLowerAsync(key, 5L),
+            FailedWrite.LowerDouble => activeWriter.SetIfLowerAsync(key, 5d),
+            FailedWrite.SetExpiration => activeWriter.SetExpirationAsync(key, TimeSpan.FromMinutes(1)),
+            FailedWrite.ListAdd => activeWriter.ListAddAsync(key, [15L]),
+            FailedWrite.ListRemove => activeWriter.ListRemoveAsync(key, [10L]),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
+        };
+
+        // Assert
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => write);
+        Assert.Same(error, thrown);
+        Assert.False(await writer.LocalCache.ExistsAsync(key));
+        Assert.False(await peer.LocalCache.ExistsAsync(key));
+    }
+
+    public enum FailedWrite
+    {
+        Add,
+        Set,
+        SetAll,
+        Replace,
+        ReplaceIfEqual,
+        Remove,
+        RemoveIfEqual,
+        IncrementLong,
+        IncrementDouble,
+        HigherLong,
+        HigherDouble,
+        LowerLong,
+        LowerDouble,
+        SetExpiration,
+        ListAdd,
+        ListRemove
     }
 
     public enum ScalarWrite

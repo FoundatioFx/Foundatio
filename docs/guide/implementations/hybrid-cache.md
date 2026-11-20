@@ -154,6 +154,8 @@ This ensures that:
 
 If a distributed write throws, its outcome may be unknown. The hybrid client evicts the affected local entries and attempts to notify peers before rethrowing the provider error. The hybrid-aware client sends the same notification. Neither client retries the write. Once a peer receives the notification, its next read reloads from L2.
 
+This favors correctness over availability. During an L2 outage, a failed write evicts the key, so later reads of that key go to L2 and fail instead of returning an L1 value that may be stale. The provider error also reaches the caller only after the invalidation publish completes or fails under the message bus resilience policy, so a write fails more slowly when the bus is also unavailable.
+
 Other clients can serve an existing local value until their invalidation arrives. A missed notification, a write that commits after a client has already refilled, or a read routed to a lagging replica can leave an old value in L1. Set a finite TTL when that window must be bounded. For a read that must observe writes already committed on the primary, use the distributed cache directly with primary reads.
 
 ::: info Consistency trade-offs
