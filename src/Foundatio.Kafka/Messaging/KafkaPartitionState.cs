@@ -43,8 +43,8 @@ internal sealed class KafkaPartitionState
     public KafkaSkippedRecords Skipped { get; } = new();
 
     /// <summary>
-    /// How far behind <see cref="NextOffset"/> the oldest skipped record is: what the partition's next owner reads
-    /// again after a crash because of skipped records.
+    /// How far behind <see cref="NextOffset"/> the oldest skipped record is. After a crash the partition's next owner
+    /// reads again from the oldest unfinished record, which is at least this far back.
     /// </summary>
     public long SkippedSpan => Skipped.Count > 0 ? NextOffset - Skipped.LowestOffset : 0;
 

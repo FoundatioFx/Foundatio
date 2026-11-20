@@ -36,8 +36,10 @@ namespace Foundatio.Messaging.Transport;
 /// the group drains (<see cref="KafkaSkippedRecords"/>). A slow group then holds up neither its partition's other
 /// groups nor librdkafka's prefetch. A partition skips at most <see cref="KafkaMessageTransportOptions.ReceiverSkippedLimit"/>
 /// records, none of them further back than <see cref="KafkaMessageTransportOptions.ReceiverSkippedSpanLimit"/>
-/// offsets, which bounds what its next owner reads again after a crash, and the receiver at most
-/// <see cref="KafkaMessageTransportOptions.ReceiverSkippedTotalLimit"/> on all its partitions together.
+/// offsets, and the receiver at most <see cref="KafkaMessageTransportOptions.ReceiverSkippedTotalLimit"/> on all its
+/// partitions together, which bounds the memory their ids and offsets take. After a crash the partition's next owner
+/// reads again from its committed offset, the oldest unfinished record: usually the busy group's first unsettled one,
+/// which is older than its skipped ones.
 /// </para>
 /// <para>
 /// A partition holding <see cref="KafkaMessageTransportOptions.ReceiverHeldLimit"/> records or

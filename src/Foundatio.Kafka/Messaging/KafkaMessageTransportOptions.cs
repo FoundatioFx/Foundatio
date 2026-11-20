@@ -117,9 +117,9 @@ public sealed record KafkaMessageTransportOptions
     internal int ReceiverSkippedTotalLimit { get; init; } = 100_000;
 
     /// <summary>
-    /// How far behind a partition's last read offset its oldest skipped record may be, which is how much the
-    /// partition's next owner reads again after a crash, before the receiver stops reading that partition until it is
-    /// half as far.
+    /// How far behind a partition's last read offset its oldest skipped record may be before the receiver stops
+    /// reading that partition until it is half as far. The partition's next owner reads again from its oldest
+    /// unfinished record, usually the busy group's first unsettled one, which is older still.
     /// </summary>
     internal long ReceiverSkippedSpanLimit { get; init; } = 100_000;
 
