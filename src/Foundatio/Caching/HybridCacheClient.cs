@@ -592,11 +592,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         using var ticket = _fence.BeginWrite(key);
         // A cold writer can seed a complete local list only if the distributed key was also missing.
         bool hasLocalEntry = await _localCache.ExistsAsync(key).AnyContext();
-        bool isNewList = !hasLocalEntry && !await _distributedCache.ExistsAsync(key).AnyContext();
+        bool canUpdate = hasLocalEntry || (ticket.IsCurrent && await TryGetDistributedKeyExistenceAsync(key).AnyContext() is false);
         long addedCount = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
         await UpdateLocalAsync(ticket, key, (items, expectedCount, expiresIn, requireExistingList: hasLocalEntry),
             static async (cache, k, state) => await cache.ListAddAsync(k, state.items, state.expiresIn, state.requireExistingList).AnyContext() == state.expectedCount,
-            canUpdate: addedCount == expectedCount && (hasLocalEntry || isNewList)).AnyContext();
+            canUpdate: canUpdate && addedCount == expectedCount).AnyContext();
         return addedCount;
     }
 
@@ -673,11 +673,24 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             {
                 // A null TTL can also mean the key expired after the value was read.
                 var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-                if (expiration.HasValue || await _distributedCache.ExistsAsync(key).AnyContext())
+                if (expiration.HasValue || await TryGetDistributedKeyExistenceAsync(key).AnyContext() is true)
                     await UpdateLocalAsync(observation, key, (value.Value, expiration), store).AnyContext();
             }
 
             return value;
+        }
+    }
+
+    private async ValueTask<bool?> TryGetDistributedKeyExistenceAsync(string key)
+    {
+        try
+        {
+            return await _distributedCache.ExistsAsync(key).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to check whether {Key} exists in the distributed cache, skipping the local update", key);
+            return null;
         }
     }
 

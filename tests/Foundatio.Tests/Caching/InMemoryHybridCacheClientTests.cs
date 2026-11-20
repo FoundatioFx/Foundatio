@@ -433,14 +433,16 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ListAddAsync_WhenOnlyDistributedListExists_PreservesEarlierMembers(bool singleString)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ListAddAsync_WhenOnlyDistributedListExists_PreservesEarlierMembers(bool singleString, bool rejectExistenceChecks)
     {
         // Arrange
-        using var cache = CreateCache();
         const string key = "cold-list";
-        await _distributedCache.ListAddAsync(key, ["earlier"]);
+        using var distributed = new DelayedCache(Log) { RejectExistenceChecks = rejectExistenceChecks };
+        using var cache = CreateCache(distributedCache: distributed);
+        await distributed.ListAddAsync(key, ["earlier"]);
 
         // Act
         long added = singleString ? await cache.ListAddAsync(key, "later") : await cache.ListAddAsync(key, ["later"]);
@@ -448,6 +450,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         // Assert
         Assert.Equal(1, added);
         Assert.Equal(["earlier", "later"], (await cache.GetListAsync<string>(key)).Value.Order());
+        Assert.Equal(!rejectExistenceChecks, await cache.LocalCache.ExistsAsync(key));
     }
 
     [Theory]
@@ -1375,9 +1378,14 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         private Func<Task>? _afterNextRead;
         private Func<Task>? _afterNextWrite;
 
+        public bool RejectExistenceChecks { get; init; }
+
         public void AfterNextRead(Func<Task> action) => _afterNextRead = action;
 
         public void AfterNextWrite(Func<Task> action) => _afterNextWrite = action;
+
+        Task<bool> ICacheClient.ExistsAsync(string key) =>
+            RejectExistenceChecks ? Task.FromException<bool>(new CacheException("Existence check unavailable")) : ExistsAsync(key);
 
         Task<IDictionary<string, CacheValue<T>>> ICacheClient.GetAllAsync<T>(IEnumerable<string> keys) =>
             CompleteAsync(GetAllAsync<T>(keys), Interlocked.Exchange(ref _afterNextRead, null));
