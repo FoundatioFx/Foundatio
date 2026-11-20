@@ -219,7 +219,6 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         queueEntry.MarkCompleted();
         Interlocked.Increment(ref _completedCount);
-        QueueEntrySettlement<T>.Confirm(info, completing: true);
         await OnCompletedAsync(queueEntry).AnyContext();
         _logger.LogTrace("Complete done: {QueueEntryId}", queueEntry.Id);
     }
@@ -253,7 +252,6 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         queueEntry.MarkAbandoned();
         Interlocked.Increment(ref _abandonedCount);
-        QueueEntrySettlement<T>.Confirm(targetEntry, completing: false);
 
         try
         {

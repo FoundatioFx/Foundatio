@@ -127,6 +127,8 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
 
         using var execution = new WorkItemExecution(_publisher, handler, queueEntry, workItemDataType, lockValue, cancellationToken);
+        JobResult? settledResult = null;
+        bool abandonAttempted = false;
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
@@ -145,12 +147,18 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
                 return context.Result.IsSuccess ? JobResult.FailedWithMessage($"Queue entry {queueEntry.Id} was already abandoned") : context.Result;
 
             var result = context.Result.IsSuccess ? JobResult.Success : context.Result;
-            if (!queueEntry.IsCompleted)
-            {
-                await execution.SettleAsync(result).AnyContext();
-                if (!execution.AbandonAttempted)
-                    handler.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItemData);
-            }
+            if (queueEntry.IsCompleted)
+                return result;
+
+            abandonAttempted = !result.IsSuccess;
+            if (abandonAttempted)
+                await queueEntry.AbandonAsync().AnyContext();
+            else
+                await queueEntry.CompleteAsync().AnyContext();
+
+            settledResult = result;
+            if (!abandonAttempted)
+                handler.LogAutoCompletedQueueEntry(queueEntry, workItemDataType, workItemData);
 
             return result;
         }
@@ -158,14 +166,16 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             var error = execution.GetProcessingError(ex, activity);
             activity?.SetErrorStatus(error);
-            bool abandon = !execution.AbandonAttempted && execution.SettledResult is null && !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
+            bool abandon = !abandonAttempted && settledResult is null && !queueEntry.IsAbandoned && !queueEntry.IsCompleted;
             var result = JobResult.FromException(error, abandon
                 ? $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Error in handler {workItemDataType.Name}"
                 : $"Error processing {queueEntry.Value.Type} work item: {queueEntry.Id} in handler: {workItemDataType.Name}");
             if (!abandon)
                 return result;
 
-            await execution.SettleAsync(result).AnyContext();
+            abandonAttempted = true;
+            await queueEntry.AbandonAsync().AnyContext();
+            settledResult = result;
             return result;
         }
         finally
@@ -176,10 +186,10 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             }
             finally
             {
-                if (queueEntry.Value.SendProgressReports && execution.SettledResult is { } settled)
+                if (queueEntry.Value.SendProgressReports && settledResult is not null)
                 {
-                    if (execution.AbandonAttempted)
-                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {settled.Error?.Message ?? settled.Message}").AnyContext();
+                    if (abandonAttempted)
+                        await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {settledResult.Error?.Message ?? settledResult.Message}").AnyContext();
                     else
                         await ReportProgressAsync(handler, queueEntry, 100).AnyContext();
                 }

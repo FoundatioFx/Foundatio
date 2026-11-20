@@ -17,8 +17,6 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
     private int _stopped;
 
     public CancellationToken GetHandlerToken(CancellationToken hostToken) => _renewals?.Cancellation?.Token ?? hostToken;
-    public bool AbandonAttempted { get; private set; }
-    public JobResult? SettledResult { get; private set; }
 
     public async Task ReportProgressAsync(int progress, string? message)
     {
@@ -172,34 +170,6 @@ internal sealed class WorkItemExecution(IMessagePublisher publisher, IWorkItemHa
         }
 
         return error;
-    }
-
-    public Task SettleAsync(JobResult result)
-    {
-        bool completing = result.IsSuccess;
-        AbandonAttempted = !completing;
-        if (!entry.Value.SendProgressReports)
-            return completing ? entry.CompleteAsync() : entry.AbandonAsync();
-
-        return SettleAndRecordAsync(result, completing);
-    }
-
-    private async Task SettleAndRecordAsync(JobResult result, bool completing)
-    {
-        using var attempt = new QueueEntrySettlement<WorkItemData>(entry, completing);
-        Task? operation = null;
-        try
-        {
-            operation = completing ? entry.CompleteAsync() : entry.AbandonAsync();
-            await operation.AnyContext();
-        }
-        catch when (attempt.IsConfirmedFor(operation))
-        {
-            SettledResult = result;
-            throw;
-        }
-
-        SettledResult = result;
     }
 
     public Task StopAndDrainRenewalsAsync()

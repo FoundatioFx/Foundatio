@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -87,7 +88,7 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         Assert.Same(error, result.Error);
         Assert.Equal(1, stats.Abandoned);
         Assert.Equal(1 - retries, stats.Deadletter);
-        Assert.Equal([0, -1], statuses);
+        Assert.Equal([0], statuses);
         if (retries > 0)
         {
             var retry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
@@ -145,6 +146,29 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ProcessAsync_WhenCompletionFailsAndAbandonmentSucceeds_ReportsAbandonment()
+    {
+        // Arrange
+        using var queue = CreateQueue(Failure.CompletionBeforeCommit);
+        using var bus = CreateBus();
+        var statuses = new ConcurrentQueue<int>();
+        await bus.SubscribeAsync<WorkItemStatus>(s => statuses.Enqueue(s.Progress), TestCancellationToken);
+        var handlers = new WorkItemHandlers();
+        handlers.Register<string>(_ => Task.CompletedTask);
+        await queue.EnqueueAsync("item", true);
+
+        // Act
+        var result = await new WorkItemJob(queue, bus, handlers, Log).RunAsync(TestCancellationToken);
+
+        // Assert
+        Assert.Same(queue.ObserverError, result.Error);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(1, stats.Deadletter);
+        Assert.Equal([0, -1], statuses);
+    }
+
+    [Fact]
     public async Task ProcessAsync_WhenDifferentDeliveryHasIdenticalIdentifiers_SkipsFailureStatus()
     {
         // Arrange
@@ -196,9 +220,11 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
     [InlineData(Failure.AfterNotification, false)]
     [InlineData(Failure.AfterNotification, true)]
     [InlineData(Failure.PrivateMetadata, false)]
+    [InlineData(Failure.AsyncPrivateMetadata, false)]
+    [InlineData(Failure.AsyncPrivateMetadata, true)]
     [InlineData(Failure.BeforeBaseNotification, false)]
     [InlineData(Failure.BeforeBaseNotification, true)]
-    public async Task ProcessAsync_WhenProviderConfirmsSettlementBeforeFailure_SendsTerminalStatusOnce(Failure failure, bool completing)
+    public async Task ProcessAsync_WhenProviderFailsAfterSettling_SkipsTerminalStatus(Failure failure, bool completing)
     {
         // Arrange
         string prefix = Guid.NewGuid().ToString("N");
@@ -229,7 +255,7 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         var delivered = failure switch
         {
             Failure.ForwardedEntry or Failure.BothForward => new ForwardingEntry(entry),
-            Failure.PrivateMetadata => new ForwardingEntry(entry, copyProperties: true),
+            Failure.PrivateMetadata or Failure.AsyncPrivateMetadata => new ForwardingEntry(entry, copyProperties: true, traceSettlement: failure == Failure.AsyncPrivateMetadata),
             _ => entry
         };
 
@@ -249,7 +275,7 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         Assert.Equal(!completing, entry.IsAbandoned);
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(1, completing ? stats.Completed : stats.Deadletter);
-        Assert.Equal([0, completing ? 100 : -1], statuses);
+        Assert.Equal([0], statuses);
     }
 
     [Fact]
@@ -317,10 +343,12 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
     public enum Failure
     {
         AfterNotification,
+        AsyncPrivateMetadata,
         BeforeBaseNotification,
         BeforeCommit,
         BothForward,
         CompetingCall,
+        CompletionBeforeCommit,
         DifferentDelivery,
         ForwardedEntry,
         ForwardedProviderEntry,
@@ -360,7 +388,8 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
             await SettleWithFailureAsync(entry, completing: false);
         }
 
-        public override Task CompleteAsync(IQueueEntry<WorkItemData> entry) => SettleWithFailureAsync(entry, completing: true);
+        public override Task CompleteAsync(IQueueEntry<WorkItemData> entry) =>
+            failure == Failure.CompletionBeforeCommit ? Task.FromException(ObserverError) : SettleWithFailureAsync(entry, completing: true);
 
         protected override Task OnAbandonedAsync(IQueueEntry<WorkItemData> entry) =>
             failure == Failure.BeforeBaseNotification ? Task.FromException(ObserverError) : base.OnAbandonedAsync(entry);
@@ -389,7 +418,7 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         }
     }
 
-    private sealed class ForwardingEntry(IQueueEntry<WorkItemData> entry, bool copyProperties = false) : IQueueEntry<WorkItemData>
+    private sealed class ForwardingEntry(IQueueEntry<WorkItemData> entry, bool copyProperties = false, bool traceSettlement = false) : IQueueEntry<WorkItemData>
     {
         public string Id => entry.Id;
         public string? CorrelationId => entry.CorrelationId;
@@ -403,9 +432,15 @@ public class WorkItemJobSettlementTests : TestWithLoggingBase
         public object GetValue() => entry.GetValue();
         public void MarkAbandoned() => entry.MarkAbandoned();
         public void MarkCompleted() => entry.MarkCompleted();
-        public Task AbandonAsync() => entry.AbandonAsync();
-        public Task CompleteAsync() => entry.CompleteAsync();
+        public Task AbandonAsync() => traceSettlement ? TraceSettlementAsync(entry.AbandonAsync) : entry.AbandonAsync();
+        public Task CompleteAsync() => traceSettlement ? TraceSettlementAsync(entry.CompleteAsync) : entry.CompleteAsync();
         public Task RenewLockAsync() => entry.RenewLockAsync();
         public ValueTask DisposeAsync() => entry.DisposeAsync();
+
+        private static async Task TraceSettlementAsync(Func<Task> settleAsync)
+        {
+            using var activity = new Activity("Settle queue entry").Start();
+            await settleAsync();
+        }
     }
 }

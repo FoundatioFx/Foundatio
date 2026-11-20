@@ -508,7 +508,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     protected virtual async Task OnCompletedAsync(IQueueEntry<T> entry)
     {
-        QueueEntrySettlement<T>.Confirm(entry, completing: true);
         var utcNow = _timeProvider.GetUtcNow();
         LastDequeueActivity = utcNow;
 
@@ -544,7 +543,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     protected virtual async Task OnAbandonedAsync(IQueueEntry<T> entry)
     {
-        QueueEntrySettlement<T>.Confirm(entry, completing: false);
         LastDequeueActivity = _timeProvider.GetUtcNow();
 
         var tags = GetQueueEntryTags(entry);

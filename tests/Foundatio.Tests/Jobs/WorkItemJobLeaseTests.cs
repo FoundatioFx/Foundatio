@@ -26,7 +26,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ProcessAsync_WhenAbandonmentObserverThrows_SendsOneFailureForTheAttempt(bool handlerReturnsFailure)
+    public async Task ProcessAsync_WhenAbandonmentObserverThrows_SkipsTerminalStatus(bool handlerReturnsFailure)
     {
         // Arrange
         using var cache = CreateCache();
@@ -65,7 +65,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         if (!handlerReturnsFailure)
             Assert.IsType<LockException>(reportError);
 
-        Assert.Equal([0, -1], statuses);
+        Assert.Equal([0], statuses);
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Abandoned);
     }
 
@@ -286,7 +286,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
     }
 
     [Fact]
-    public async Task ProcessAsync_WhenCompletionObserverThrows_ReportsCompletedEntry()
+    public async Task ProcessAsync_WhenCompletionObserverThrows_SkipsTerminalStatus()
     {
         // Arrange
         using var queue = CreateQueue();
@@ -305,7 +305,7 @@ public class WorkItemJobLeaseTests : TestWithLoggingBase
         // Assert
         Assert.Same(error, result.Error);
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Completed);
-        Assert.Equal([0, 100], statuses);
+        Assert.Equal([0], statuses);
     }
 
     [Theory]

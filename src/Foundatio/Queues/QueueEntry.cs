@@ -57,24 +57,12 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
 
     public Task CompleteAsync()
     {
-        return QueueEntrySettlement<T>.InvokeProviderAsync(_queue, this, completing: true);
+        return _queue.CompleteAsync(this);
     }
 
     public Task AbandonAsync()
     {
-        return QueueEntrySettlement<T>.InvokeProviderAsync(_queue, this, completing: false);
-    }
-
-    internal static bool IsSameDelivery(IQueueEntry expected, IQueueEntry actual)
-    {
-        if (ReferenceEquals(expected, actual))
-            return true;
-
-        // A native delivery owns its properties. Transparent decorators forward that dictionary, while retries and duplicate messages get their own.
-        if (expected is QueueEntry<T> native)
-            return ReferenceEquals(native.Properties, actual.Properties);
-
-        return actual is QueueEntry<T> other && ReferenceEquals(expected.Properties, other.Properties);
+        return _queue.AbandonAsync(this);
     }
 
     public async ValueTask DisposeAsync()
