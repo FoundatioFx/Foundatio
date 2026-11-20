@@ -509,12 +509,12 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     continue;
                 }
 
-                var deliveries = CreateDeliveries(receiver, messages, started);
+                var deliveries = CreateDeliveries(receiver, messages, started, out long bytes);
                 _renewer.Track(deliveries);
                 Interlocked.Add(ref _inFlight, deliveries.Length);
                 if (!holdsSlots)
                 {
-                    Buffer(deliveries, count, partial);
+                    Buffer(deliveries, bytes, count, partial);
                     continue;
                 }
 
@@ -570,13 +570,9 @@ internal sealed class MessageProcessor : IAsyncDisposable
     }
 
     /// <summary>Queues a receive's deliveries, as the sequences they are handled in, for <see cref="Pump"/>.</summary>
-    private void Buffer(MessageDelivery[] deliveries, int requested, bool partial)
+    private void Buffer(MessageDelivery[] deliveries, long bytes, int requested, bool partial)
     {
         var sequences = SplitIntoSequences(deliveries);
-        long bytes = 0;
-        foreach (var delivery in deliveries)
-            bytes += delivery.Message.Body.Length;
-
         lock (_bufferLock)
         {
             foreach (var sequence in sequences)
@@ -604,7 +600,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
         List<List<MessageDelivery>>? starting = null, releasing = null;
         int mode, returned = 0;
-        bool emptied;
+        bool overCap = false, emptied;
         lock (_bufferLock)
         {
             mode = _bufferMode;
@@ -619,6 +615,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             }
             else
             {
+                overCap = _bufferedBytes > ReceiveAhead.MaxBufferedBytes;
                 while (_buffer.TryPeek(out var sequence))
                 {
                     while (_pumpSlots < sequence.Count && _slots.Wait(0))
@@ -659,6 +656,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
         if (returned > 0)
             _slots.Release(returned);
+
+        // While the bodies exceeded the cap, the depth was zero, which parks the receives beyond those that fill the slots.
+        if (overCap && starting is not null && GetDepth() > 0)
+            SignalTurn();
 
         if (emptied)
             SignalRoom();
@@ -719,8 +720,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
         Volatile.Write(ref _pollingReceives, 1);
     }
 
-    /// <summary>The depth to read ahead to now: zero while the buffered bodies exceed the byte cap.</summary>
-    private int GetDepth() => _ahead!.GetDepth(Interlocked.Read(ref _bufferedBytes));
+    /// <summary>The depth to read ahead to now, within the buffered-bytes cap (see <see cref="ReceiveAhead.GetDepth"/>).</summary>
+    private int GetDepth() => _ahead!.GetDepth(Volatile.Read(ref _buffered), Interlocked.Read(ref _bufferedBytes));
 
     /// <summary>
     /// Whether a receive that reads ahead could start. At depth zero, once the buffer has drained, as for receives
@@ -801,18 +802,21 @@ internal sealed class MessageProcessor : IAsyncDisposable
     }
 
     /// <summary>
-    /// Wraps received messages for reading ahead, and records the leases a broker that decides them granted, counted from
-    /// when the receive began, at timestamp <paramref name="started"/>: a broker may count a lease from the request, so
-    /// counting from now would lose however long a long poll waited.
+    /// Wraps received messages for reading ahead, totals their <paramref name="bytes"/> of bodies, and records those and
+    /// the leases a broker that decides them granted. A lease is counted from when the receive began, at timestamp
+    /// <paramref name="started"/>: a broker may count it from the request, so counting from now would lose however long a
+    /// long poll waited.
     /// </summary>
-    private MessageDelivery[] CreateDeliveries(IMessageReceiver receiver, IReadOnlyList<IncomingMessage> messages, long started)
+    private MessageDelivery[] CreateDeliveries(IMessageReceiver receiver, IReadOnlyList<IncomingMessage> messages, long started, out long bytes)
     {
         var deliveries = new MessageDelivery[messages.Count];
         DateTimeOffset? receiveStartedAt = null;
+        bytes = 0;
         for (int i = 0; i < messages.Count; i++)
         {
             var message = messages[i];
             deliveries[i] = new MessageDelivery(receiver, message, _renewer, _holds, _settlements, _timeProvider);
+            bytes += message.Body.Length;
             if (message.LeaseExpiresAt is { } expiresAt)
             {
                 receiveStartedAt ??= _timeProvider.GetUtcNow() - _timeProvider.GetElapsedTime(started);
@@ -820,6 +824,9 @@ internal sealed class MessageProcessor : IAsyncDisposable
                     OnDepthRaised();
             }
         }
+
+        if (_ahead!.RecordBodies(deliveries.Length, bytes))
+            OnDepthRaised();
 
         return deliveries;
     }

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Foundatio.Messaging;
 using Xunit;
 
@@ -8,6 +9,7 @@ namespace Foundatio.Tests.Messaging;
 public class ReceiveAheadTests
 {
     private static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(1);
+    private const long MiB = 1024 * 1024;
 
     [Fact]
     public void Depth_WithFastHandlersOnASlowBroker_CoversOneReceivePlusABatch()
@@ -134,9 +136,45 @@ public class ReceiveAheadTests
         ahead.RecordReceiveTime(Ticks(20));
         ahead.RecordSlotTime(Ticks(50));
 
-        Assert.Equal(17, ahead.GetDepth(ReceiveAhead.MaxBufferedBytes));
-        Assert.Equal(0, ahead.GetDepth(ReceiveAhead.MaxBufferedBytes + 1));
+        Assert.Equal(17, ahead.GetDepth(1, ReceiveAhead.MaxBufferedBytes));
+        Assert.Equal(0, ahead.GetDepth(2, ReceiveAhead.MaxBufferedBytes + 1));
         Assert.Equal(17, ahead.Depth);
+    }
+
+    [Fact]
+    public void GetDepth_WithLargeBodies_CoversOnlyTheBufferedAndAsManyMoreAsFitWithinTheCap()
+    {
+        var ahead = Create(maxConcurrency: 16, batchSize: 10, receives: 3);
+        ahead.RecordReceiveTime(Ticks(20));
+        ahead.RecordSlotTime(Ticks(50));
+        Assert.False(ahead.RecordBodies(10, 10 * 4 * MiB));
+
+        // 16 MiB holds four 4 MiB bodies, buffered or still to be received.
+        Assert.Equal(4, ahead.GetDepth(0, 0));
+        Assert.Equal(4, ahead.GetDepth(1, 4 * MiB));
+        Assert.Equal(3, ahead.GetDepth(2, 10 * MiB));
+        Assert.Equal(17, ahead.Depth);
+
+        // Bodies larger than the cap are never read ahead.
+        ahead.RecordBodies(1, ReceiveAhead.MaxBufferedBytes + 1);
+        Assert.Equal(0, ahead.GetDepth(0, 0));
+    }
+
+    [Fact]
+    public void RecordBodies_WithLargerBodies_FollowsThemAtOnceAndSmallerOnesAnEighthOfTheWay()
+    {
+        var ahead = Create(maxConcurrency: 16, batchSize: 10, receives: 3);
+        ahead.RecordReceiveTime(Ticks(20));
+        ahead.RecordSlotTime(Ticks(50));
+        ahead.RecordBodies(10, 10 * 1024);
+        Assert.Equal(17, ahead.GetDepth(0, 0));
+
+        Assert.False(ahead.RecordBodies(1, 8 * MiB));
+        Assert.Equal(2, ahead.GetDepth(0, 0));
+
+        // 8 MiB moves to 7, 6.1 and 5.4 MiB, so still two fit, then to 4.7 MiB, so three do.
+        Assert.Equal([false, false, false, true], Enumerable.Range(0, 4).Select(_ => ahead.RecordBodies(1, 0)).ToArray());
+        Assert.Equal(3, ahead.GetDepth(0, 0));
     }
 
     private static ReceiveAhead Create(int maxConcurrency, int batchSize, int receives, TimeSpan? lease = null)

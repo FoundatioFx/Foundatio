@@ -13,16 +13,18 @@ namespace Foundatio.Messaging;
 /// quarter of the shortest lease a receive was granted, counted from when it started, when that is less, so a buffered
 /// message normally starts before its first renewal.
 /// The depth is zero until both times have been measured, and while a message keeps its slot longer than <c>H</c>, so
-/// slow handlers do not hoard messages.
+/// slow handlers do not hoard messages. Buffered bodies are kept within <see cref="MaxBufferedBytes"/>: from the average
+/// body size, the depth covers the messages buffered and only as many more as fit.
 /// </summary>
 /// <remarks>Times are in timestamp ticks of the processor's <see cref="TimeProvider"/>. Thread-safe.</remarks>
 internal sealed class ReceiveAhead
 {
-    /// <summary>Above this many bytes of buffered message bodies, the depth counts as zero.</summary>
+    /// <summary>The most bytes of message bodies to buffer. Above it, the depth counts as zero.</summary>
     internal const long MaxBufferedBytes = 16 * 1024 * 1024;
 
     private const double SlotTimeWeight = 1.0 / 16;
     private const double ReceiveTimeWeight = 1.0 / 8;
+    private const double BodySizeWeight = 1.0 / 8;
     private static readonly TimeSpan MaxHorizon = TimeSpan.FromSeconds(1);
 
     private readonly int _maxConcurrency;
@@ -32,6 +34,7 @@ internal sealed class ReceiveAhead
     private long _shortestLeaseTicks;
     private double _slotTicks = -1;
     private double _receiveTicks = -1;
+    private double _bodyBytes = -1;
     private int _depth;
 
     /// <param name="maxConcurrency">The handler slots, <c>C</c>.</param>
@@ -57,14 +60,50 @@ internal sealed class ReceiveAhead
     /// <summary>How many messages may be received beyond the free handler slots now, ignoring the byte cap.</summary>
     public int Depth => Volatile.Read(ref _depth);
 
-    /// <summary>The depth with <paramref name="bufferedBytes"/> of message bodies buffered: zero above <see cref="MaxBufferedBytes"/>.</summary>
-    public int GetDepth(long bufferedBytes) => bufferedBytes > MaxBufferedBytes ? 0 : Depth;
+    /// <summary>
+    /// The depth with <paramref name="buffered"/> messages of <paramref name="bufferedBytes"/> bytes in all buffered: at
+    /// most those and as many more bodies of the average size as fit within <see cref="MaxBufferedBytes"/>, and zero above it.
+    /// </summary>
+    public int GetDepth(int buffered, long bufferedBytes)
+    {
+        int depth = Depth;
+        if (depth == 0 || bufferedBytes > MaxBufferedBytes)
+            return 0;
+
+        double body = Volatile.Read(ref _bodyBytes);
+        if (body < 0)
+            return depth;
+
+        double fit = Math.Max(0, buffered) + Math.Floor((MaxBufferedBytes - bufferedBytes) / Math.Max(1, body));
+        return fit < depth ? (int)fit : depth;
+    }
 
     /// <summary>Records how long a message kept its handler slot. Returns true when the depth rose.</summary>
     public bool RecordSlotTime(long ticks) => Record(ref _slotTicks, ticks, SlotTimeWeight);
 
     /// <summary>Records how long a receive that returned every message it asked for took. Returns true when the depth rose.</summary>
     public bool RecordReceiveTime(long ticks) => Record(ref _receiveTicks, ticks, ReceiveTimeWeight);
+
+    /// <summary>
+    /// Records the <paramref name="bytes"/> of the bodies of <paramref name="count"/> messages a receive returned. The
+    /// average body size follows a larger one at once, so reads ahead are cut before the bodies they bring exceed
+    /// <see cref="MaxBufferedBytes"/>, and a smaller one an eighth of the way. Returns true when more bodies fit than before.
+    /// </summary>
+    public bool RecordBodies(int count, long bytes)
+    {
+        if (count <= 0)
+            return false;
+
+        double sample = Math.Max(0, bytes) / (double)count;
+        double current, next;
+        do
+        {
+            current = Volatile.Read(ref _bodyBytes);
+            next = current < 0 || sample >= current ? sample : current + (sample - current) * BodySizeWeight;
+        } while (Interlocked.CompareExchange(ref _bodyBytes, next, current) != current);
+
+        return current >= 0 && Fit(next) > Fit(current) && Fit(current) < Depth;
+    }
 
     /// <summary>
     /// Records a lease the broker granted (from <see cref="IncomingMessage.LeaseExpiresAt"/>), counted from when its
@@ -129,6 +168,9 @@ internal sealed class ReceiveAhead
         double waitCap = Math.Floor(_maxConcurrency * horizon / slot);
         return (int)Math.Min(usedDuringReceive + _batchSize, waitCap);
     }
+
+    /// <summary>How many bodies of <paramref name="bodyBytes"/> fit within <see cref="MaxBufferedBytes"/>.</summary>
+    private static double Fit(double bodyBytes) => Math.Floor(MaxBufferedBytes / Math.Max(1, bodyBytes));
 
     /// <summary>A quarter of the shortest lease, at most <see cref="MaxHorizon"/>, in timestamp ticks.</summary>
     private double GetHorizonTicks()

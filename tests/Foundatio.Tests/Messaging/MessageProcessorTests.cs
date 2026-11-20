@@ -24,6 +24,9 @@ namespace Foundatio.Tests.Messaging;
 public class MessageProcessorTests : TestWithLoggingBase
 {
     private static readonly TimeSpan ShortLease = TimeSpan.FromSeconds(1);
+
+    // A body larger than half the buffered-bytes cap, so one fits within it and two do not.
+    private const int LargeBodyLength = (int)(ReceiveAhead.MaxBufferedBytes / 2) + 1024 * 1024;
     private static readonly RetryPolicy LongRetries = new() { Delay = RetryPolicy.Fixed(TimeSpan.FromMinutes(1)) };
     private readonly InMemoryMessageTransport _transport = new();
 
@@ -1041,6 +1044,78 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Receive_WithLargeBodies_BuffersNoMoreThanFitWithinTheByteCap()
+    {
+        // A clock that does not move keeps the depth at a batch, two, so only the bodies limit it.
+        var time = new FakeTimeProvider();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 2, maxConcurrentReceives: 2));
+        string data = new('x', LargeBodyLength);
+        await PrefillAsync(Enumerable.Range(1, 2).Select(i => new LargeCommand(-i, data)));
+        using var gate = new SemaphoreSlim(0);
+        int handled = 0, running = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<LargeCommand>(async (message, _, _) =>
+        {
+            if (message.Id >= 0)
+            {
+                Interlocked.Increment(ref running);
+                await gate.WaitAsync(TestCancellationToken);
+            }
+
+            Interlocked.Increment(ref handled);
+        }, new HandlerOptions { MaxConcurrency = 2 }), s => s.AddSingleton<TimeProvider>(time));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 2 && processor.InFlight == 0 && transport.ReceivesInFlight == 2, TimeSpan.FromSeconds(10));
+
+        // Two bodies would exceed the cap, so the receives ask for the two free slots and one message more.
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, 6).Select(i => new LargeCommand(i, data)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref running) == 2 && processor.Buffered > 0 && transport.ReceivesInFlight == 0, TimeSpan.FromSeconds(10));
+        Assert.Equal(1, processor.Buffered);
+        Assert.Equal(3, transport.MaxUnsettled);
+
+        gate.Release(6);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 8 && processor.InFlight == 0, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task Receive_WhenBufferedBodiesFallBackWithinTheByteCap_LetsTheParkedReceivePollAgain()
+    {
+        // One-message batches, so two receives fill the slots and a third reads ahead.
+        var time = new FakeTimeProvider();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities(maxReceiveBatchSize: 1, maxConcurrentReceives: 3));
+        using var gate = new SemaphoreSlim(0);
+        int handled = 0, running = 0;
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<LargeCommand>(async (message, _, _) =>
+        {
+            if (message.Id >= 0 && message.Data.Length == 0)
+            {
+                Interlocked.Increment(ref running);
+                await gate.WaitAsync(TestCancellationToken);
+            }
+
+            Interlocked.Increment(ref handled);
+        }, new HandlerOptions { MaxConcurrency = 2 }), s => s.AddSingleton<TimeProvider>(time));
+        var processor = GetProcessor(consumer);
+        await WaitForAsync(() => transport.ReceivesInFlight == 1, TimeSpan.FromSeconds(5));
+
+        // A receive that waited half a second for its message makes the depth a message per receive and one more, four,
+        // so with the slots taken, all three receives read ahead.
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        await consumer.Client.SendBatchAsync(Enumerable.Range(1, 2).Select(i => new LargeCommand(-i, "")), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 2 && processor.InFlight == 0 && transport.ReceivesInFlight == 3, TimeSpan.FromSeconds(5));
+        await consumer.Client.SendBatchAsync(Enumerable.Range(0, 2).Select(i => new LargeCommand(i, "")), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref running) == 2 && transport.ReceivesInFlight == 3, TimeSpan.FromSeconds(5));
+
+        // They asked while the bodies were small, so large ones overshoot the cap, and the depth falls to zero.
+        string data = new('x', LargeBodyLength);
+        await consumer.Client.SendBatchAsync(Enumerable.Range(10, 3).Select(i => new LargeCommand(i, data)), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => processor.Buffered == 3 && transport.ReceivesInFlight == 0, TimeSpan.FromSeconds(10));
+
+        // Once they drain, one large body fits again, and every receive polls: two for the free slots, and one more.
+        gate.Release(2);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 7 && processor.InFlight == 0 && transport.ReceivesInFlight == 3, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
     public async Task OrderedGroupBatch_WhenBuffered_HandlesEachGroupInOrderOneAtATime()
     {
         const int maxConcurrency = 4;
@@ -1218,6 +1293,7 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     public record GroupedCommand(int Id);
+    public record LargeCommand(int Id, string Data);
     public record RenewedCommand(int Id);
     public record SlowCommand(int Id);
     public record PoisonCommand(int Id);
