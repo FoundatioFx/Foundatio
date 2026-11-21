@@ -14,7 +14,7 @@
     <NoWarn>$(NoWarn);CS8002;FOUNDATIO0001</NoWarn>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\build\Foundatio.snk</AssemblyOriginatorKeyFile>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Foundatio.Redis.Benchmarks/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Foundatio.Redis.Benchmarks/**;Foundatio.Messaging.Benchmarks/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />

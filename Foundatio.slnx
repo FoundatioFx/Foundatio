@@ -38,6 +38,7 @@
   </Folder>
   <Folder Name="/Benchmarks/">
     <Project Path="benchmarks/Foundatio.Benchmarks.csproj" />
+    <Project Path="benchmarks/Foundatio.Messaging.Benchmarks/Foundatio.Messaging.Benchmarks.csproj" />
     <Project Path="benchmarks/Foundatio.Redis.Benchmarks/Foundatio.Redis.Benchmarks.csproj" />
   </Folder>
   <Project Path="src/Foundatio.AWS/Foundatio.AWS.csproj" />
