@@ -22,22 +22,15 @@ public sealed class V2Target(BenchOptions options, BrokerCalls calls) : BenchTar
 
     public override async Task InitAsync(CancellationToken cancellationToken)
     {
-        // a receiver creates its queue or subscription, so start one and stop it again
-        _handler = _ => ValueTask.CompletedTask;
-        using var host = BuildHost(Options.Concurrency, handle: true);
-        await host.StartAsync(cancellationToken);
-        await WaitForReceiverAsync(cancellationToken);
-        await host.StopAsync(cancellationToken);
+        // a receiver creates its queue or subscription: create one through the transport and dispose it before it
+        // receives, so no long poll is left open on the broker (an SQS poll cancelled client-side still takes messages)
+        using var host = BuildHost(Options.Concurrency, handle: false);
+        var transport = host.Services.GetRequiredService<IMessageTransport>();
+        var receiver = await transport.CreateReceiverAsync(Source, new ReceiverOptions(), cancellationToken);
+        await receiver.DisposeAsync();
     }
 
-    private async Task WaitForReceiverAsync(CancellationToken cancellationToken)
-    {
-        // Kafka joins its group in the background of the hosted service; give it time before sending
-        if (Options.Transport == "kafka")
-            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
-        else
-            await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
-    }
+    private MessageSource Source => Options.Pattern == Pattern.Queue ? MessageSource.Queue(QueueName) : MessageSource.Subscription(QueueName, "bench");
 
     private IMessageClient Client
     {
@@ -111,7 +104,7 @@ public sealed class V2Target(BenchOptions options, BrokerCalls calls) : BenchTar
     {
         using var host = BuildHost(Options.Concurrency, handle: false);
         var transport = host.Services.GetRequiredService<IMessageTransport>();
-        var source = Options.Pattern == Pattern.Queue ? MessageSource.Queue(QueueName) : MessageSource.Subscription(QueueName, "bench");
+        var source = Source;
         try
         {
             await transport.DeleteAsync(source);

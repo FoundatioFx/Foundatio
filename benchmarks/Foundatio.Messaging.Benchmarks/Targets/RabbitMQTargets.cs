@@ -23,7 +23,7 @@ public static class RabbitMQTargets
 }
 
 /// <summary>
-/// RabbitMQ.Client by hand: a quorum queue, publisher confirms with up to 256 outstanding per channel, a push consumer
+/// RabbitMQ.Client by hand: a quorum queue, publisher confirms (pipelined, the channel default rate limiter), a push consumer
 /// with prefetch twice the handler count, one ack per message. The floor for a quorum queue with confirms.
 /// </summary>
 public sealed class RawRabbitMQTarget(BenchOptions options) : BenchTargetBase(options)
@@ -72,7 +72,7 @@ public sealed class RawRabbitMQTarget(BenchOptions options) : BenchTargetBase(op
             return _publisher;
 
         var connection = await ConnectAsync();
-        return _publisher ??= await connection.CreateChannelAsync(new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true, outstandingPublisherConfirmationsRateLimiter: new ThrottlingRateLimiter(256)));
+        return _publisher ??= await connection.CreateChannelAsync(new CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true));
     }
 
     public override async Task SendAsync(BenchMessage message, CancellationToken cancellationToken)
@@ -92,7 +92,7 @@ public sealed class RawRabbitMQTarget(BenchOptions options) : BenchTargetBase(op
     {
         var connection = await ConnectAsync();
         _consumer = await connection.CreateChannelAsync(new CreateChannelOptions(false, false, consumerDispatchConcurrency: (ushort)concurrency), cancellationToken);
-        await _consumer.BasicQosAsync(0, (ushort)Math.Max(2 * concurrency, 10), false, cancellationToken);
+        await _consumer.BasicQosAsync(0, Environment.GetEnvironmentVariable("BENCH_PREFETCH") is { } prefetch ? UInt16.Parse(prefetch) : (ushort)Math.Max(2 * concurrency, 10), false, cancellationToken);
         var consumer = new AsyncEventingBasicConsumer(_consumer);
         var channel = _consumer;
         consumer.ReceivedAsync += async (_, args) =>

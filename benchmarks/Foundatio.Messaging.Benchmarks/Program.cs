@@ -328,7 +328,9 @@ public sealed class Runner(BenchOptions options, IBenchTarget target, BrokerCall
         Reset(1);
         calls.Reset();
         var start = Begin();
-        await target.InitAsync(cancellationToken);
+        // a v2 receiver provisions its own queue or subscription, so its init (start and stop a receiver) is not needed
+        if (options.Api != Api.V2)
+            await target.InitAsync(cancellationToken);
         await target.StartAsync(options.Concurrency, HandleAsync, cancellationToken);
         double startMs = Stopwatch.GetElapsedTime(start.Timestamp).TotalMilliseconds;
         var started = Stopwatch.GetTimestamp();
@@ -348,6 +350,16 @@ public sealed class Runner(BenchOptions options, IBenchTarget target, BrokerCall
 
     private async Task WaitAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        if (Environment.GetEnvironmentVariable("BENCH_PROGRESS") is not null)
+        {
+            var started = Stopwatch.GetTimestamp();
+            while (!_done.Task.IsCompleted && Stopwatch.GetElapsedTime(started) < timeout)
+            {
+                await Task.WhenAny(_done.Task, Task.Delay(1000, cancellationToken));
+                Console.Error.WriteLine($"  {Stopwatch.GetElapsedTime(started).TotalSeconds:F0}s handled {Volatile.Read(ref _handled)}");
+            }
+        }
+
         var completed = await Task.WhenAny(_done.Task, Task.Delay(timeout, cancellationToken));
         if (completed != _done.Task)
             Console.Error.WriteLine($"timed out after {timeout}: handled {_handled}/{_target}");
