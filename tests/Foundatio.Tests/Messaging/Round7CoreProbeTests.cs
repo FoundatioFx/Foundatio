@@ -1,0 +1,132 @@
+using System;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Jobs;
+using Foundatio.Jobs.Store;
+using Foundatio.Messaging;
+using Foundatio.Messaging.Transport;
+using Foundatio.Xunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Xunit;
+
+namespace Foundatio.Tests.Messaging;
+
+/// <summary>Round 7 review probes for the message runtime. Each fails while the defect it names is present.</summary>
+[Trait("Round7", "core")]
+public class Round7CoreProbeTests : TestWithLoggingBase
+{
+    private static readonly TimeSpan ShortLease = TimeSpan.FromSeconds(1);
+    private readonly InMemoryMessageTransport _transport = new();
+
+    public Round7CoreProbeTests(ITestOutputHelper output) : base(output)
+    {
+    }
+
+    [Fact]
+    public async Task LeaseRenewal_WhenRenewalsKeepFailingPastTheLease_DoesNotRunTheHandlerAlongsideItsRedelivery()
+    {
+        int running = 0, maxRunning = 0, invocations = 0, cancelled = 0;
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnRenew = (_, _) => throw new IOException("The broker cannot be reached")
+        };
+
+        await using var consumer = await MessagingTestHost.StartAsync(transport, Log, "tests", m => m.AddConsumer<ProbeCommand>(async (_, context, ct) =>
+        {
+            Interlocked.Increment(ref invocations);
+            InterlockedMax(ref maxRunning, Interlocked.Increment(ref running));
+            try
+            {
+                if (context.Attempt == 1)
+                    await Task.Delay(TimeSpan.FromSeconds(4), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref cancelled);
+                throw;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref running);
+            }
+        }, new HandlerOptions { LeaseDuration = ShortLease, MaxConcurrency = 4 }));
+
+        await consumer.Client.SendAsync(new ProbeCommand(1), cancellationToken: TestCancellationToken);
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+
+        // The lease ran out about 1 s into the 4 s handler, so the message was delivered again while it still ran.
+        // The renewer only retries a failed renewal; nothing cancels the handler once the lease it could not renew has ended.
+        Assert.True(Volatile.Read(ref invocations) >= 2, "The message was never delivered again, so the probe did not exercise an expired lease.");
+        Assert.Equal(1, Volatile.Read(ref maxRunning));
+    }
+
+    [Fact]
+    public async Task HostStop_WhileMessageHandlersDrain_DoesNotStartNewJobs()
+    {
+        var handling = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var probe = new JobRuns();
+        using var host = new HostBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton<ILoggerFactory>(Log);
+                services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+                services.AddSingleton(probe);
+                services.AddFoundatioJobs(j => j.UseStore(new InMemoryJobStore()).AddJob<ProbeJob>());
+                services.AddFoundatioMessaging(m => m.UseTransport(_transport).UseServiceName("tests").AddConsumer<ProbeCommand>(async (_, _, _) =>
+                {
+                    handling.TrySetResult();
+                    await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
+                }));
+            })
+            .Build();
+
+        await host.StartAsync(TestCancellationToken);
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new ProbeCommand(1), cancellationToken: TestCancellationToken);
+        await handling.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        // The host stops messaging first (reverse registration order) and waits for its drain before it stops the job
+        // worker, which goes on claiming throughout: a job enqueued now starts during shutdown.
+        var stopping = host.StopAsync(TestCancellationToken);
+        await Task.Delay(300, TestCancellationToken);
+        await host.Services.GetRequiredService<IJobClient>().EnqueueAsync(new ProbeJobArguments(1), cancellationToken: TestCancellationToken);
+        await stopping;
+
+        Assert.Equal(0, Volatile.Read(ref probe.Started));
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await _transport.DisposeAsync();
+        await base.DisposeAsync();
+    }
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int current;
+        while (value > (current = Volatile.Read(ref target)) && Interlocked.CompareExchange(ref target, value, current) != current)
+        {
+        }
+    }
+
+    public record ProbeCommand(int Id);
+    public record ProbeJobArguments(int Id);
+
+    public sealed class JobRuns
+    {
+        public int Started;
+    }
+
+    public sealed class ProbeJob(JobRuns runs) : IJobHandler<ProbeJobArguments>
+    {
+        public Task HandleAsync(ProbeJobArguments arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref runs.Started);
+            return Task.CompletedTask;
+        }
+    }
+}
