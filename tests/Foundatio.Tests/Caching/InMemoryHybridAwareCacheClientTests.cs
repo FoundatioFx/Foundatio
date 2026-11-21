@@ -68,9 +68,11 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public async Task AddAsync_WithWarmPeer_InvalidatesOnlyWhenExpirationRemovesKey(int milliseconds, bool shouldExist)
     {
         // Arrange
-        const string key = "warm";
+        const string key = "warm:*";
+        const string sibling = "warm:sibling";
         using var writer = GetCacheClient();
         using var peer = GetDistributedHybridCacheClient();
+        Assert.True(await peer.SetAsync(sibling, 1));
         Assert.True(await peer.SetAsync(key, 1));
         Assert.True(await peer.LocalCache.ExistsAsync(key));
         var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -83,6 +85,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
         Assert.False(added);
         Assert.Equal(shouldExist, await _distributedCache.ExistsAsync(key));
         Assert.Equal(shouldExist, await peer.LocalCache.ExistsAsync(key));
+        Assert.True(await peer.LocalCache.ExistsAsync(sibling));
         Assert.Equal(shouldExist, (await peer.GetAsync<int>(key)).HasValue);
         if (!shouldExist)
             Assert.Equal(key, await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));

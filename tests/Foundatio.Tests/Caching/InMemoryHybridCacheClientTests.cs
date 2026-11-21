@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Messaging;
+using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -61,9 +62,11 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public async Task AddAsync_WithWarmPeer_InvalidatesOnlyWhenExpirationRemovesKey(int milliseconds, bool shouldExist)
     {
         // Arrange
-        const string key = "warm";
+        const string key = "warm:*";
+        const string sibling = "warm:sibling";
         using var writer = GetDistributedHybridCacheClient();
         using var peer = GetDistributedHybridCacheClient();
+        Assert.True(await peer.SetAsync(sibling, 1));
         Assert.True(await peer.SetAsync(key, 1));
         Assert.True(await peer.LocalCache.ExistsAsync(key));
         var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -76,6 +79,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         Assert.False(added);
         Assert.Equal(shouldExist, await _distributedCache.ExistsAsync(key));
         Assert.Equal(shouldExist, await peer.LocalCache.ExistsAsync(key));
+        Assert.True(await peer.LocalCache.ExistsAsync(sibling));
         Assert.Equal(shouldExist, (await peer.GetAsync<int>(key)).HasValue);
         if (!shouldExist)
             Assert.Equal(key, await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
@@ -521,6 +525,69 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
     {
         return base.IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
+    [Fact]
+    public async Task InvalidateCache_WithMixedKeysAndPrefixes_EvictsOnlyMatchingEntries()
+    {
+        // Arrange
+        using var peer = CreateCache();
+        var values = new Dictionary<string, int>
+        {
+            ["invoice:42"] = 1,
+            ["literal:*"] = 2,
+            ["literal:sibling"] = 3,
+            ["tenant:*"] = 4,
+            ["tenant:7"] = 5
+        };
+        await _distributedCache.SetAllAsync(values);
+        await peer.GetAllAsync<int>(values.Keys);
+        Assert.Equal(values.Count, peer.LocalCache.Count);
+        var message = JsonSerializer.Deserialize<HybridCacheClient.InvalidateCache>("""
+            {"CacheId":"writer","Keys":["invoice:42","literal:*","tenant:*"],"Prefixes":["tenant:"]}
+            """);
+        Assert.NotNull(message);
+
+        // Act
+        await _messageBus.PublishAsync(message, cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.False(await peer.LocalCache.ExistsAsync("invoice:42"));
+        Assert.False(await peer.LocalCache.ExistsAsync("literal:*"));
+        Assert.True(await peer.LocalCache.ExistsAsync("literal:sibling"));
+        Assert.False(await peer.LocalCache.ExistsAsync("tenant:*"));
+        Assert.False(await peer.LocalCache.ExistsAsync("tenant:7"));
+    }
+
+    [Theory]
+    [InlineData(nameof(SystemTextJsonSerializer))]
+    [InlineData(nameof(JsonNetSerializer))]
+    [InlineData(nameof(Utf8JsonSerializer))]
+    public void InvalidateCache_WithOptionalPrefixes_PreservesJsonWireCompatibility(string serializerName)
+    {
+        // Arrange
+        ITextSerializer serializer = serializerName switch
+        {
+            nameof(SystemTextJsonSerializer) => new SystemTextJsonSerializer(),
+            nameof(JsonNetSerializer) => new JsonNetSerializer(),
+            nameof(Utf8JsonSerializer) => new Utf8JsonSerializer(),
+            _ => throw new ArgumentOutOfRangeException(nameof(serializerName))
+        };
+        var covered = HybridCacheClient.InvalidateCache.Create("writer", ["tenant:abc*"], ["tenant:"]);
+        var exact = HybridCacheClient.InvalidateCache.Create("writer", ["*"], null);
+        var mixed = HybridCacheClient.InvalidateCache.Create("writer", ["invoice:42", "literal:*"], ["tenant:"]);
+
+        // Act
+        var legacyBody = JsonSerializer.Deserialize<LegacyInvalidation>(serializer.SerializeToBytes(covered));
+        var exactBody = JsonSerializer.Deserialize<JsonElement>(serializer.SerializeToBytes(exact));
+        var mixedBody = JsonSerializer.Deserialize<JsonElement>(serializer.SerializeToBytes(mixed));
+
+        // Assert
+        Assert.NotNull(legacyBody);
+        Assert.Equal(["tenant:abc*", "tenant:*"], legacyBody.Keys);
+        Assert.Empty(exactBody.GetProperty("Prefixes").EnumerateArray());
+        Assert.Equal(["invoice:42", "literal:*", "tenant:*"], mixedBody.GetProperty("Keys").EnumerateArray().Select(key => key.GetString()));
+        Assert.Equal("tenant:", Assert.Single(mixedBody.GetProperty("Prefixes").EnumerateArray()).GetString());
     }
 
     [Theory]
@@ -1189,11 +1256,13 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
         await writer.SetAllAsync(new Dictionary<string, int> { ["ordinary"] = 2, ["*"] = 2 });
 
         // Assert
-        var legacy = JsonSerializer.Deserialize<LegacyInvalidation>(payload.Span);
-        Assert.NotNull(legacy);
-        Assert.Equal(["ordinary", "*"], legacy.Keys);
-        Assert.False(legacy.FlushAll);
-        Assert.False(legacy.Expired);
+        using var document = JsonDocument.Parse(payload);
+        var body = document.RootElement;
+        Assert.Equal(["ordinary", "*"], body.GetProperty("Keys").EnumerateArray().Select(key => key.GetString()));
+        Assert.Equal(0, body.GetProperty("Prefixes").GetArrayLength());
+        Assert.False(body.GetProperty("FlushAll").GetBoolean());
+        Assert.False(body.GetProperty("Expired").GetBoolean());
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<LegacyInvalidation>(payload.Span));
         Assert.Equal(2, (await peer.GetAsync<int>("ordinary")).Value);
         Assert.Equal(2, (await peer.GetAsync<int>("*")).Value);
         Assert.True(await peer.LocalCache.ExistsAsync("neighbor"));

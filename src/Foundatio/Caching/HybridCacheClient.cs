@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -45,8 +46,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _messageBus = messageBus;
         _lazySubscription = new AsyncLazy<bool>(async () =>
         {
-            await _messageBus.SubscribeAsync<IMessage<InvalidateCache>>(
-                OnRemoteCacheItemExpiredAsync, _disposedCancellationTokenSource.Token).AnyContext();
+            await _messageBus.SubscribeAsync<InvalidateCache>(
+                OnRemoteCacheInvalidatedAsync, _disposedCancellationTokenSource.Token).AnyContext();
             return true;
         }, AsyncLazyFlags.RetryOnFailure | AsyncLazyFlags.ExecuteOnCallingThread);
         localCacheOptions ??= new InMemoryCacheClientOptions
@@ -72,13 +73,15 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return _lazySubscription.Task;
     }
 
-    private Task OnRemoteCacheItemExpiredAsync(IMessage<InvalidateCache> notification)
+    private Task OnRemoteCacheInvalidatedAsync(InvalidateCache message)
     {
-        var message = notification.Body;
         if (String.Equals(_cacheId, message.CacheId, StringComparison.Ordinal))
             return Task.CompletedTask;
 
-        _logger.LogTrace("Invalidating local cache from remote: id={CacheId} expired={Expired} keys={Keys}", message.CacheId, message.Expired, String.Join(",", message.Keys ?? []));
+        var keys = message.Keys ?? [];
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("Invalidating local cache from {CacheId}, expired={Expired}, keys={Keys}, prefixes={Prefixes}", message.CacheId, message.Expired, String.Join(",", keys), String.Join(",", message.Prefixes ?? []));
+
         Interlocked.Increment(ref _invalidateCacheCalls);
         if (message.FlushAll)
         {
@@ -87,13 +90,13 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return _localCache.RemoveAllAsync();
         }
 
-        if (message.Keys is { Length: > 0 })
+        if (keys.Length > 0 || (!message.Expired && message.Prefixes is { Length: > 0 }))
         {
-            var tasks = new List<Task>(message.Keys.Length);
-            var keysToRemove = new List<string>(message.Keys.Length);
-            foreach (string key in message.Keys)
+            var tasks = new List<Task>();
+            var keysToRemove = new List<string>(keys.Length);
+            foreach (string key in keys)
             {
-                if (!message.Expired && key.EndsWith('*') && !notification.Properties.ContainsKey(InvalidateCache.LiteralKeysProperty))
+                if (!message.Expired && message.Prefixes is null && key.EndsWith('*'))
                 {
                     tasks.Add(InvalidateLocalPrefixAsync(key[..^1]));
                     continue;
@@ -108,6 +111,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
             if (keysToRemove.Count > 0)
                 tasks.Add(_localCache.RemoveAllAsync(keysToRemove));
+
+            if (!message.Expired && message.Prefixes is not null)
+            {
+                foreach (string prefix in message.Prefixes)
+                    tasks.Add(InvalidateLocalPrefixAsync(prefix));
+            }
 
             return Task.WhenAll(tasks);
         }
@@ -201,7 +210,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await PublishInvalidationAsync([$"{prefix}*"], isPrefix: true).AnyContext();
+            await PublishInvalidationAsync(prefixes: [prefix]).AnyContext();
 
         return removed;
     }
@@ -896,7 +905,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             _logger.LogError(ex, "Error removing prefix {Prefix} from the local cache after a failed distributed removal: {Message}", prefix, ex.Message);
         }
 
-        await TryPublishInvalidationAsync([$"{prefix}*"], isPrefix: true).AnyContext();
+        await TryPublishInvalidationAsync(prefixes: [prefix]).AnyContext();
     }
 
     internal static string[] GetBatchKeys(IEnumerable<string> keys)
@@ -932,11 +941,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             await TryPublishInvalidationAsync(keys).AnyContext();
     }
 
-    private async Task TryPublishInvalidationAsync(string[]? keys, bool isPrefix = false)
+    private async Task TryPublishInvalidationAsync(string[]? keys = null, string[]? prefixes = null)
     {
         try
         {
-            await PublishInvalidationAsync(keys, isPrefix).AnyContext();
+            await PublishInvalidationAsync(keys, prefixes).AnyContext();
         }
         catch (Exception ex)
         {
@@ -944,8 +953,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
     }
 
-    private Task PublishInvalidationAsync(string[]? keys, bool isPrefix = false) =>
-        InvalidateCache.PublishAsync(_messageBus, _cacheId, keys, isPrefix);
+    private Task PublishInvalidationAsync(string[]? keys = null, string[]? prefixes = null) =>
+        _messageBus.PublishAsync(InvalidateCache.Create(_cacheId, keys, prefixes));
 
     /// <summary>
     /// A string binds <typeparamref name="T"/> to <see cref="char"/> but is one list member. It is passed through
@@ -973,21 +982,54 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public class InvalidateCache
     {
-        internal const string LiteralKeysProperty = "Foundatio.Cache.LiteralKeys";
-
         public required string CacheId { get; set; }
         public string[]? Keys { get; set; }
         public bool FlushAll { get; set; }
         public bool Expired { get; set; }
 
-        internal static Task PublishAsync(IMessagePublisher publisher, string cacheId, string[]? keys, bool isPrefix)
-        {
-            var message = new InvalidateCache { CacheId = cacheId, Keys = keys, FlushAll = keys is null or { Length: 0 } };
-            MessageOptions? options = null;
-            if (!isPrefix && keys is not null && Array.Exists(keys, static key => key.EndsWith('*')))
-                options = new MessageOptions { Properties = { [LiteralKeysProperty] = "true" } };
+        /// <summary>
+        /// Literal prefixes to invalidate in addition to the exact entries in <see cref="Keys"/>.
+        /// An empty array makes every key literal. When omitted, a trailing asterisk in a non-expiration
+        /// message marks a prefix for compatibility with older senders.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string[]? Prefixes { get; set; }
 
-            return publisher.PublishAsync(message, options);
+        /// <summary>Omits an absent prefix list when writing with Json.NET or Utf8Json.</summary>
+        public bool ShouldSerializePrefixes() => Prefixes is not null;
+
+        internal static InvalidateCache Create(string cacheId, string[]? keys, string[]? prefixes)
+        {
+            string[]? wireKeys = keys;
+            if (prefixes is { Length: > 0 })
+                wireKeys = [.. keys ?? [], .. prefixes.Select(static prefix => prefix + "*")];
+
+            var message = new InvalidateCache { CacheId = cacheId, Keys = wireKeys, FlushAll = wireKeys is null or { Length: 0 } };
+            foreach (string key in keys ?? [])
+            {
+                if (NeedsExplicitPrefixes(key, prefixes))
+                {
+                    message.Prefixes = prefixes ?? [];
+                    break;
+                }
+            }
+
+            return message;
+        }
+
+        private static bool NeedsExplicitPrefixes(string key, string[]? prefixes)
+        {
+            if (!key.EndsWith('*'))
+                return false;
+
+            var legacyPrefix = key.AsSpan(0, key.Length - 1);
+            foreach (string prefix in prefixes ?? [])
+            {
+                if (legacyPrefix.StartsWith(prefix.AsSpan(), StringComparison.Ordinal))
+                    return false;
+            }
+
+            return true;
         }
     }
 }

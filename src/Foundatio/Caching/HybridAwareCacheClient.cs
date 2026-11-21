@@ -104,13 +104,13 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync([prefix + "*"], isPrefix: true).AnyContext();
+            await PublishAfterDistributedFailureAsync(prefixes: [prefix]).AnyContext();
             throw;
         }
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await PublishInvalidationAsync([prefix + "*"], isPrefix: true).AnyContext();
+            await PublishInvalidationAsync(prefixes: [prefix]).AnyContext();
 
         return removed;
     }
@@ -360,18 +360,18 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
     }
 
-    private Task PublishInvalidationAsync(string[]? keys, bool isPrefix = false) =>
-        HybridCacheClient.InvalidateCache.PublishAsync(_messagePublisher, _cacheId, keys, isPrefix);
+    private Task PublishInvalidationAsync(string[]? keys = null, string[]? prefixes = null) =>
+        _messagePublisher.PublishAsync(HybridCacheClient.InvalidateCache.Create(_cacheId, keys, prefixes));
 
     /// <summary>
-    /// Asks hybrid clients to evict the keys, or every entry when <paramref name="keys"/> is null. A publish failure is
-    /// logged so the caller still receives the provider's exception.
+    /// Asks hybrid clients to evict the affected keys and prefixes after an uncertain write. A publish failure
+    /// is logged so the caller still receives the provider's exception.
     /// </summary>
-    private async Task PublishAfterDistributedFailureAsync(string[]? keys, bool isPrefix = false)
+    private async Task PublishAfterDistributedFailureAsync(string[]? keys = null, string[]? prefixes = null)
     {
         try
         {
-            await PublishInvalidationAsync(keys, isPrefix).AnyContext();
+            await PublishInvalidationAsync(keys, prefixes).AnyContext();
         }
         catch (Exception ex)
         {
