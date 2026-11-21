@@ -105,9 +105,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
         else if (capabilities.ReceiveAhead)
         {
-            // Batches no larger than the slots, so a batch's group always fits in them, and one receive more than it
-            // takes to fill the slots, to read ahead.
-            _aheadBatch = Math.Min(_maxBatch, settings.MaxConcurrency);
+            // With ordered groups, batches no larger than the slots, so a batch's group always fits in them; without
+            // them every message is its own sequence, so full batches. And one receive more than it takes to fill the
+            // slots, to read ahead.
+            _aheadBatch = capabilities.OrderedGroups ? Math.Min(_maxBatch, settings.MaxConcurrency) : _maxBatch;
             _aheadReceives = (int)Math.Max(1, Math.Min(capabilities.MaxConcurrentReceives, receivesToFill + 1L));
             _ahead = new ReceiveAhead(settings.MaxConcurrency, _aheadBatch, _aheadReceives, lease, timeProvider.TimestampFrequency);
         }

@@ -780,6 +780,39 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Receive_WithFewerHandlersThanABatchAndNoOrderedGroups_AsksForFullBatches()
+    {
+        const int count = 300;
+        var asks = new ConcurrentQueue<int>();
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities() with { OrderedGroups = false })
+        {
+            ReceiveDelay = TimeSpan.FromMilliseconds(5),
+            OnReceive = (_, maxMessages, _) => asks.Enqueue(maxMessages)
+        };
+        await PrefillAsync(Enumerable.Range(0, count).Select(i => new RenewedCommand(i)));
+
+        int running = 0, maxRunning = 0;
+        var handled = new ConcurrentDictionary<int, int>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (message, _, _) =>
+        {
+            InterlockedMax(ref maxRunning, Interlocked.Increment(ref running));
+            await Task.Yield();
+            Interlocked.Decrement(ref running);
+            handled.AddOrUpdate(message.Id, 1, (_, n) => n + 1);
+        }, new HandlerOptions { MaxConcurrency = 1 }));
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(30), TestCancellationToken));
+        Assert.Equal(count, handled.Count);
+        Assert.All(handled.Values, n => Assert.Equal(1, n));
+        Assert.Equal(1, Volatile.Read(ref maxRunning));
+
+        // Every message is its own sequence, so one handler reads ahead in the transport's full batches rather than one
+        // message per receive.
+        Assert.Contains(10, asks);
+        Assert.True(transport.ReceiveCalls < count / 4, $"{transport.ReceiveCalls} receives for {count} messages.");
+    }
+
+    [Fact]
     public async Task Receive_WhenAReceiveReturnsLessThanItAsked_ParksTheOtherReceives()
     {
         const int count = 400;

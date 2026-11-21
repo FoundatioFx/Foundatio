@@ -38,7 +38,7 @@ internal sealed class ReceiveAhead
     private int _depth;
 
     /// <param name="maxConcurrency">The handler slots, <c>C</c>.</param>
-    /// <param name="batchSize">The most messages one receive asks for, <c>b</c>: at most <paramref name="maxConcurrency"/>.</param>
+    /// <param name="batchSize">The most messages one receive asks for, <c>b</c>.</param>
     /// <param name="receives">How many receives may be in flight at once, <c>R</c>.</param>
     /// <param name="leaseDuration">The lease the processor requests.</param>
     /// <param name="timestampFrequency">Ticks per second of the timestamps passed in.</param>
@@ -46,7 +46,6 @@ internal sealed class ReceiveAhead
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(batchSize, maxConcurrency);
         ArgumentOutOfRangeException.ThrowIfLessThan(receives, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(timestampFrequency, 1);
 
