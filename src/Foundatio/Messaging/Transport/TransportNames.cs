@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text;
 
 namespace Foundatio.Messaging.Transport;
@@ -10,8 +9,11 @@ internal static class TransportNames
     public static string Validate(string name, string parameterName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name, parameterName);
-        if (name.Any(c => !IsValid(c)))
-            throw new ArgumentException($"\"{name}\" is not a valid name. Use letters, digits, '.', '_' and '-'.", parameterName);
+        foreach (char c in name)
+        {
+            if (!IsValid(c))
+                throw new ArgumentException($"\"{name}\" is not a valid name. Use letters, digits, '.', '_' and '-'.", parameterName);
+        }
 
         return name;
     }

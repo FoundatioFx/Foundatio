@@ -29,7 +29,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
     private readonly ConcurrentDictionary<string, InMemorySource> _sources = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, InMemorySource>> _topics = new();
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _deduplication = new();
+    private readonly Dictionary<string, DateTimeOffset> _deduplication = new(StringComparer.Ordinal);
+    private readonly Queue<(string Key, DateTimeOffset ExpiresAt)> _deduplicationOrder = new();
     private readonly TimeProvider _timeProvider;
     private bool _disposed;
 
@@ -77,34 +78,37 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
         var now = _timeProvider.GetUtcNow();
         ValidateOutgoing(destination, messages, now);
+        var targets = GetTargets(destination);
+        if (targets.Count == 0)
+            return Task.CompletedTask;
+
         foreach (var message in messages)
         {
             if (Capabilities.Deduplication && message.DeduplicationId is { } deduplicationId && IsDuplicate($"{destination}|{deduplicationId}", now))
                 continue;
 
-            if (destination.Kind == MessageDestinationKind.Queue)
-            {
-                GetOrAddSource(MessageSource.Queue(destination.Name)).Add(message, now);
-                continue;
-            }
-
-            if (destination.Kind == MessageDestinationKind.Subscription)
-            {
-                var source = MessageSource.Subscription(destination.Name, destination.SubscriptionName!);
-                var subscription = GetOrAddSource(source);
-                _topics.GetOrAdd(source.Topic!, _ => new()).TryAdd(subscription.Key, subscription);
-                subscription.Add(message, now);
-                continue;
-            }
-
-            if (!_topics.TryGetValue(destination.Name, out var subscriptions))
-                continue;
-
-            foreach (var subscription in subscriptions.Values)
-                subscription.Add(message, now);
+            foreach (var target in targets)
+                target.Add(message, now);
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>The queue, the one subscription, or the topic's subscriptions a send delivers to, looked up once per send.</summary>
+    private ICollection<InMemorySource> GetTargets(MessageDestination destination)
+    {
+        switch (destination.Kind)
+        {
+            case MessageDestinationKind.Queue:
+                return new[] { GetOrAddSource(MessageSource.Queue(destination.Name)) };
+            case MessageDestinationKind.Subscription:
+                var source = MessageSource.Subscription(destination.Name, destination.SubscriptionName!);
+                var subscription = GetOrAddSource(source);
+                _topics.GetOrAdd(source.Topic!, _ => new()).TryAdd(subscription.Key, subscription);
+                return new[] { subscription };
+            default:
+                return _topics.TryGetValue(destination.Name, out var subscriptions) ? subscriptions.Values : Array.Empty<InMemorySource>();
+        }
     }
 
     /// <inheritdoc />
@@ -224,7 +228,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     private InMemorySource GetOrAddSource(MessageSource source)
     {
         string key = source.ToString();
-        return _sources.GetOrAdd(key, k => CreateSource(k, source.Kind == MessageSourceKind.DeadLetter));
+        return _sources.TryGetValue(key, out var existing) ? existing : _sources.GetOrAdd(key, static (k, state) => state.Transport.CreateSource(k, state.IsDeadLetter),
+            (Transport: this, IsDeadLetter: source.Kind == MessageSourceKind.DeadLetter));
     }
 
     private InMemorySource CreateSource(string key, bool isDeadLetter) => new(key)
@@ -277,10 +282,24 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
     private bool IsDuplicate(string key, DateTimeOffset now)
     {
-        foreach (var expired in _deduplication.Where(d => d.Value <= now))
-            _deduplication.TryRemove(expired.Key, out _);
+        lock (_deduplicationOrder)
+        {
+            // Ids are remembered in the order they were sent, so the expired ones are at the front.
+            while (_deduplicationOrder.TryPeek(out var oldest) && oldest.ExpiresAt <= now)
+            {
+                _deduplicationOrder.Dequeue();
+                if (_deduplication.TryGetValue(oldest.Key, out var expiresAt) && expiresAt == oldest.ExpiresAt)
+                    _deduplication.Remove(oldest.Key);
+            }
 
-        return !_deduplication.TryAdd(key, now.Add(DeduplicationWindow));
+            if (_deduplication.TryGetValue(key, out var existing) && existing > now)
+                return true;
+
+            var expires = now.Add(DeduplicationWindow);
+            _deduplication[key] = expires;
+            _deduplicationOrder.Enqueue((key, expires));
+            return false;
+        }
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
@@ -460,6 +479,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         private LinkedListNode<InMemoryEntry>? _cursor;
         private long _nextPosition;
         private TaskCompletionSource _changed = NewSignal();
+        private bool _changedObserved;
         private volatile bool _deleted;
 
         public InMemorySource(string key)
@@ -605,6 +625,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 }
 
                 AdvanceCursor();
+
+                // A receive that got nothing waits for the next change; until one does, changes need not signal.
+                if (result.Count == 0)
+                    _changedObserved = true;
+
                 DateTimeOffset? nextChange = _waiting.Min?.AvailableAt;
                 foreach (var (_, leases) in _leases)
                 {
@@ -707,8 +732,12 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             TaskCompletionSource previous;
             lock (_entries)
             {
+                if (!_changedObserved)
+                    return;
+
                 previous = _changed;
                 _changed = NewSignal();
+                _changedObserved = false;
             }
 
             previous.TrySetResult();
