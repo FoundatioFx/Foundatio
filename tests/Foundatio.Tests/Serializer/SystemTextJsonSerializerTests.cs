@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System;
+using System.Text.Json;
 using Foundatio.Serializer;
 using Foundatio.TestHarness.Utility;
 using Microsoft.Extensions.Logging;
@@ -104,6 +105,34 @@ public class SystemTextJsonSerializerTests : SerializerTestsBase
     {
         base.Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes();
     }
+
+    [Fact]
+    public void SerializeToBytes_WithOptions_MatchesStreamSerialization()
+    {
+        var serializer = new SystemTextJsonSerializer(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
+        object value = new SerializeToBytesSample("ünïcode ✓", 42, null);
+
+        using var stream = new System.IO.MemoryStream();
+        serializer.Serialize(value, stream);
+
+        Assert.Equal(stream.ToArray(), serializer.SerializeToBytes(value));
+        Assert.Equal("null"u8.ToArray(), serializer.SerializeToBytes<object?>(null));
+    }
+
+    [Fact]
+    public void Deserialize_FromMemorySliceWithByteOrderMark_ReadsOnlyTheSlice()
+    {
+        var serializer = new SystemTextJsonSerializer(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
+        byte[] buffer = [.. "garbage"u8, 0xEF, 0xBB, 0xBF, .. """{"name":"a","count":3,"note":"n"}"""u8, .. "garbage"u8];
+        var slice = new ReadOnlyMemory<byte>(buffer, 7, buffer.Length - 14);
+
+        var result = Assert.IsType<SerializeToBytesSample>(serializer.Deserialize(slice, typeof(SerializeToBytesSample)));
+        Assert.Equal(new SerializeToBytesSample("a", 3, "n"), result);
+        Assert.Equal(3, serializer.Deserialize(new ReadOnlyMemory<byte>("3"u8.ToArray()), typeof(object)));
+        Assert.Throws<JsonException>(() => serializer.Deserialize(new ReadOnlyMemory<byte>("{\"name\":"u8.ToArray()), typeof(SerializeToBytesSample)));
+    }
+
+    public record SerializeToBytesSample(string Name, int Count, string? Note);
 
     [Fact(Skip = "Skip benchmarks for now")]
     public virtual void Benchmark()
