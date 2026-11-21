@@ -129,13 +129,17 @@ internal sealed class MessageDelivery
             await stopRenewing.AnyContext();
         }
 
-        using var timeout = new CancellationTokenSource(SettleTimeout);
+        // The timeout's timer starts only for a settlement that waits: one that completes at once, as an in-memory one
+        // does, needs no timer, and keeps its slot, since giving it away would only cost.
+        using var timeout = new CancellationTokenSource();
         try
         {
-            // A settlement that completes at once, as an in-memory one does, keeps its slot: giving it away would only cost.
             var settling = settle(Receiver, Message, timeout.Token);
             if (!settling.IsCompleted)
+            {
+                timeout.CancelAfter(SettleTimeout);
                 _settlements.TryRelease(this);
+            }
 
             await settling.AnyContext();
             return null;

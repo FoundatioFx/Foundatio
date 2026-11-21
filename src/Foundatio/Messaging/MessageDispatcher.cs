@@ -54,7 +54,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         var message = delivery.Message;
         var headers = message.Headers;
         string messageType = headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty;
-        using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["message.id"] = message.MessageId, ["message.type"] = messageType });
+        using var logScope = _logger.BeginScope(new LogScopeState("message.id", message.MessageId, "message.type", messageType));
         var now = _runtime.TimeProvider.GetUtcNow();
         var counter = GetCounter(messageType);
 
@@ -84,13 +84,15 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         if (matches.Count == 0)
             return await HandleUnmatchedAsync(delivery, counter, messageType, handlerSet.Unresolved is not null, abortToken).AnyContext();
 
-        var payloads = new List<(Type Type, object Payload)>(1);
+        // One payload per type the handlers take; usually a single handler, so a single payload.
+        var payloads = new (Type Type, object Payload)[matches.Count];
+        int payloadCount = 0;
         try
         {
             foreach (var match in matches)
             {
-                if (!payloads.Exists(p => p.Type == match.PayloadType))
-                    payloads.Add((match.PayloadType, _runtime.Serializer.Deserialize(message.Body, match.PayloadType) ?? throw new MessageBusException("The message body deserialized to null.")));
+                if (FindPayload(payloads, payloadCount, match.PayloadType) is null)
+                    payloads[payloadCount++] = (match.PayloadType, _runtime.Serializer.Deserialize(message.Body, match.PayloadType) ?? throw new MessageBusException("The message body deserialized to null."));
             }
         }
         catch (Exception ex)
@@ -133,7 +135,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             {
                 await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
                 context.Services = scope.ServiceProvider;
-                await match.Handler.Invoke(scope.ServiceProvider, payloads.Find(p => p.Type == match.PayloadType).Payload, context, handlerCancellation.Token).AnyContext();
+                await match.Handler.Invoke(scope.ServiceProvider, FindPayload(payloads, payloadCount, match.PayloadType)!, context, handlerCancellation.Token).AnyContext();
             }
         }
         catch (Exception ex)
@@ -150,9 +152,12 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         _runtime.Observer?.OnHandled(_source, message, payloads[0].Payload, outcome, context.DeadLetterReason, error ?? settleError, context);
         _runtime.Tracker.Complete(context, ToWorkOutcome(outcome), DescribeError(outcome, context, error));
 
-        var tags = new TagList { { "messaging.message.type", messageType }, { "messaging.source", _source.Kind.ToString() }, { "outcome", outcome } };
-        MessagingInstruments.Handled.Add(1, tags);
-        MessagingInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, tags);
+        if (MessagingInstruments.Handled.Enabled || MessagingInstruments.Duration.Enabled)
+        {
+            var tags = new TagList { { "messaging.message.type", messageType }, { "messaging.source", _source.Kind.ToString() }, { "outcome", outcome } };
+            MessagingInstruments.Handled.Add(1, tags);
+            MessagingInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, tags);
+        }
         if (error is not null && outcome != "cancelled")
             activity?.SetErrorStatus(error);
 
@@ -454,8 +459,23 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         return headers.TryGetValue(name, out string? value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var time) ? time : null;
     }
 
+    private static object? FindPayload((Type Type, object Payload)[] payloads, int count, Type type)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (payloads[i].Type == type)
+                return payloads[i].Payload;
+        }
+
+        return null;
+    }
+
     private static Activity? StartActivity(string messageType, IReadOnlyDictionary<string, string> headers)
     {
+        // Without a listener no activity starts, so skip parsing the parent and formatting the name.
+        if (!FoundatioDiagnostics.ActivitySource.HasListeners())
+            return null;
+
         ActivityContext.TryParse(headers.GetValueOrDefault(KnownHeaders.TraceParent), headers.GetValueOrDefault(KnownHeaders.TraceState), out var parent);
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"handle {messageType}", ActivityKind.Consumer, parent);
         activity?.SetTag("messaging.message.type", messageType);
