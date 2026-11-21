@@ -2,6 +2,10 @@
 
 Messaging allows you to publish and subscribe to messages flowing through your application using pub/sub patterns. Foundatio provides multiple message bus implementations through the `IMessageBus` interface.
 
+::: tip New code
+For commands and events with handler classes, retries, dead letters and durable subscriptions, use `IMessageClient`; see [Messages and Events](./messages). This page covers the original `IMessageBus`, which remains supported.
+:::
+
 ## The IMessageBus Interface
 
 [View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Messaging/IMessageBus.cs)
@@ -57,12 +61,11 @@ Messaging using Azure Service Bus (separate package):
 ```csharp
 // dotnet add package Foundatio.AzureServiceBus
 
-using Foundatio.AzureServiceBus.Messaging;
+using Foundatio.Messaging;
 
-var messageBus = new AzureServiceBusMessageBus(o => {
-    o.ConnectionString = "...";
-    o.Topic = "events";
-});
+var messageBus = new AzureServiceBusMessageBus(o => o
+    .ConnectionString("...")
+    .Topic("events"));
 ```
 
 ### KafkaMessageBus
@@ -74,11 +77,9 @@ Messaging using Apache Kafka (separate package):
 ```csharp
 // dotnet add package Foundatio.Kafka
 
-using Foundatio.Kafka.Messaging;
+using Foundatio.Messaging;
 
-var messageBus = new KafkaMessageBus(o => {
-    o.BootstrapServers = "localhost:9092";
-});
+var messageBus = new KafkaMessageBus(o => o.BootstrapServers("localhost:9092"));
 ```
 
 ### RabbitMQMessageBus
@@ -90,11 +91,9 @@ Messaging using RabbitMQ (separate package):
 ```csharp
 // dotnet add package Foundatio.RabbitMQ
 
-using Foundatio.RabbitMQ.Messaging;
+using Foundatio.Messaging;
 
-var messageBus = new RabbitMQMessageBus(o => {
-    o.ConnectionString = "amqp://guest:guest@localhost:5672";
-});
+var messageBus = new RabbitMQMessageBus(o => o.ConnectionString("amqp://guest:guest@localhost:5672"));
 ```
 
 ### RedisMessageBus
@@ -106,11 +105,11 @@ Distributed messaging using Redis pub/sub (separate package):
 ```csharp
 // dotnet add package Foundatio.Redis
 
-using Foundatio.Redis.Messaging;
+using Foundatio.Messaging;
 using StackExchange.Redis;
 
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
-var messageBus = new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
+var messageBus = new RedisMessageBus(o => o.Subscriber(redis.GetSubscriber()));
 ```
 
 ### SQSMessageBus
@@ -124,12 +123,11 @@ Messaging using AWS SNS/SQS (separate package):
 
 using Foundatio.Messaging;
 
-var messageBus = new SQSMessageBus(o => {
-    o.ConnectionString = connectionString;
-    o.Topic = "events";
-    // Optional: Specify queue name for durable subscriptions
-    // o.SubscriptionQueueName = "my-service-queue";
-});
+var messageBus = new SQSMessageBus(o => o
+    .ConnectionString(connectionString)
+    .Topic("events")
+    // Optional: name the queue for durable subscriptions
+    .SubscriptionQueueName("my-service-queue"));
 ```
 
 ## Basic Usage
@@ -623,7 +621,7 @@ services.AddSingleton<IMessageBus, InMemoryMessageBus>();
 services.AddSingleton<IMessageBus>(sp =>
 {
     var redis = sp.GetRequiredService<IConnectionMultiplexer>();
-    return new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
+    return new RedisMessageBus(o => o.Subscriber(redis.GetSubscriber()));
 });
 ```
 
