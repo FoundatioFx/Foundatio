@@ -8,6 +8,7 @@ using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
+using Foundatio.Resilience;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -97,6 +98,33 @@ public class Round7CoreProbeTests : TestWithLoggingBase
         await stopping;
 
         Assert.Equal(0, Volatile.Read(ref probe.Started));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Retry_WhenTheRetryPolicyThrows_StillSettlesTheMessage(bool leaseExpiration)
+    {
+        int invocations = 0;
+        await using var transport = new InMemoryMessageTransport(new InMemoryMessageTransport().Capabilities with { LeaseExpiration = leaseExpiration });
+        var policy = new RetryPolicy { MaxAttempts = 2, ShouldRetry = ex => ((ArgumentException)ex).ParamName != "id" };
+
+        await using var consumer = await MessagingTestHost.StartAsync(transport, Log, "tests", m => m.AddConsumer<ProbeCommand>((_, _, _) =>
+        {
+            Interlocked.Increment(ref invocations);
+            throw new InvalidOperationException("The handler failed");
+        }, new HandlerOptions { LeaseDuration = ShortLease, RetryPolicy = policy }));
+
+        await consumer.Client.SendAsync(new ProbeCommand(1), cancellationToken: TestCancellationToken);
+
+        // ShouldRetry throws an InvalidCastException. The processor logs "Unexpected error processing message" and stops
+        // renewing without settling. With lease expiration the lease runs out and the last attempt, which CanRetry refuses
+        // before it calls ShouldRetry, dead-letters it (passes, a lease late per attempt). Without lease expiration (Kafka,
+        // RabbitMQ) it stays unsettled and is never delivered again: a Kafka partition's commits stop behind it.
+        bool idle = await transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(6), TestCancellationToken);
+        _logger.LogInformation("Handler ran {Invocations} times; idle {Idle}", Volatile.Read(ref invocations), idle);
+        Assert.True(idle, $"The message was never settled; its handler ran {Volatile.Read(ref invocations)} times.");
+        Assert.Equal(1, (await transport.GetStatsAsync(MessageSource.Queue(typeof(ProbeCommand).FullName!.Replace('+', '.')), TestCancellationToken))?.DeadLettered);
     }
 
     public override async ValueTask DisposeAsync()
