@@ -374,13 +374,20 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
 
     /// <summary>
     /// When a lease ends on this transport's clock: the broker's lock expiry moved onto <see cref="TimeProvider"/>, and,
-    /// when the entity's lock duration is known, no later than that long after the request started, so a clock that is
-    /// behind the broker's does not make Foundatio renew too late.
+    /// when the entity's lock duration is known, no later than that long after <paramref name="lockedBy"/>, so a clock
+    /// that is behind the broker's does not make Foundatio renew too late.
     /// </summary>
-    internal DateTimeOffset GetLeaseEnd(DateTimeOffset requestedAt, DateTimeOffset lockedUntil, TimeSpan? lockDuration)
+    /// <param name="lockedBy">
+    /// A time by which the broker had taken the lock: when a receive or accept returned, not when it started, since a long
+    /// poll can outlast the lock duration before a message arrives. A renewal passes when it was requested, at most a
+    /// round trip early, which only ends the lease that much sooner.
+    /// </param>
+    /// <param name="lockedUntil">The broker's lock expiry, on its clock.</param>
+    /// <param name="lockDuration">The entity's lock duration, when the transport read it.</param>
+    internal DateTimeOffset GetLeaseEnd(DateTimeOffset lockedBy, DateTimeOffset lockedUntil, TimeSpan? lockDuration)
     {
         var mapped = TimeProvider.GetUtcNow() + (lockedUntil - DateTimeOffset.UtcNow);
-        return lockDuration is { } duration && requestedAt + duration < mapped ? requestedAt + duration : mapped;
+        return lockDuration is { } duration && lockedBy + duration < mapped ? lockedBy + duration : mapped;
     }
 
     /// <summary>

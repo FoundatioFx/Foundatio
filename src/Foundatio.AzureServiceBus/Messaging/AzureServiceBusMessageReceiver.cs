@@ -44,7 +44,6 @@ internal sealed class AzureServiceBusMessageReceiver : IMessageReceiver
         cancellationToken.ThrowIfCancellationRequested();
 
         using var receiveCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposing.Token);
-        var requestedAt = _transport.TimeProvider.GetUtcNow();
         IReadOnlyList<ServiceBusReceivedMessage> received;
         try
         {
@@ -75,6 +74,8 @@ internal sealed class AzureServiceBusMessageReceiver : IMessageReceiver
         if (received.Count == 0)
             return [];
 
+        // The broker locked these messages when it handed them out, which can be long after a long poll started.
+        var receivedAt = _transport.TimeProvider.GetUtcNow();
         var messages = new List<IncomingMessage>(received.Count);
         foreach (var message in received)
         {
@@ -89,7 +90,7 @@ internal sealed class AzureServiceBusMessageReceiver : IMessageReceiver
                 GroupKey = decoded.GroupKey,
                 DeliveryCount = decoded.DeliveryCount,
                 EnqueuedAt = message.EnqueuedTime,
-                LeaseExpiresAt = _transport.GetLeaseEnd(requestedAt, message.LockedUntil, _entity.LockDuration)
+                LeaseExpiresAt = _transport.GetLeaseEnd(receivedAt, message.LockedUntil, _entity.LockDuration)
             };
 
             _unsettled[message.LockToken] = incoming;
