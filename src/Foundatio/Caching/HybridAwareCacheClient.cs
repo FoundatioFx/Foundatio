@@ -84,13 +84,13 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync(HybridCacheClient.InvalidateCache.ForKeys(_cacheId, flushAll ? null : items)).AnyContext();
+            await PublishAfterDistributedFailureAsync(flushAll ? null : items).AnyContext();
             throw;
         }
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await PublishInvalidationAsync(flushAll ? null : items).AnyContext();
+            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
 
         return removed;
     }
@@ -104,13 +104,13 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync(HybridCacheClient.InvalidateCache.ForPrefix(_cacheId, prefix)).AnyContext();
+            await PublishAfterDistributedFailureAsync([prefix + "*"]).AnyContext();
             throw;
         }
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await _messagePublisher.PublishAsync(HybridCacheClient.InvalidateCache.ForPrefix(_cacheId, prefix)).AnyContext();
+            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [prefix + "*"] }).AnyContext();
 
         return removed;
     }
@@ -161,7 +161,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync(HybridCacheClient.InvalidateCache.ForKeys(_cacheId, keys)).AnyContext();
+            await PublishAfterDistributedFailureAsync(keys).AnyContext();
             throw;
         }
 
@@ -236,7 +236,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync(HybridCacheClient.InvalidateCache.ForKeys(_cacheId, [key])).AnyContext();
+            await PublishAfterDistributedFailureAsync([key]).AnyContext();
             throw;
         }
 
@@ -257,7 +257,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync(HybridCacheClient.InvalidateCache.ForKeys(_cacheId, keys)).AnyContext();
+            await PublishAfterDistributedFailureAsync(keys).AnyContext();
             throw;
         }
 
@@ -345,19 +345,23 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync(HybridCacheClient.InvalidateCache.ForKeys(_cacheId, [key])).AnyContext();
+            await PublishAfterDistributedFailureAsync([key]).AnyContext();
             throw;
         }
     }
 
     private Task PublishInvalidationAsync(string[]? keys) =>
-        _messagePublisher.PublishAsync(HybridCacheClient.InvalidateCache.ForKeys(_cacheId, keys));
+        _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = keys, FlushAll = keys is null });
 
-    private async Task PublishAfterDistributedFailureAsync(HybridCacheClient.InvalidateCache message)
+    /// <summary>
+    /// Asks hybrid clients to evict the keys, or every entry when <paramref name="keys"/> is null. A publish failure is
+    /// logged so the caller still receives the provider's exception.
+    /// </summary>
+    private async Task PublishAfterDistributedFailureAsync(string[]? keys)
     {
         try
         {
-            await _messagePublisher.PublishAsync(message).AnyContext();
+            await PublishInvalidationAsync(keys).AnyContext();
         }
         catch (Exception ex)
         {
