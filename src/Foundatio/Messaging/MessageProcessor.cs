@@ -143,11 +143,24 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 _started = started = true;
                 _receiver = receiver;
                 Status.MarkRunning();
-                // Ends once the receive loop has ended and every delivery it received was handed to the handler.
-                if (_inOrder is not null)
-                    _ = Task.Run(RunInOrderLoopAsync, CancellationToken.None);
 
-                _receiveLoop = Task.Run(RunReceiveLoopAsync, CancellationToken.None);
+                // Handlers must not run in the context (activity, message context) of whoever started the processor,
+                // such as the request that called SubscribeAsync.
+                bool suppress = !ExecutionContext.IsFlowSuppressed();
+                var flow = suppress ? ExecutionContext.SuppressFlow() : default;
+                try
+                {
+                    // Ends once the receive loop has ended and every delivery it received was handed to the handler.
+                    if (_inOrder is not null)
+                        _ = Task.Run(RunInOrderLoopAsync, CancellationToken.None);
+
+                    _receiveLoop = Task.Run(RunReceiveLoopAsync, CancellationToken.None);
+                }
+                finally
+                {
+                    if (suppress)
+                        flow.Undo();
+                }
             }
         }
 

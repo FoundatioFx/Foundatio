@@ -139,6 +139,37 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task SubscribeAsync_UnderAnActivity_DoesNotRunHandlersInTheSubscribersContext()
+    {
+        using var source = new ActivitySource("Foundatio.Tests.SubscriberContext");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == source.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded
+        };
+        ActivitySource.AddActivityListener(listener);
+        await using var host = await StartAsync(_ => { });
+
+        var handled = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IAsyncDisposable subscription;
+        using (var request = source.StartActivity("request"))
+        {
+            Assert.NotNull(request);
+            subscription = await host.Client.SubscribeAsync<OrderShipped>((_, _, _) =>
+            {
+                handled.TrySetResult(Activity.Current?.OperationName);
+                return Task.CompletedTask;
+            }, cancellationToken: TestCancellationToken);
+        }
+
+        await using (subscription)
+        {
+            await host.Client.PublishAsync(new OrderShipped(1), cancellationToken: TestCancellationToken);
+            Assert.Null(await handled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        }
+    }
+
+    [Fact]
     public async Task UnhandledTypeOnASharedTopic_IsSkippedWithoutRetries()
     {
         var received = new ConcurrentBag<string>();
