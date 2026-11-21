@@ -11,7 +11,7 @@
     <Optimize>true</Optimize>
     <Configuration>Release</Configuration>
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);CS8002</NoWarn>
+    <NoWarn>$(NoWarn);CS8002;FOUNDATIO0001</NoWarn>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\build\Foundatio.snk</AssemblyOriginatorKeyFile>
     <DefaultItemExcludes>$(DefaultItemExcludes);Foundatio.Redis.Benchmarks/**</DefaultItemExcludes>

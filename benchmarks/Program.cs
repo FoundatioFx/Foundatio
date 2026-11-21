@@ -14,6 +14,7 @@ public class Program
         //   dotnet run -c Release -- --filter *Caching*    # Run only caching benchmarks
         //   dotnet run -c Release -- --filter *Resilience* # Run only resilience benchmarks
         //   dotnet run -c Release -- --filter *DeepClone*  # Run only deep clone benchmarks
+        //   dotnet run -c Release -- --filter *Messaging* *DurableJob*  # Run the messaging and durable job benchmarks
         //   dotnet run -c Release -- --list tree           # List all benchmarks
 
         // The spotlight logger renders a live, cursor-positioned console. When output is
