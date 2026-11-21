@@ -689,7 +689,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Unable to refresh {Key} after an overlapping cache invalidation: {Message}", key, ex.Message);
+            _logger.LogWarning(ex, "Unable to refresh {Key} after an overlapping cache invalidation", key);
         }
 
         return result;
@@ -706,7 +706,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Unable to get the expiration of {Key}, skipping the local update: {Message}", key, ex.Message);
+                    _logger.LogWarning(ex, "Unable to get the expiration of {Key}, skipping the local update", key);
                     return value;
                 }
 
@@ -736,7 +736,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Unable to check whether {Key} exists in the distributed cache, skipping the local update: {Message}", key, ex.Message);
+            _logger.LogWarning(ex, "Unable to check whether {Key} exists in the distributed cache, skipping the local update", key);
             return null;
         }
     }
@@ -775,7 +775,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             if (!ticket.IsRead)
                 throw;
 
-            _logger.LogWarning(ex, "Unable to store {Key} in the local cache after a distributed read: {Message}", key, ex.Message);
+            _logger.LogWarning(ex, "Unable to store {Key} in the local cache after a distributed read", key);
         }
 
         if (notifyPeers)
