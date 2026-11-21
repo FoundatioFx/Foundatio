@@ -127,6 +127,41 @@ public class Round7CoreProbeTests : TestWithLoggingBase
         Assert.Equal(1, (await transport.GetStatsAsync(MessageSource.Queue(typeof(ProbeCommand).FullName!.Replace('+', '.')), TestCancellationToken))?.DeadLettered);
     }
 
+    [Fact]
+    public async Task ReplaceReceiver_WhileAHandlerOfTheFaultedReceiverRuns_KeepsReceivingOtherMessages()
+    {
+        var slowStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var otherHandled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport);
+        await using var consumer = await MessagingTestHost.StartAsync(transport, Log, "tests", m => m
+            .Configure(o => o.ShutdownTimeout = TimeSpan.FromSeconds(8))
+            .AddConsumer<ProbeCommand>(async (message, context, ct) =>
+            {
+                if (message.Id == 2)
+                {
+                    otherHandled.TrySetResult();
+                    return;
+                }
+
+                slowStarted.TrySetResult();
+                if (context.Attempt == 1)
+                    await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            }, new HandlerOptions { MaxConcurrency = 4 }));
+
+        await consumer.Client.SendAsync(new ProbeCommand(1), cancellationToken: TestCancellationToken);
+        await slowStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        transport.FaultReceivers();
+        var faultedAt = DateTime.UtcNow;
+        await consumer.Client.SendAsync(new ProbeCommand(2), cancellationToken: TestCancellationToken);
+
+        // The processor drains the faulted receiver for up to ReplaceTimeout (ShutdownTimeout, 25 s by default) before it
+        // opens a new one, and receives nothing meanwhile, though three of its four slots are free.
+        await otherHandled.Task.WaitAsync(TimeSpan.FromSeconds(20), TestCancellationToken);
+        var waited = DateTime.UtcNow - faultedAt;
+        _logger.LogInformation("Message 2 waited {Waited} for a receiver", waited);
+        Assert.True(waited < TimeSpan.FromSeconds(3), $"Message 2 waited {waited} while the faulted receiver drained.");
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await _transport.DisposeAsync();
