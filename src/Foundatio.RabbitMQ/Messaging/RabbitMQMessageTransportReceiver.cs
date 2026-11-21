@@ -18,18 +18,37 @@ namespace Foundatio.Messaging.Transport;
 /// </summary>
 /// <remarks>
 /// RabbitMQ counts every unacknowledged delivery against its consumer's prefetch, the ones being handled as well as
-/// the ones buffered. So the consumer's prefetch is twice <see cref="ReceiverOptions.PrefetchCount"/>, which Foundatio
-/// sets to the number of messages it handles at once: room for those, and as many again buffered ahead. A new prefetch
-/// only applies to new consumers, so when a caller holds a whole prefetch of unsettled deliveries and asks for more, the
-/// receiver starts another consumer and cancels the old one: deliveries of a cancelled consumer stay with the channel
-/// and can still be settled, and the new consumer has its whole prefetch to fill the buffer.
+/// the ones buffered. So the consumer's prefetch starts at twice <see cref="ReceiverOptions.PrefetchCount"/>, which
+/// Foundatio sets to the number of messages it handles at once: room for those, and as many again buffered ahead. A
+/// quorum queue grants more deliveries only as acknowledgements reach it, so a small prefetch caps fast handlers at what
+/// it covers per round trip. Once settlements show how long a delivery is held, the prefetch adds what the handlers get
+/// through in <see cref="PrefetchHorizon"/>, at most <see cref="MaxPrefetchAhead"/> and the bodies that fit in
+/// <see cref="MaxBufferedBytes"/>, so a buffered delivery waits about the horizon at most and slow handlers keep a small
+/// one. A new prefetch only applies to new consumers, so the receiver starts another consumer and cancels the old one
+/// when the prefetch it wants has doubled or halved, and when a caller holds a whole prefetch of unsettled deliveries
+/// and asks for more: deliveries of a cancelled consumer stay with the channel and can still be settled, and the new
+/// consumer has its whole prefetch to fill the buffer.
 /// </remarks>
 internal sealed class RabbitMQMessageReceiver : IMessageReceiver
 {
+    /// <summary>The most deliveries the prefetch adds to twice the handler slots once settlements are fast.</summary>
+    internal const int MaxPrefetchAhead = 512;
+
+    /// <summary>The most bytes of bodies the added prefetch is sized to hold, at the bodies' recent average size.</summary>
+    internal const long MaxBufferedBytes = 16 * 1024 * 1024;
+
+    /// <summary>About how long a buffered delivery may wait for a handler, which sizes the added prefetch.</summary>
+    internal static readonly TimeSpan PrefetchHorizon = TimeSpan.FromSeconds(1);
+
+    private static readonly TimeSpan MinPrefetchChangeInterval = TimeSpan.FromSeconds(1);
+    private const double HeldTimeWeight = 1.0 / 16;
+    private const double BodySizeWeight = 1.0 / 8;
+
     private readonly RabbitMQMessageTransport _transport;
     private readonly string _queue;
     private readonly string? _topicExchange;
-    private readonly ushort _prefetch;
+    private readonly int _slots;
+    private readonly ushort _minPrefetch;
     private readonly Channel<RabbitMQIncomingMessage> _buffer = Channel.CreateUnbounded<RabbitMQIncomingMessage>(new UnboundedChannelOptions { SingleWriter = true });
     private readonly object _lock = new();
     private readonly HashSet<Consumer> _retired = [];
@@ -39,6 +58,11 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
     private Consumer? _live;
     private Exception? _fault;
     private volatile bool _channelClosed;
+    private ushort _channelPrefetch;
+    private double _heldTicks = -1;
+    private double _bodyBytes = -1;
+    private long _prefetchChangedAt;
+    private int _changingPrefetch;
     private int _disposed;
 
     public RabbitMQMessageReceiver(RabbitMQMessageTransport transport, MessageSource source, string queue, string? topicExchange, ReceiverOptions options)
@@ -47,7 +71,8 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
         Source = source;
         _queue = queue;
         _topicExchange = topicExchange;
-        _prefetch = (ushort)Math.Clamp(2L * options.PrefetchCount, 1, UInt16.MaxValue);
+        _slots = Math.Max(1, options.PrefetchCount);
+        _minPrefetch = (ushort)Math.Clamp(2L * options.PrefetchCount, 1, UInt16.MaxValue);
     }
 
     public MessageSource Source { get; }
@@ -79,8 +104,7 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
                 }
             }
 
-            await channel.BasicQosAsync(0, _prefetch, false, cancellationToken).AnyContext();
-            _live = await StartConsumerAsync(channel, cancellationToken).AnyContext();
+            _live = await StartConsumerAsync(channel, _minPrefetch, cancellationToken).AnyContext();
         }
         catch (Exception ex) when (ex is OperationInterruptedException or AlreadyClosedException)
         {
@@ -273,6 +297,7 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
             DeliveryTag = deliveryTag
         };
 
+        RecordBody(decoded.Body.Length);
         consumer.OnDelivered();
         // A delivery that arrives once the receiver is closing is returned with its channel.
         _buffer.Writer.TryWrite(message);
@@ -284,7 +309,10 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
         while (batch.Count < maxMessages && _buffer.Reader.TryRead(out var message))
         {
             if (!message.IsSettled)
+            {
+                message.HandedOutAt = Stopwatch.GetTimestamp();
                 batch.Add(message);
+            }
         }
 
         return batch;
@@ -297,9 +325,18 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
     private async Task ReplaceConsumerIfFullAsync()
     {
         var live = Volatile.Read(ref _live);
-        if (live is null || live.Unsettled < _prefetch)
+        if (live is null || live.Unsettled < live.Prefetch)
             return;
 
+        await ReplaceConsumerAsync(live, () => live.Unsettled >= live.Prefetch ? live.Prefetch : null).AnyContext();
+    }
+
+    /// <summary>
+    /// Replaces <paramref name="live"/> with a consumer with the prefetch <paramref name="prefetch"/> returns, unless it
+    /// returns null once the replace lock is held, or the receiver already keeps as many retired consumers as it may.
+    /// </summary>
+    private async Task ReplaceConsumerAsync(Consumer live, Func<ushort?> prefetch)
+    {
         lock (_lock)
         {
             if (_retired.Count >= _transport.Options.MaxRetiredConsumers)
@@ -317,10 +354,10 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
 
         try
         {
-            if (_live != live || _fault is not null || IsDisposed || live.Unsettled < _prefetch)
+            if (_live != live || _fault is not null || IsDisposed || prefetch() is not { } nextPrefetch)
                 return;
 
-            var next = await StartConsumerAsync(_channel!, _disposing.Token).AnyContext();
+            var next = await StartConsumerAsync(_channel!, nextPrefetch, _disposing.Token).AnyContext();
             lock (_lock)
             {
                 live.IsRetired = true;
@@ -343,9 +380,16 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
         }
     }
 
-    private async Task<Consumer> StartConsumerAsync(IChannel channel, CancellationToken cancellationToken)
+    private async Task<Consumer> StartConsumerAsync(IChannel channel, ushort prefetch, CancellationToken cancellationToken)
     {
-        var consumer = new Consumer(this, channel);
+        // A channel's prefetch applies to the consumers started on it afterwards.
+        if (prefetch != _channelPrefetch)
+        {
+            await channel.BasicQosAsync(0, prefetch, false, cancellationToken).AnyContext();
+            _channelPrefetch = prefetch;
+        }
+
+        var consumer = new Consumer(this, channel) { Prefetch = prefetch };
         consumer.Tag = await channel.BasicConsumeAsync(_queue, autoAck: false, consumerTag: String.Empty, noLocal: false, exclusive: false,
             arguments: null, consumer, cancellationToken).AnyContext();
         return consumer;
@@ -433,6 +477,9 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
 
     private void OnSettled(RabbitMQIncomingMessage delivery)
     {
+        if (delivery.HandedOutAt != 0)
+            RecordHeld(Stopwatch.GetTimestamp() - delivery.HandedOutAt);
+
         var consumer = delivery.Consumer;
         if (consumer.OnSettled() > 0)
             return;
@@ -442,6 +489,72 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
             if (consumer.IsRetired)
                 _retired.Remove(consumer);
         }
+    }
+
+    /// <summary>The prefetch for how long deliveries are held from being handed out until they are settled.</summary>
+    internal ushort GetWantedPrefetch()
+    {
+        double held = Volatile.Read(ref _heldTicks);
+        if (held < 0)
+            return _minPrefetch;
+
+        // What the handlers get through within the horizon (Little's law), within the cap and the buffered bytes.
+        double ahead = Math.Min(MaxPrefetchAhead, Math.Floor(_slots * PrefetchHorizon.TotalSeconds * Stopwatch.Frequency / Math.Max(1, held)));
+        double body = Volatile.Read(ref _bodyBytes);
+        if (body > 0)
+            ahead = Math.Min(ahead, Math.Floor(MaxBufferedBytes / body));
+
+        return (ushort)Math.Min(_minPrefetch + (long)ahead, UInt16.MaxValue);
+    }
+
+    private void RecordHeld(long ticks)
+    {
+        double sample = Math.Max(1, ticks), current, next;
+        do
+        {
+            current = Volatile.Read(ref _heldTicks);
+            next = current < 0 ? sample : current + (sample - current) * HeldTimeWeight;
+        } while (Interlocked.CompareExchange(ref _heldTicks, next, current) != current);
+
+        var live = Volatile.Read(ref _live);
+        if (live is null || IsDisposed)
+            return;
+
+        ushort wanted = GetWantedPrefetch();
+        if (wanted < 2 * live.Prefetch && 2 * wanted > live.Prefetch)
+            return;
+
+        long changedAt = Volatile.Read(ref _prefetchChangedAt);
+        if (changedAt != 0 && Stopwatch.GetElapsedTime(changedAt) < MinPrefetchChangeInterval || Interlocked.CompareExchange(ref _changingPrefetch, 1, 0) != 0)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ReplaceConsumerAsync(live, () =>
+                {
+                    ushort prefetch = GetWantedPrefetch();
+                    return prefetch == live.Prefetch ? null : prefetch;
+                }).AnyContext();
+            }
+            finally
+            {
+                Volatile.Write(ref _prefetchChangedAt, Stopwatch.GetTimestamp());
+                Volatile.Write(ref _changingPrefetch, 0);
+            }
+        });
+    }
+
+    /// <summary>Follows a larger body at once and a smaller one an eighth of the way, as read-ahead does.</summary>
+    private void RecordBody(int bytes)
+    {
+        double sample = Math.Max(1, bytes), current, next;
+        do
+        {
+            current = Volatile.Read(ref _bodyBytes);
+            next = current < 0 || sample >= current ? sample : current + (sample - current) * BodySizeWeight;
+        } while (Interlocked.CompareExchange(ref _bodyBytes, next, current) != current);
     }
 
     private Task OnChannelShutdownAsync(object sender, ShutdownEventArgs args)
@@ -497,6 +610,9 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
         }
 
         public string? Tag { get; set; }
+
+        /// <summary>The prefetch the consumer was started with.</summary>
+        public ushort Prefetch { get; init; }
 
         /// <summary>Cancelled; kept until its deliveries are settled.</summary>
         public bool IsRetired { get; set; }

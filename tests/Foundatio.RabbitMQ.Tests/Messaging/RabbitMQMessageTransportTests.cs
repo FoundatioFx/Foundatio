@@ -185,6 +185,64 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task Receive_WhileMessagesAreSettledQuickly_RaisesThePrefetch()
+    {
+        // Arrange
+        const int count = 600;
+        var source = MessageSource.Queue(NewName("prefetch-raise"));
+        DeleteAfterTest(source);
+        await using var receiver = await Transport.CreateReceiverAsync(source, new ReceiverOptions { PrefetchCount = 1 }, TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, count).Select(i => Message($"m{i}", $"id-{i}")).ToList(), TestCancellationToken);
+
+        // Act: settle each message as soon as it is received, as a fast handler does
+        var ids = new List<string>();
+        while (ids.Count < 300)
+        {
+            var batch = await receiver.ReceiveAsync(1, DeliveryTimeout, TestCancellationToken);
+            Assert.NotEmpty(batch);
+            await receiver.CompleteAsync(batch[0], TestCancellationToken);
+            ids.Add(batch[0].MessageId);
+        }
+        int handled = ids.Count;
+
+        // Assert: the broker delivered well beyond twice the one handler slot ahead of the handler
+        var connection = await ConnectAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken);
+        uint ready = (await channel.QueueDeclarePassiveAsync(RabbitTransport.Names.Queue(source.Name), TestCancellationToken)).MessageCount;
+        Assert.True(ready < count - handled - 2, $"{ready} of the {count - handled} messages left were still ready.");
+
+        var rest = await ReceiveAsync(receiver, count - handled);
+        Assert.Equal(count, ids.Concat(rest.Select(m => m.MessageId)).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Receive_WhileMessagesAreHeldForLong_KeepsThePrefetchAtTwiceTheHandlers()
+    {
+        // Arrange
+        const int count = 20;
+        var source = MessageSource.Queue(NewName("prefetch-slow"));
+        DeleteAfterTest(source);
+        await using var receiver = await Transport.CreateReceiverAsync(source, new ReceiverOptions { PrefetchCount = 1 }, TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, count).Select(i => Message($"m{i}", $"id-{i}")).ToList(), TestCancellationToken);
+
+        // Act: a handler that takes longer than a buffered message should wait
+        for (int i = 0; i < 3; i++)
+        {
+            var batch = await receiver.ReceiveAsync(1, DeliveryTimeout, TestCancellationToken);
+            Assert.NotEmpty(batch);
+            await Task.Delay(TimeSpan.FromMilliseconds(700), TestCancellationToken);
+            await receiver.CompleteAsync(batch[0], TestCancellationToken);
+        }
+
+        // Assert: no more than the one being handled and one buffered left the queue
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        var connection = await ConnectAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken);
+        uint ready = (await channel.QueueDeclarePassiveAsync(RabbitTransport.Names.Queue(source.Name), TestCancellationToken)).MessageCount;
+        Assert.Equal((uint)(count - 3 - 2), ready);
+    }
+
+    [Fact]
     public async Task Abandon_OfAnInstanceSubscriptionMessageWithADelay_RedeliversItToTheSameSubscription()
     {
         Assert.SkipUnless(DelayedDelivery, "Delayed delivery is off.");

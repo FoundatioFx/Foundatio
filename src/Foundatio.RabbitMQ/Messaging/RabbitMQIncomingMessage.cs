@@ -17,6 +17,9 @@ internal sealed class RabbitMQIncomingMessage : IncomingMessage
 
     public bool IsSettled => Volatile.Read(ref _settled) == 1;
 
+    /// <summary>The <see cref="System.Diagnostics.Stopwatch"/> timestamp when a receive handed it out, or 0.</summary>
+    public long HandedOutAt { get; set; }
+
     /// <summary>Claims the delivery for one settlement; false when it was already settled or released.</summary>
     public bool TrySettle() => Interlocked.Exchange(ref _settled, 1) == 0;
 }
