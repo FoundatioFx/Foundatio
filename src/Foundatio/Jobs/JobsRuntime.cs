@@ -15,6 +15,7 @@ namespace Foundatio.Jobs;
 internal sealed class JobsRuntime
 {
     private TaskCompletionSource _workAvailable = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _workAwaited;
     private volatile ProcessingState _hostState;
     private volatile JobWorker? _worker;
     private volatile JobScheduler? _scheduler;
@@ -73,10 +74,26 @@ internal sealed class JobsRuntime
     }
 
     /// <summary>Completes when a job is enqueued in this process, so an idle local worker starts it at once.</summary>
-    public Task WorkAvailable => Volatile.Read(ref _workAvailable).Task;
+    /// <summary>
+    /// Completes when a job is enqueued here after it was read. Reading it marks it awaited, after reading it, so a
+    /// signal that skips it came before the reader's next claim, which then sees the job.
+    /// </summary>
+    public Task WorkAvailable
+    {
+        get
+        {
+            var task = Volatile.Read(ref _workAvailable).Task;
+            Interlocked.Exchange(ref _workAwaited, 1);
+            return task;
+        }
+    }
 
+    /// <summary>Wakes the readers of <see cref="WorkAvailable"/>; with none since the last signal, there is nothing to replace.</summary>
     public void SignalWorkAvailable()
     {
+        if (Interlocked.Exchange(ref _workAwaited, 0) == 0)
+            return;
+
         Interlocked.Exchange(ref _workAvailable, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
     }
 }

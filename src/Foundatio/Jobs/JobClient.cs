@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -14,7 +15,12 @@ namespace Foundatio.Jobs;
 
 internal sealed class JobClient : IJobClient
 {
+    private const int MaxCachedTypes = 1024;
+
     private readonly JobsRuntime _runtime;
+
+    // Job names of argument types already checked not to be jobs, so an enqueue does not reflect over the type again.
+    private readonly ConcurrentDictionary<Type, string> _argumentNames = new();
 
     public JobClient(JobsRuntime runtime)
     {
@@ -24,8 +30,22 @@ internal sealed class JobClient : IJobClient
     public Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        return CreateAsync(GetArgumentsName(arguments), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
+    }
+
+    /// <summary>The job name of <paramref name="arguments"/>' runtime type, once it is known not to be a job.</summary>
+    private string GetArgumentsName(object arguments)
+    {
+        var type = arguments.GetType();
+        if (_argumentNames.TryGetValue(type, out string? name))
+            return name;
+
         JobRegistration.ThrowIfJob(arguments, job => $"EnqueueAsync<{job}>()", nameof(arguments));
-        return CreateAsync(JobNaming.GetName(arguments.GetType()), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
+        name = JobNaming.GetName(type);
+        if (_argumentNames.Count < MaxCachedTypes)
+            _argumentNames.TryAdd(type, name);
+
+        return name;
     }
 
     public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IJobHandler

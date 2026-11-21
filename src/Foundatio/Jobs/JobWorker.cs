@@ -29,6 +29,10 @@ internal sealed class JobWorker
     private readonly SemaphoreSlim _slots;
     private readonly ConcurrentDictionary<string, int> _runningByName = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (WorkCounter Counter, string Handler)> _tracking;
+
+    // Every job name, claimed as is unless a job type limits how many of it run at once.
+    private readonly List<string> _allNames;
+    private readonly bool _limitsByName;
     private readonly CancellationTokenSource _stopClaiming = new();
     private readonly CancellationTokenSource _abortJobs = new();
     private Task _loop = Task.CompletedTask;
@@ -42,6 +46,8 @@ internal sealed class JobWorker
         Status = new ProcessingStatusTracker(runtime.TimeProvider);
         _tracking = runtime.Jobs.Values.ToDictionary(j => j.Name,
             j => (runtime.Tracker.GetCounter(WorkKind.Job, j.Name, null), JobNaming.GetDisplayName(j.JobType)), StringComparer.Ordinal);
+        _allNames = runtime.Jobs.Values.Select(j => j.Name).ToList();
+        _limitsByName = runtime.Jobs.Values.Any(j => j.Options.MaxConcurrency is not null);
     }
 
     /// <summary>Read by health checks. Claim errors are recorded here; they never stop the worker.</summary>
@@ -106,7 +112,7 @@ internal sealed class JobWorker
                 break;
             }
 
-            var names = _runtime.Jobs.Values
+            var names = !_limitsByName ? _allNames : _runtime.Jobs.Values
                 .Where(j => j.Options.MaxConcurrency is not { } limit || _runningByName.GetValueOrDefault(j.Name) < limit)
                 .Select(j => j.Name)
                 .ToList();
@@ -144,26 +150,28 @@ internal sealed class JobWorker
             idle = MinPollInterval;
             Interlocked.Increment(ref _running);
             _runningByName.AddOrUpdate(job.Name, 1, (_, count) => count + 1);
-            var claimed = job;
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await RunAsync(claimed, claimSent).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error running job {JobId}", claimed.Id);
-                }
-                finally
-                {
-                    _runningByName.AddOrUpdate(claimed.Name, 0, (_, count) => count - 1);
-                    Interlocked.Decrement(ref _running);
-                    _slots.Release();
-                    if (_runtime.Jobs[claimed.Name].Options.MaxConcurrency is not null)
-                        _runtime.SignalWorkAvailable();
-                }
-            }, CancellationToken.None);
+            // On the thread pool, as Task.Run would, without a task and delegate nobody awaits.
+            ThreadPool.QueueUserWorkItem(static state => _ = state.Worker.RunClaimedAsync(state.Job, state.ClaimSent), (Worker: this, Job: job, ClaimSent: claimSent), preferLocal: false);
+        }
+    }
+
+    private async Task RunClaimedAsync(JobInfo claimed, long claimSent)
+    {
+        try
+        {
+            await RunAsync(claimed, claimSent).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error running job {JobId}", claimed.Id);
+        }
+        finally
+        {
+            _runningByName.AddOrUpdate(claimed.Name, 0, (_, count) => count - 1);
+            Interlocked.Decrement(ref _running);
+            _slots.Release();
+            if (_runtime.Jobs[claimed.Name].Options.MaxConcurrency is not null)
+                _runtime.SignalWorkAvailable();
         }
     }
 
@@ -173,7 +181,7 @@ internal sealed class JobWorker
     {
         var registration = _runtime.Jobs[job.Name];
         var policy = registration.Options.RetryPolicy ?? _runtime.Options.DefaultRetryPolicy;
-        using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["job.id"] = job.Id, ["job.name"] = job.Name });
+        using var logScope = _logger.BeginScope(new LogScopeState("job.id", job.Id, "job.name", job.Name));
         var (counter, handler) = _tracking[job.Name];
 
         if (job.CancellationRequested)
@@ -208,10 +216,7 @@ internal sealed class JobWorker
         using var cancelled = new CancellationTokenSource();
         using var lease = new LeaseRenewal(this, job, cancelled, leaseStarted);
         using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancelled.Token, lease.LostToken, _abortJobs.Token);
-        ActivityContext.TryParse(job.Headers.GetValueOrDefault(KnownHeaders.TraceParent), job.Headers.GetValueOrDefault(KnownHeaders.TraceState), out var parent);
-        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"job {job.Name}", ActivityKind.Consumer, parent);
-        activity?.SetTag("job.id", job.Id);
-        activity?.SetTag("job.name", job.Name);
+        using var activity = StartActivity(job);
         long started = Stopwatch.GetTimestamp();
 
         Exception? error = null;
@@ -254,7 +259,8 @@ internal sealed class JobWorker
         JobCompletion completion;
         if (error is null)
         {
-            _logger.LogDebug("Job {JobName} {JobId} succeeded", job.Name, job.Id);
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Job {JobName} {JobId} succeeded", job.Name, job.Id);
             completion = JobCompletion.Succeeded(_runtime.Options.RetainSucceededFor);
         }
         else
@@ -264,10 +270,24 @@ internal sealed class JobWorker
 
         await CompleteAsync(job, completion, context).AnyContext();
 
-        RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
+        if (JobsInstruments.Completed.Enabled || JobsInstruments.Duration.Enabled)
+            RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
         _runtime.Tracker.Complete(context, ToWorkOutcome(completion), DescribeError(completion));
         if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt)
             activity?.SetErrorStatus(error, completion.Error);
+    }
+
+    /// <summary>The job's span, continuing the trace it was enqueued under; null, without parsing or naming it, when nothing listens.</summary>
+    private static Activity? StartActivity(JobInfo job)
+    {
+        if (!FoundatioDiagnostics.ActivitySource.HasListeners())
+            return null;
+
+        ActivityContext.TryParse(job.Headers.GetValueOrDefault(KnownHeaders.TraceParent), job.Headers.GetValueOrDefault(KnownHeaders.TraceState), out var parent);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"job {job.Name}", ActivityKind.Consumer, parent);
+        activity?.SetTag("job.id", job.Id);
+        activity?.SetTag("job.name", job.Name);
+        return activity;
     }
 
     /// <summary>Records the result of a job that ends without running, and counts it.</summary>
