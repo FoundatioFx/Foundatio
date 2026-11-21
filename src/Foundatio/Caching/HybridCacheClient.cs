@@ -45,7 +45,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _messageBus = messageBus;
         _lazySubscription = new AsyncLazy<bool>(async () =>
         {
-            await _messageBus.SubscribeAsync<InvalidateCache>(
+            await _messageBus.SubscribeAsync<IMessage<InvalidateCache>>(
                 OnRemoteCacheItemExpiredAsync, _disposedCancellationTokenSource.Token).AnyContext();
             return true;
         }, AsyncLazyFlags.RetryOnFailure | AsyncLazyFlags.ExecuteOnCallingThread);
@@ -72,8 +72,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return _lazySubscription.Task;
     }
 
-    private Task OnRemoteCacheItemExpiredAsync(InvalidateCache message)
+    private Task OnRemoteCacheItemExpiredAsync(IMessage<InvalidateCache> notification)
     {
+        var message = notification.Body;
         if (String.Equals(_cacheId, message.CacheId, StringComparison.Ordinal))
             return Task.CompletedTask;
 
@@ -92,7 +93,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             var keysToRemove = new List<string>(message.Keys.Length);
             foreach (string key in message.Keys)
             {
-                if (!message.Expired && key.EndsWith('*'))
+                if (!message.Expired && key.EndsWith('*') && !notification.Properties.ContainsKey(InvalidateCache.LiteralKeysProperty))
                 {
                     tasks.Add(InvalidateLocalPrefixAsync(key[..^1]));
                     continue;
@@ -176,7 +177,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = localKeys is null, Keys = items }).AnyContext();
+            await PublishInvalidationAsync(items).AnyContext();
 
         return removed;
     }
@@ -200,7 +201,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await PublishInvalidationAsync([$"{prefix}*"]).AnyContext();
+            await PublishInvalidationAsync([$"{prefix}*"], isPrefix: true).AnyContext();
 
         return removed;
     }
@@ -891,7 +892,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             _logger.LogError(ex, "Error removing prefix {Prefix} from the local cache after a failed distributed removal: {Message}", prefix, ex.Message);
         }
 
-        await TryPublishInvalidationAsync([$"{prefix}*"]).AnyContext();
+        await TryPublishInvalidationAsync([$"{prefix}*"], isPrefix: true).AnyContext();
     }
 
     internal static string[] GetBatchKeys(IEnumerable<string> keys)
@@ -927,11 +928,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             await TryPublishInvalidationAsync(keys).AnyContext();
     }
 
-    private async Task TryPublishInvalidationAsync(string[]? keys)
+    private async Task TryPublishInvalidationAsync(string[]? keys, bool isPrefix = false)
     {
         try
         {
-            await PublishInvalidationAsync(keys).AnyContext();
+            await PublishInvalidationAsync(keys, isPrefix).AnyContext();
         }
         catch (Exception ex)
         {
@@ -939,10 +940,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
     }
 
-    private Task PublishInvalidationAsync(string[]? keys)
-    {
-        return _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = keys, FlushAll = keys is null });
-    }
+    private Task PublishInvalidationAsync(string[]? keys, bool isPrefix = false) =>
+        InvalidateCache.PublishAsync(_messageBus, _cacheId, keys, isPrefix);
 
     /// <summary>
     /// A string binds <typeparamref name="T"/> to <see cref="char"/> but is one list member. It is passed through
@@ -970,9 +969,21 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public class InvalidateCache
     {
+        internal const string LiteralKeysProperty = "Foundatio.Cache.LiteralKeys";
+
         public required string CacheId { get; set; }
         public string[]? Keys { get; set; }
         public bool FlushAll { get; set; }
         public bool Expired { get; set; }
+
+        internal static Task PublishAsync(IMessagePublisher publisher, string cacheId, string[]? keys, bool isPrefix)
+        {
+            var message = new InvalidateCache { CacheId = cacheId, Keys = keys, FlushAll = keys is null or { Length: 0 } };
+            MessageOptions? options = null;
+            if (!isPrefix && keys is not null && Array.Exists(keys, static key => key.EndsWith('*')))
+                options = new MessageOptions { Properties = { [LiteralKeysProperty] = "true" } };
+
+            return publisher.PublishAsync(message, options);
+        }
     }
 }

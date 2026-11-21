@@ -90,7 +90,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
+            await PublishInvalidationAsync(items).AnyContext();
 
         return removed;
     }
@@ -104,13 +104,13 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
         catch
         {
-            await PublishAfterDistributedFailureAsync([prefix + "*"]).AnyContext();
+            await PublishAfterDistributedFailureAsync([prefix + "*"], isPrefix: true).AnyContext();
             throw;
         }
 
         // Only notify other nodes if keys were actually removed from distributed cache.
         if (removed > 0)
-            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [prefix + "*"] }).AnyContext();
+            await PublishInvalidationAsync([prefix + "*"], isPrefix: true).AnyContext();
 
         return removed;
     }
@@ -350,18 +350,18 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
     }
 
-    private Task PublishInvalidationAsync(string[]? keys) =>
-        _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = keys, FlushAll = keys is null });
+    private Task PublishInvalidationAsync(string[]? keys, bool isPrefix = false) =>
+        HybridCacheClient.InvalidateCache.PublishAsync(_messagePublisher, _cacheId, keys, isPrefix);
 
     /// <summary>
     /// Asks hybrid clients to evict the keys, or every entry when <paramref name="keys"/> is null. A publish failure is
     /// logged so the caller still receives the provider's exception.
     /// </summary>
-    private async Task PublishAfterDistributedFailureAsync(string[]? keys)
+    private async Task PublishAfterDistributedFailureAsync(string[]? keys, bool isPrefix = false)
     {
         try
         {
-            await PublishInvalidationAsync(keys).AnyContext();
+            await PublishInvalidationAsync(keys, isPrefix).AnyContext();
         }
         catch (Exception ex)
         {

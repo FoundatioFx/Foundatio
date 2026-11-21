@@ -110,7 +110,7 @@ Invalidation is **surgical** - only the affected keys are cleared on other insta
 
 Bulk writes take one snapshot of the supplied dictionary. The provider and the peer notification use those same entries even if the caller changes the dictionary while the write is pending.
 
-A trailing `*` in an invalidation message marks a prefix. A write to a literal key ending in `*` can also evict other matching entries from peer caches, including during lost-response recovery.
+Writing the literal key `"user:*"` evicts only that key on updated peers. Calling `RemoveByPrefixAsync("user:")` still evicts every key starting with `user:`. During a rolling upgrade, a literal trailing `*` can also evict matching local entries whenever the writer or peer runs an older version. Those entries reload from the distributed cache on their next read.
 
 ### Smart Cache Invalidation
 
