@@ -1,0 +1,56 @@
+[
+  {
+    "name": "redis-0",
+    "listen": "127.0.0.1:26700",
+    "upstream": "127.0.0.1:7700",
+    "enabled": true
+  },
+  {
+    "name": "redis-1",
+    "listen": "127.0.0.1:26701",
+    "upstream": "127.0.0.1:7701",
+    "enabled": true
+  },
+  {
+    "name": "redis-2",
+    "listen": "127.0.0.1:26702",
+    "upstream": "127.0.0.1:7702",
+    "enabled": true
+  },
+  {
+    "name": "redis-3",
+    "listen": "127.0.0.1:26703",
+    "upstream": "127.0.0.1:7703",
+    "enabled": true
+  },
+  {
+    "name": "redis-4",
+    "listen": "127.0.0.1:26704",
+    "upstream": "127.0.0.1:7704",
+    "enabled": true
+  },
+  {
+    "name": "redis-5",
+    "listen": "127.0.0.1:26705",
+    "upstream": "127.0.0.1:7705",
+    "enabled": true
+  },
+  {
+    "name": "kafka-1",
+    "listen": "127.0.0.1:26092",
+    "upstream": "127.0.0.1:19092",
+    "enabled": true
+  },
+  {
+    "name": "kafka-2",
+    "listen": "127.0.0.1:26093",
+    "upstream": "127.0.0.1:19093",
+    "enabled": true
+  },
+  {
+    "name": "kafka-3",
+    "listen": "127.0.0.1:26094",
+    "upstream": "127.0.0.1:19094",
+    "enabled": true
+  }
+]
