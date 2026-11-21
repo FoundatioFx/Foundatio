@@ -43,7 +43,9 @@ app.MapPost("/reports", async (IJobClient jobs) =>
 });
 
 app.MapGet("/reports/{id}", async (string id, IJobClient jobs) =>
-    await jobs.GetAsync(id) is { } job ? Results.Ok(new { job.State, job.Progress, job.Message }) : Results.NotFound());
+    await jobs.GetAsync(id) is { } job
+        ? Results.Ok(new { State = job.State.ToString(), job.Progress, job.Message })   // JobState serializes as a number otherwise
+        : Results.NotFound());
 ```
 
 The worker and scheduler start with the host in any process that registers jobs. A process that only enqueues needs the argument records and the same store as the workers, such as `UseRedis()`. An in-memory store is private to its process, so jobs enqueued into it run only there.
@@ -69,8 +71,8 @@ builder.Services.AddFoundatioJobs(j => j
 
 - **Return** to succeed. **Throw** to fail; the job is retried by its `RetryPolicy` (5 attempts with backoff by default).
 - `IJobContext` gives the job its `JobId`, `Attempt`, `CorrelationId`, `Headers` and `ScheduledFor` (when it was first due, the same on every attempt), and `ReportProgressAsync` to [report progress](#reporting-progress) and a result message.
-- The cancellation token fires when someone calls `CancelAsync`; the job ends as `Cancelled`. If it finishes anyway, the result counts.
-- A job interrupted by shutdown is run again later and the interrupted attempt is not counted.
+- The cancellation token fires when someone calls `CancelAsync`, once the worker running the job next renews its lease (within about 5 seconds); the job ends as `Cancelled`. If it finishes anyway, the result counts.
+- Stopping the host doesn't cancel running jobs at once: the worker waits up to `JobWorkerOptions.ShutdownTimeout` (25 seconds, set with `j.Configure(o => o.ShutdownTimeout = ...)`) for them to finish, then fires their cancellation token. A job interrupted by shutdown is run again later and the interrupted attempt is not counted.
 - The token also fires when the worker can no longer renew the job's lease, shortly before another worker could take it. That run's result is not recorded, and the job runs again.
 - Jobs run at least once. Make them safe to repeat.
 - A job is identified by the runtime type of its arguments, so arguments passed as `object` or a base type run the job for their actual type.

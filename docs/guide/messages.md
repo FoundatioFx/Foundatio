@@ -204,6 +204,8 @@ Settling doesn't keep a handler slot waiting on the broker: once a handler retur
 
 On SQS, Redis and Service Bus without sessions, receiving doesn't wait for a free handler slot either: while the handlers are busy, Foundatio receives full batches ahead of them, and the messages wait, leased and renewed, until a slot frees. How far it reads ahead adapts to how long your handlers and the broker's receives take, so a buffered message normally waits less than a second (or a quarter of the lease, if that's shorter); it doesn't read ahead for handlers that take longer than that, and reads ahead only as many messages as keep the buffered bodies within 16 MiB at their recent size. While the source is drained, only one receive long-polls. Buffered messages count as unsettled on the broker (in flight on SQS and Redis, queued on Service Bus), show in `MessagingStatus` as `Buffered` rather than `Active`, and hold back their group's later messages. Stopping the host handles them within the shutdown drain; any still buffered when it times out, or when a failed receiver is replaced, are released without running their handlers and delivered again.
 
+Stopping the host doesn't cancel handlers at once: Foundatio waits up to `MessagingOptions.ShutdownTimeout` (25 seconds, set with `m.Configure(o => o.ShutdownTimeout = ...)`) for in-flight messages to finish, then fires their cancellation token; those messages are delivered again.
+
 Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent.
 
 ## Reporting progress
@@ -234,7 +236,7 @@ public class ImportCatalogHandler(ICatalog catalog) : IMessageHandler<ImportCata
 
 ## Dead letters
 
-Every queue and durable subscription has a dead-letter queue. Count, inspect and replay it with `IMessageAdmin`, on any transport:
+Every queue and durable subscription has a dead-letter queue. Count, inspect and replay it with `IMessageAdmin`, on any transport. `MessageSource` and `MessageSourceStats` are in the `Foundatio.Messaging.Transport` namespace:
 
 ```csharp
 var source = MessageSource.Subscription("orders.order-placed", "billing");   // or MessageSource.Queue("orders.send-receipt")
