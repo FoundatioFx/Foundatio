@@ -105,74 +105,138 @@ internal sealed class MessageClient : IMessageClient
         }
 
         string? correlationId = options?.CorrelationId ?? MessageContext.Current?.CorrelationId;
+        var headerValues = new SendHeaders(
+            now.ToString("O", CultureInfo.InvariantCulture),
+            options?.TimeToLive is { } ttl ? now.Add(ttl).ToString("O", CultureInfo.InvariantCulture) : null,
+            deliverAt is { } requestedAt && nativeDeliverAt != deliverAt ? requestedAt.ToString("O", CultureInfo.InvariantCulture) : null,
+            correlationId);
+
+        // One message, the usual case, goes to its route's destination without grouping the batch by destination.
+        if (items.Count == 1 && items is IReadOnlyList<T> single)
+        {
+            var message = single[0];
+            ArgumentNullException.ThrowIfNull(message, nameof(messages));
+            await SendGroupAsync(kind, GetDestinationName(kind, message, destinationOverride), single, options, capabilities, nativeDeliverAt, headerValues, cancellationToken).AnyContext();
+            return;
+        }
+
         var groups = items.GroupBy(message =>
         {
             ArgumentNullException.ThrowIfNull(message, nameof(messages));
-            var route = _runtime.Types.GetRoute(message.GetType());
-            return destinationOverride is not null ? MessageTypeRegistry.ValidateName(destinationOverride, nameof(options))
-                : kind == MessageDestinationKind.Queue ? route.Queue : route.Topic;
+            return GetDestinationName(kind, message, destinationOverride);
         });
 
         foreach (var group in groups)
+            await SendGroupAsync(kind, group.Key, group, options, capabilities, nativeDeliverAt, headerValues, cancellationToken).AnyContext();
+    }
+
+    private string GetDestinationName<T>(MessageDestinationKind kind, T message, string? destinationOverride) where T : class
+    {
+        if (destinationOverride is not null)
+            return MessageTypeRegistry.ValidateName(destinationOverride, "options");
+
+        var route = _runtime.Types.GetRoute(message.GetType());
+        return kind == MessageDestinationKind.Queue ? route.Queue : route.Topic;
+    }
+
+    /// <summary>
+    /// Sends messages that share a destination. Messages of the same type in one call share their headers, which are
+    /// the same for each and which transports only read.
+    /// </summary>
+    private async Task SendGroupAsync<T>(MessageDestinationKind kind, string destinationName, IEnumerable<T> messages, DeliveryOptions? options,
+        TransportCapabilities capabilities, DateTimeOffset? nativeDeliverAt, SendHeaders headerValues, CancellationToken cancellationToken) where T : class
+    {
+        var destination = kind == MessageDestinationKind.Queue ? MessageDestination.Queue(destinationName) : MessageDestination.Topic(destinationName);
+        var source = FoundatioDiagnostics.ActivitySource;
+        using var activity = source.HasListeners() ? source.StartActivity($"{(kind == MessageDestinationKind.Queue ? "send" : "publish")} {destinationName}", ActivityKind.Producer) : null;
+        var current = activity ?? Activity.Current;
+        string? traceParent = current?.Id;
+        string? traceState = current?.TraceStateString;
+
+        var outgoing = new List<OutgoingMessage>(messages is IReadOnlyCollection<T> collection ? collection.Count : 0);
+        MessageRoute? headersRoute = null;
+        IReadOnlyDictionary<string, string>? headers = null;
+        foreach (var message in messages)
         {
-            var destination = kind == MessageDestinationKind.Queue ? MessageDestination.Queue(group.Key) : MessageDestination.Topic(group.Key);
-            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"{(kind == MessageDestinationKind.Queue ? "send" : "publish")} {group.Key}", ActivityKind.Producer);
-            string? traceParent = activity?.Id ?? Activity.Current?.Id;
-            string? traceState = activity?.TraceStateString ?? Activity.Current?.TraceStateString;
-
-            var outgoing = new List<OutgoingMessage>();
-            foreach (var message in group)
+            var route = _runtime.Types.GetRoute(message.GetType());
+            if (!ReferenceEquals(route, headersRoute))
             {
-                var route = _runtime.Types.GetRoute(message.GetType());
-                var headers = options?.Headers is { } applicationHeaders ? new Dictionary<string, string>(applicationHeaders) : new Dictionary<string, string>();
-                headers[KnownHeaders.MessageType] = route.Name;
-                if (_runtime.Types.GetBaseTypeNames(route.Type) is { } baseTypes)
-                    headers[KnownHeaders.MessageBaseTypes] = baseTypes;
-                headers[KnownHeaders.SentAt] = now.ToString("O", CultureInfo.InvariantCulture);
-                if (correlationId is not null)
-                    headers[KnownHeaders.CorrelationId] = correlationId;
-                if (options?.TimeToLive is { } ttl)
-                    headers[KnownHeaders.ExpiresAt] = now.Add(ttl).ToString("O", CultureInfo.InvariantCulture);
-                if (deliverAt is { } requestedAt && nativeDeliverAt != deliverAt)
-                    headers[KnownHeaders.DeliverAt] = requestedAt.ToString("O", CultureInfo.InvariantCulture);
-                if (traceParent is not null)
-                    headers[KnownHeaders.TraceParent] = traceParent;
-                if (!String.IsNullOrEmpty(traceState))
-                    headers[KnownHeaders.TraceState] = traceState;
-
-                byte[] body = _runtime.Serializer.SerializeToBytes<object>(message);
-                string messageId = options?.MessageId ?? Guid.NewGuid().ToString("N");
-                if (capabilities.MaxMessageSize is { } maxSize)
-                {
-                    long size = MessageSize.Of(messageId, body, headers, options?.GroupKey, options?.DeduplicationId);
-                    if (size > maxSize)
-                        throw new MessageTooLargeException($"Message {route.Name} is {size} bytes with its headers and ids, which exceeds the transport limit of {maxSize} bytes.") { Size = size, Limit = maxSize };
-                }
-
-                outgoing.Add(new OutgoingMessage
-                {
-                    MessageId = messageId,
-                    Body = body,
-                    Headers = headers,
-                    DeliverAt = nativeDeliverAt,
-                    GroupKey = options?.GroupKey,
-                    DeduplicationId = options?.DeduplicationId
-                });
+                headers = CreateHeaders(route, options?.Headers, headerValues, traceParent, traceState);
+                headersRoute = route;
             }
 
-            int batchSize = Math.Max(1, capabilities.MaxSendBatchSize);
+            byte[] body = _runtime.Serializer.SerializeToBytes<object>(message);
+            string messageId = options?.MessageId ?? Guid.NewGuid().ToString("N");
+            if (capabilities.MaxMessageSize is { } maxSize)
+            {
+                long size = MessageSize.Of(messageId, body, headers!, options?.GroupKey, options?.DeduplicationId);
+                if (size > maxSize)
+                    throw new MessageTooLargeException($"Message {route.Name} is {size} bytes with its headers and ids, which exceeds the transport limit of {maxSize} bytes.") { Size = size, Limit = maxSize };
+            }
+
+            outgoing.Add(new OutgoingMessage
+            {
+                MessageId = messageId,
+                Body = body,
+                Headers = headers!,
+                DeliverAt = nativeDeliverAt,
+                GroupKey = options?.GroupKey,
+                DeduplicationId = options?.DeduplicationId
+            });
+        }
+
+        int batchSize = Math.Max(1, capabilities.MaxSendBatchSize);
+        if (outgoing.Count <= batchSize)
+        {
+            await _runtime.Transport.SendAsync(destination, outgoing, cancellationToken).AnyContext();
+        }
+        else
+        {
             for (int i = 0; i < outgoing.Count; i += batchSize)
                 await _runtime.Transport.SendAsync(destination, outgoing.GetRange(i, Math.Min(batchSize, outgoing.Count - i)), cancellationToken).AnyContext();
+        }
 
+        if (MessagingInstruments.Sent.Enabled)
             MessagingInstruments.Sent.Add(outgoing.Count, new KeyValuePair<string, object?>("messaging.destination", destination.ToString()));
-            if (_runtime.Observer is { } observer)
-            {
-                int index = 0;
-                foreach (var message in group)
-                    observer.OnSent(destination, message, outgoing[index++]);
-            }
+
+        if (_runtime.Observer is { } observer)
+        {
+            int index = 0;
+            foreach (var message in messages)
+                observer.OnSent(destination, message, outgoing[index++]);
         }
     }
+
+    private Dictionary<string, string> CreateHeaders(MessageRoute route, IReadOnlyDictionary<string, string>? applicationHeaders, SendHeaders values, string? traceParent, string? traceState)
+    {
+        // Room for the application's headers and every header Foundatio adds, so the dictionary never grows.
+        var headers = new Dictionary<string, string>((applicationHeaders?.Count ?? 0) + 8);
+        if (applicationHeaders is not null)
+        {
+            foreach (var header in applicationHeaders)
+                headers[header.Key] = header.Value;
+        }
+
+        headers[KnownHeaders.MessageType] = route.Name;
+        if (_runtime.Types.GetBaseTypeNames(route.Type) is { } baseTypes)
+            headers[KnownHeaders.MessageBaseTypes] = baseTypes;
+        headers[KnownHeaders.SentAt] = values.SentAt;
+        if (values.CorrelationId is not null)
+            headers[KnownHeaders.CorrelationId] = values.CorrelationId;
+        if (values.ExpiresAt is not null)
+            headers[KnownHeaders.ExpiresAt] = values.ExpiresAt;
+        if (values.DeliverAt is not null)
+            headers[KnownHeaders.DeliverAt] = values.DeliverAt;
+        if (traceParent is not null)
+            headers[KnownHeaders.TraceParent] = traceParent;
+        if (!String.IsNullOrEmpty(traceState))
+            headers[KnownHeaders.TraceState] = traceState;
+
+        return headers;
+    }
+
+    /// <summary>Header values that are the same for every message of one send, formatted once.</summary>
+    private readonly record struct SendHeaders(string SentAt, string? ExpiresAt, string? DeliverAt, string? CorrelationId);
 
     /// <summary>
     /// Warns, once per message type, or with <see cref="MessagingOptions.RequireTransportCapabilities"/> throws, when a

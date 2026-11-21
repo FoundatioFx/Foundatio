@@ -116,6 +116,29 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task SendBatchAsync_WithTypesSharingAQueue_DeliversEachWithItsOwnTypeAndId()
+    {
+        var received = new ConcurrentQueue<(string Type, string Id, int OrderId)>();
+        await using var host = await StartAsync(m => m
+            .MapMessage<OrderEvent>("orders.event", queue: "orders")
+            .MapMessage<OrderShipped>("orders.shipped", queue: "orders")
+            .MapMessage<OrderCancelled>("orders.cancelled", queue: "orders")
+            .AddConsumer<OrderEvent>((message, context, _) =>
+            {
+                received.Enqueue((context.MessageType, context.MessageId, message.OrderId));
+                return Task.CompletedTask;
+            }));
+
+        OrderEvent[] batch = [new OrderShipped(1), new OrderShipped(2), new OrderCancelled(3), new OrderShipped(4), new OrderEvent(5)];
+        await host.Client.SendBatchAsync(batch, cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => received.Count == batch.Length);
+        Assert.Equal(["orders.shipped:1", "orders.shipped:2", "orders.cancelled:3", "orders.shipped:4", "orders.event:5"],
+            received.OrderBy(r => r.OrderId).Select(r => $"{r.Type}:{r.OrderId}"));
+        Assert.Equal(batch.Length, received.Select(r => r.Id).Distinct().Count());
+    }
+
+    [Fact]
     public async Task UnhandledTypeOnASharedTopic_IsSkippedWithoutRetries()
     {
         var received = new ConcurrentBag<string>();
