@@ -369,7 +369,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 foreach (var sequence in SplitIntoSequences(deliveries))
                 {
                     Interlocked.Add(ref _inFlight, sequence.Count);
-                    _ = Task.Run(() => ProcessSequenceAsync(sequence), CancellationToken.None);
+                    StartSequence(sequence);
                 }
             }
         }
@@ -520,7 +520,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
                 EndReceive(count - deliveries.Length, holdsSlots, partial);
                 foreach (var sequence in SplitIntoSequences(deliveries))
-                    _ = Task.Run(() => ProcessSequenceAsync(sequence), CancellationToken.None);
+                    StartSequence(sequence);
             }
         }
         catch
@@ -642,7 +642,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         if (starting is not null)
         {
             foreach (var sequence in starting)
-                _ = Task.Run(() => ProcessSequenceAsync(sequence), CancellationToken.None);
+                StartSequence(sequence);
         }
 
         if (releasing is not null)
@@ -999,6 +999,15 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
 
         return sequences;
+    }
+
+    /// <summary>
+    /// Handles a sequence on the thread pool, as <see cref="Task.Run(Func{Task})"/> would, without the task, delegate and
+    /// unwrapping that nobody awaits.
+    /// </summary>
+    private void StartSequence(List<MessageDelivery> sequence)
+    {
+        ThreadPool.QueueUserWorkItem(static state => _ = state.Processor.ProcessSequenceAsync(state.Sequence), (Processor: this, Sequence: sequence), preferLocal: false);
     }
 
     /// <summary>
