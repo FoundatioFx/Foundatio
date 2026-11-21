@@ -87,6 +87,63 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task LeaseRenewal_WhenNoRenewalReachesTheBrokerBeforeTheLeaseEnds_CancelsTheHandlerBeforeAnotherConsumerGetsTheMessage()
+    {
+        // Consumer A is cut off from the broker after it received the message (a partition, or latency past the lease):
+        // every renewal fails. The broker's lease ends and consumer B, which still reaches the broker, receives the
+        // message again. A's handler must have been stopped by then, as the job worker stops a job it cannot renew.
+        var aStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var aEnded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        long bStartedAt = 0, aEndedAt = 0;
+        int aCancelled = 0;
+        var partitioned = new InterceptingMessageTransport(_transport)
+        {
+            OnRenew = async (_, ct) =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+                throw new IOException("No route to the broker");
+            }
+        };
+
+        await using var a = await StartAsync(partitioned, m => m.AddConsumer<RenewedCommand>(async (_, _, ct) =>
+        {
+            aStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Exchange(ref aCancelled, 1);
+                throw;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref aEndedAt, Stopwatch.GetTimestamp());
+                aEnded.TrySetResult();
+            }
+        }, new HandlerOptions { LeaseDuration = ShortLease, MaxConcurrency = 1 }));
+
+        await a.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+        await aStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        await using var b = await StartAsync(_transport, m => m.AddConsumer<RenewedCommand>((_, _, _) =>
+        {
+            Interlocked.CompareExchange(ref bStartedAt, Stopwatch.GetTimestamp(), 0);
+            bStarted.TrySetResult();
+            return Task.CompletedTask;
+        }, new HandlerOptions { LeaseDuration = ShortLease, MaxConcurrency = 1 }));
+
+        await bStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        await aEnded.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        double overlapMs = Stopwatch.GetElapsedTime(Volatile.Read(ref bStartedAt), Volatile.Read(ref aEndedAt)).TotalMilliseconds;
+        Assert.True(overlapMs <= 0, $"A's handler was still running {overlapMs:F0} ms after B received the message again");
+        Assert.Equal(1, Volatile.Read(ref aCancelled));
+    }
+
+    [Fact]
     public async Task LeaseRenewal_WhenTheBrokerDecidesAShorterLease_RenewsBeforeItEnds()
     {
         int handled = 0, renewals = 0;

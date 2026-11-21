@@ -508,6 +508,28 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         AssertLostMessageWarning(source);
     }
 
+    [Fact]
+    public async Task ReceiveAsync_AfterRedisLostEveryKey_StillReceivesWhatIsPublishedToItsTopic()
+    {
+        // Redis restarted without persistence (or failed over before replicating): the topic's list of subscriptions is
+        // gone along with the subscription's stream, while the subscriber's receiver keeps running.
+        string topic = NewName("lost-all");
+        var source = MessageSource.Subscription(topic, "billing");
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("before", "before")], TestCancellationToken);
+        await receiver.CompleteAsync(await ReceiveOneAsync(receiver), TestCancellationToken);
+
+        foreach (string key in await FindKeysAsync($"*{topic}*"))
+            await GetMuxer().GetDatabase().KeyDeleteAsync(key);
+        Assert.Empty(await receiver.ReceiveAsync(1, TimeSpan.FromMilliseconds(200), TestCancellationToken));
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("after", "after")], TestCancellationToken);
+
+        var next = await ReceiveOneAsync(receiver);
+        Assert.Equal("after", next.MessageId);
+        await receiver.CompleteAsync(next, TestCancellationToken);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
