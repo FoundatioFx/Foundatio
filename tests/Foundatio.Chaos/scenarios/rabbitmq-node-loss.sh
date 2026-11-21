@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# RabbitMQ 3-node cluster: lose the node the clients are connected to, then a second one (the cluster loses its
-# quorum) while delayed messages wait in the delay levels, then bring both back. RABBIT_NODES names the three
-# containers in Hosts order. Usage: rabbitmq-node-loss.sh [DURATION]
+# RabbitMQ 3-node cluster: lose the first host (RabbitMQ.Client shuffles Hosts, so some clients are on it), then a
+# second, so the cluster loses its quorum while delayed messages wait in the delay levels, then bring both back.
+# RABBIT_NODES names the three containers in Hosts order. Usage: rabbitmq-node-loss.sh [DURATION]
 source "$(dirname "$0")/lib.sh"
 read -r -a nodes <<< "${RABBIT_NODES:?set RABBIT_NODES to the three node containers}"
 duration="${1:-240}"
@@ -11,7 +11,7 @@ start c2 consume
 sleep 8
 start p1 publish --duration "$duration" --delayed-rate 20 --delay-min-ms 5000 --delay-max-ms 60000
 sleep 40
-note "fault: kill ${nodes[0]} (the node every client is connected to)"
+note "fault: kill ${nodes[0]} (the first host in Hosts)"
 docker kill "${nodes[0]}" > /dev/null
 sleep 40
 note "fault: kill ${nodes[1]} (quorum lost: one of three nodes left)"

@@ -35,8 +35,8 @@ dotnet build tests/Foundatio.Chaos/Foundatio.Chaos.csproj
 rsync -a tests/Foundatio.Chaos/bin/Debug/net10.0/ ~/tmp/chaos-bin/ && export CHAOS_BIN=~/tmp/chaos-bin/Foundatio.Chaos
 
 # Brokers and toxiproxy (Redis cluster on 7700-7705 announced through proxies on 26700-26705, Kafka on
-# 19092-19094 through 26092-26094, toxiproxy's API on 28474).
-docker compose -f tests/Foundatio.Chaos/docker/compose.yml --profile redis --profile kafka up -d
+# 19092-19094 through 26092-26094, Floci on 26400 through 26401 and 26402, toxiproxy's API on 28474).
+docker compose -f tests/Foundatio.Chaos/docker/compose.yml --profile redis --profile kafka --profile sqs up -d
 docker build -t pr601-chaos-iptables -f tests/Foundatio.Chaos/docker/iptables.Dockerfile tests/Foundatio.Chaos/docker
 
 export RUN=~/tmp/chaos/redis-faults CHAOS_PREFIX=rf1 CHAOS_TRANSPORT=redis \
@@ -77,6 +77,7 @@ proxy re-pointing). Each scenario starts two consumers and a publisher, injects 
 | `redis-faults.sh` | kill the primary that holds the work queue; graceful failover; reset every connection; latency past the lease |
 | `redis-restart.sh` | restart the whole cluster without persistence (start it with `CHAOS_REDIS_AOF=no CHAOS_REDIS_RDB_DISABLED=yes`) |
 | `kafka-faults.sh` | broker restart, broker kill and preferred leader election, consumer SIGKILL mid-batch, scale out and in |
+| `sqs-partition.sh` | one consumer cut off from SQS (Floci, profile `sqs`, through its own proxy) for 40 s while running handlers slower than the lease |
 
 The RabbitMQ scenarios use the three-node cluster in `tests/Foundatio.RabbitMQ.AppHost` (`aspire start --isolated`,
 then stop the other resources). Set `RABBIT_NODES` to the three containers in order and run `rabbit_proxies` (from

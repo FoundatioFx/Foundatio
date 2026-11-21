@@ -207,5 +207,12 @@ services:
       - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
       - KAFKA_HEAP_OPTS=-Xmx512m -Xms256m
 
+  floci:
+    image: floci/floci:2.1.0
+    cpuset: "${CHAOS_CPUS:-14-17}"
+    profiles: [sqs]
+    ports:
+      - "127.0.0.1:26400:4566"
+
 networks:
   chaos: {}

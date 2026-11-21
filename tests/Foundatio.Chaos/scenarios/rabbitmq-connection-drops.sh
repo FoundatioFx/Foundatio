@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# RabbitMQ through toxiproxy: every client starts on rabbit-1's proxy. Cut it repeatedly (connections drop in the
-# middle of publisher confirms and acks), reset connections after a few KB, and slow the next host down.
+# RabbitMQ through toxiproxy (RabbitMQ.Client shuffles Hosts, so about a third of the connections use rabbit-1):
+# cut rabbit-1 repeatedly, so connections drop in the middle of publisher confirms and acks, then reset connections
+# after 64 KB and slow the third host down.
 # Usage: rabbitmq-connection-drops.sh [DURATION]
 source "$(dirname "$0")/lib.sh"
 duration="${1:-200}"

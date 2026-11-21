@@ -52,5 +52,17 @@
     "listen": "127.0.0.1:26094",
     "upstream": "127.0.0.1:19094",
     "enabled": true
+  },
+  {
+    "name": "sqs-c1",
+    "listen": "127.0.0.1:26401",
+    "upstream": "127.0.0.1:26400",
+    "enabled": true
+  },
+  {
+    "name": "sqs-c2",
+    "listen": "127.0.0.1:26402",
+    "upstream": "127.0.0.1:26400",
+    "enabled": true
   }
 ]
