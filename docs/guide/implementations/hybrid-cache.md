@@ -108,6 +108,10 @@ Invalidation is **surgical** - only the affected keys are cleared on other insta
 | `RemoveByPrefixAsync("user:")` | Clears `user:*` pattern on other instances |
 | `RemoveAllAsync()` (no keys) | Clears **entire** local cache on all instances |
 
+Bulk writes take one snapshot of the supplied dictionary. The provider and the peer notification use those same entries even if the caller changes the dictionary while the write is pending.
+
+A trailing `*` in an invalidation message marks a prefix. A write to a literal key ending in `*` can also evict other matching entries from peer caches, including during lost-response recovery.
+
 ### Smart Cache Invalidation
 
 The hybrid cache optimizes message bus traffic by **only publishing invalidation messages when the distributed cache actually changed**. This reduces unnecessary network traffic and processing overhead.
@@ -152,7 +156,11 @@ This ensures that:
 - L2 is always the **source of truth**
 - An operation that overlaps a write or invalidation on the same client never leaves an older value in L1; the key is evicted instead
 
-Another instance can still serve its warm L1 value until the invalidation message reaches it. If L2 commits a write and its reply is lost, L1 can retain its previous value until invalidation, eviction or expiration.
+If a distributed write throws, its outcome may be unknown. The hybrid client evicts the affected local entries and attempts to notify peers before rethrowing the provider error. The hybrid-aware client sends the same notification. Neither client retries the write. Once a peer receives the notification, its next read reloads from L2.
+
+This favors correctness over availability. During an L2 outage, a failed write evicts the key, so later reads of that key go to L2 and fail instead of returning an L1 value that may be stale. The provider error also reaches the caller only after the invalidation publish completes or fails under the message bus resilience policy, so a write fails more slowly when the bus is also unavailable.
+
+Other clients can serve an existing local value until their invalidation arrives. A missed notification, a write that commits after a client has already refilled, or a read routed to a lagging replica can leave an old value in L1. Set a finite TTL when that window must be bounded. For a read that must observe writes already committed on the primary, use the distributed cache directly with primary reads.
 
 ::: info Consistency trade-offs
 - **Cold reads with a null TTL** check whether the key still exists before filling L1. If a writer changes L2 directly between the value, TTL and existence reads, L1 can cache the previous value with the wrong expiration. Use a hybrid or hybrid-aware client for writes that should invalidate L1.

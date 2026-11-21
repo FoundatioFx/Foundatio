@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Xunit;
@@ -47,6 +48,17 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task AddAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.AddAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
+    public void AddAsync_WithInvalidKey_ThrowsSynchronously()
+    {
+        // Arrange
+        using var writer = GetCacheClient();
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>("key", () => { _ = writer.AddAsync(null!, 1); });
+        Assert.Throws<ArgumentException>("key", () => { _ = writer.AddAsync(String.Empty, 1); });
     }
 
     [Fact]
@@ -298,6 +310,24 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task ListRemoveAsync_WithMultipleItems_RemovesCorrectly()
     {
         return base.ListRemoveAsync_WithMultipleItems_RemovesCorrectly();
+    }
+
+    [Fact]
+    public async Task RemoveAllAsync_WithInvalidKeyAfterWarmKey_LeavesBothCachesIntact()
+    {
+        // Arrange
+        const string key = "warm";
+        using var writer = GetCacheClient();
+        using var peer = GetDistributedHybridCacheClient();
+        await peer.SetAsync(key, 1);
+
+        // Act
+        await Assert.ThrowsAsync<ArgumentNullException>(() => writer.RemoveAllAsync([key, null!]));
+
+        // Assert
+        Assert.Equal(1, (await _distributedCache.GetAsync<int>(key)).Value);
+        Assert.Equal(1, (await peer.GetAsync<int>(key)).Value);
+        Assert.Equal(0, peer.InvalidateCacheCalls);
     }
 
     [Fact]
