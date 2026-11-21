@@ -61,13 +61,10 @@ internal static class TaskExtensions
 
     public static async Task SafeDelay(this TimeProvider timeProvider, TimeSpan delay, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            await timeProvider.Delay(delay, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            // Swallow the exception to allow for graceful cancellation.
-        }
+        // Cancellation ends the delay gracefully, without throwing and catching an exception for it.
+        var delayTask = timeProvider.Delay(delay, cancellationToken);
+        await delayTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (delayTask.IsFaulted)
+            await delayTask.AnyContext();
     }
 }
