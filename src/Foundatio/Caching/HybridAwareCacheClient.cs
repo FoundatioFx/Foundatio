@@ -133,9 +133,11 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        var add = WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.AddAsync(s.key, s.value, s.expiresIn));
-        // Below the TTL floor, AddAsync can remove an existing entry and return false.
-        return expiresIn < CacheClientExtensions.MinimumExpiration ? InvalidateAfterExpiredAddAsync(key, add) : add.AsTask();
+        // Below the TTL floor an add removes any existing key and returns false, so remove it the same way HybridCacheClient does.
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+            return RemoveExpiredAddAsync(key);
+
+        return WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.AddAsync(s.key, s.value, s.expiresIn)).AsTask();
     }
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -333,11 +335,10 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return _distributedCache.GetListAsync<T>(key, page, pageSize);
     }
 
-    private async Task<bool> InvalidateAfterExpiredAddAsync(string key, ValueTask<bool> add)
+    private async Task<bool> RemoveExpiredAddAsync(string key)
     {
-        bool added = await add.AnyContext();
-        await PublishInvalidationAsync([key]).AnyContext();
-        return added;
+        await RemoveAsync(key).AnyContext();
+        return false;
     }
 
     /// <summary>
