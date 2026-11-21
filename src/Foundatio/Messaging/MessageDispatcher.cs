@@ -81,11 +81,11 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             ReportUnresolved(messageType, unresolved);
 
         var matches = handlerSet.Matches;
-        if (matches.Count == 0)
+        if (matches.Length == 0)
             return await HandleUnmatchedAsync(delivery, counter, messageType, handlerSet.Unresolved is not null, abortToken).AnyContext();
 
         // One payload per type the handlers take; usually a single handler, so a single payload.
-        var payloads = new (Type Type, object Payload)[matches.Count];
+        var payloads = new (Type Type, object Payload)[matches.Length];
         int payloadCount = 0;
         try
         {
@@ -192,7 +192,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         return String.Concat(reason.AsSpan(0, length), ellipsis);
     }
 
-    private async Task<(string Outcome, Exception? Error)> SettleAfterHandlingAsync(MessageDelivery delivery, MessageContext context, RetryPolicy policy, Exception? error, CancellationToken abortToken)
+    private async ValueTask<(string Outcome, Exception? Error)> SettleAfterHandlingAsync(MessageDelivery delivery, MessageContext context, RetryPolicy policy, Exception? error, CancellationToken abortToken)
     {
         var message = delivery.Message;
         if (delivery.IsLeaseLost)
@@ -359,7 +359,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     /// dead-letter without running the handlers again, the failure shows in health, and the message is released after
     /// a growing backoff rather than waiting for its lease to expire.
     /// </summary>
-    private async Task<(string Outcome, Exception? Error)> DeadLetterOrDropAsync(MessageDelivery delivery, string reason, CancellationToken abortToken)
+    private async ValueTask<(string Outcome, Exception? Error)> DeadLetterOrDropAsync(MessageDelivery delivery, string reason, CancellationToken abortToken)
     {
         var message = delivery.Message;
         MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("messaging.message.type", message.Headers.GetValueOrDefault(KnownHeaders.MessageType)));
@@ -447,7 +447,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
                 unresolved.Add(handler.HandlerName);
         }
 
-        var handlerSet = new HandlerSet(matches, String.Join(", ", matches.Select(m => m.Handler.HandlerName).Distinct()), unresolved is null ? null : String.Join(", ", unresolved));
+        var handlerSet = new HandlerSet([.. matches], String.Join(", ", matches.Select(m => m.Handler.HandlerName).Distinct()), unresolved is null ? null : String.Join(", ", unresolved));
         if (_matches.Count < MaxCachedTypes)
             _matches.TryAdd(key, handlerSet);
 
@@ -528,7 +528,8 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     /// The handlers for one message type, the names monitoring shows for them, and the names of handlers that accept
     /// the type only through abstract or interface base types, so cannot receive it.
     /// </summary>
-    private sealed record HandlerSet(IReadOnlyList<HandlerMatch> Matches, string Names, string? Unresolved = null)
+    /// <remarks>An array, so iterating it for each message boxes no enumerator.</remarks>
+    private sealed record HandlerSet(HandlerMatch[] Matches, string Names, string? Unresolved = null)
     {
         public static readonly HandlerSet None = new([], String.Empty);
     }
