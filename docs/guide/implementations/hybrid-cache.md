@@ -98,19 +98,25 @@ dotnet add package Foundatio.Redis
 
 ### Key-Specific Invalidation
 
-Invalidation is **surgical** - only the affected keys are cleared on other instances, not the entire cache:
+A hybrid writer tells peers which local entries to evict.
 
 | Operation | Invalidation Scope |
 |-----------|-------------------|
 | `SetAsync("user:123", ...)` | Clears `user:123` on other instances |
+| `SetAsync("*", ...)` | Clears the single key `*` on updated peers |
 | `SetAllAsync(dict)` | Clears all specified keys |
 | `RemoveAsync("user:123")` | Clears `user:123` on other instances |
-| `RemoveByPrefixAsync("user:")` | Clears `user:*` pattern on other instances |
+| `RemoveByPrefixAsync("user:")` | Clears every key starting with `user:` |
+| `RemoveByPrefixAsync("*")` | Clears every key starting with a literal asterisk |
 | `RemoveAllAsync()` (no keys) | Clears **entire** local cache on all instances |
 
 Bulk writes take one snapshot of the supplied dictionary. The provider and the peer notification use those same entries even if the caller changes the dictionary while the write is pending.
 
-A trailing `*` in an invalidation message marks a prefix. A write to a literal key ending in `*` can also evict other matching entries from peer caches, including during lost-response recovery.
+`HybridCacheClient.InvalidateCache` has an optional `Prefixes` array. When present, peers evict each entry in `Keys` literally and each group named in `Prefixes` by prefix. An empty array means every key is literal. When the field is absent or null, a trailing `*` marks a prefix. `FlushAll` takes precedence over both arrays. Expiration notifications always expire only the literal entries in `Keys`.
+
+For example, a message can evict `invoice:42`, the exact key `literal:*`, and all keys starting with `tenant:`. Its wire body carries `Keys = ["invoice:42", "literal:*", "tenant:*"]` and `Prefixes = ["tenant:"]`. The `tenant:*` entry lets older readers that ignore unknown fields clear the tenant group. Those readers also evict `literal:sibling`, which reloads on the next read.
+
+**Rolling upgrades.** The built-in writers send a prefix list only when the legacy encoding would evict too broadly. Older writers can still cause broader eviction. Upgrade strict JSON readers before writing literal keys ending in `*`. A strict 13.0.5 reader rejects the entire message when `Prefixes` is present, so affected entries can stay stale.
 
 ### Smart Cache Invalidation
 
