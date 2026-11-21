@@ -222,11 +222,16 @@ public sealed class InMemoryJobStore : IJobStore
                 return Task.FromResult(false);
 
             Unschedule(entry);
-            var job = entry.Job with { ClaimToken = null, LeaseExpiresAt = null, WorkerId = null, UpdatedAt = now, State = completion.State };
+            var job = entry.Job;
             if (completion.State == JobState.Queued)
             {
                 Update(entry, job with
                 {
+                    ClaimToken = null,
+                    LeaseExpiresAt = null,
+                    WorkerId = null,
+                    UpdatedAt = now,
+                    State = completion.State,
                     AvailableAt = now.Add(completion.RetryDelay),
                     Attempt = completion.RefundAttempt ? Math.Max(0, job.Attempt - 1) : job.Attempt,
                     Error = completion.Error ?? job.Error
@@ -238,6 +243,11 @@ public sealed class InMemoryJobStore : IJobStore
                 bool succeeded = completion.State == JobState.Succeeded;
                 Update(entry, job with
                 {
+                    ClaimToken = null,
+                    LeaseExpiresAt = null,
+                    WorkerId = null,
+                    UpdatedAt = now,
+                    State = completion.State,
                     CompletedAt = now,
                     Message = completion.Message ?? job.Message,
                     Error = completion.Error ?? (succeeded ? null : job.Error),
@@ -314,9 +324,12 @@ public sealed class InMemoryJobStore : IJobStore
             return;
         }
 
-        Unindex(entry);
+        // The indexes of all jobs and of the job's name do not depend on its state, so only the state's indexes change.
+        RemoveFromIndex((entry.Job.State, null), entry);
+        RemoveFromIndex((entry.Job.State, entry.Job.Name), entry);
         entry.Job = job;
-        Index(entry);
+        AddToIndex((job.State, null), entry);
+        AddToIndex((job.State, job.Name), entry);
     }
 
     private void Remove(Entry entry)
