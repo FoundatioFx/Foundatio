@@ -287,8 +287,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
-            await RemoveAsync(key).AnyContext();
-            return false;
+            // Below the TTL floor the provider removes any existing key and returns false without saying whether one existed.
+            // Forward the add so provider behavior such as ItemExpired is kept, then always tell peers.
+            bool expiredAdd = await WriteDistributedAsync(key, (key, value, expiresIn), static (c, s) => c.AddAsync(s.key, s.value, s.expiresIn)).AnyContext();
+            await InvalidateLocalAsync(key).AnyContext();
+            await PublishInvalidationAsync([key]).AnyContext();
+            return expiredAdd;
         }
 
         _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
