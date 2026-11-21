@@ -52,14 +52,16 @@ local function readGroup(count)
 end
 
 -- Reads as many messages at once as fit in the remaining bytes at the largest message size. When that is fewer than
--- wanted (the default largest size is over the budget), the entries after the last one read are sized first without
--- claiming them, so one read takes all that fit instead of one read per message.
+-- wanted (the default largest size is over the budget) and the messages read so far are small, the entries after the
+-- last one read are sized first without claiming them, so one read takes all that fit instead of one read per message.
+-- Sizing copies the entries once more, which costs more than the reads it saves once messages are a few KiB.
+local peekBelow = 4096
 local drained = false
-local lastId
+local lastId, largest = nil, 0
 while #messages < maxMessages and bytes < maxBytes do
     local want = maxMessages - #messages
     local count = math.min(want, math.max(1, math.floor((maxBytes - bytes) / maxMessageBytes)))
-    if count < want and lastId then
+    if count < want and lastId and largest <= peekBelow then
         local fit, sized = 0, bytes
         for _, entry in ipairs(redis.call('XRANGE', stream, '(' .. lastId, '+', 'COUNT', want)) do
             if sized >= maxBytes then
@@ -83,7 +85,9 @@ while #messages < maxMessages and bytes < maxBytes do
     for _, entry in ipairs(entries) do
         redis.call('ZADD', leases, now + lease, entry[1])
         messages[#messages + 1] = { entry[1], entry[2], 1 }
-        bytes = bytes + fieldsSize(entry[2])
+        local size = fieldsSize(entry[2])
+        bytes = bytes + size
+        largest = math.max(largest, size)
         lastId = entry[1]
     end
     if #entries < count then
