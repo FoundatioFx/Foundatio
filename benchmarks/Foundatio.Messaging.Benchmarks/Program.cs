@@ -333,6 +333,8 @@ public sealed class Runner(BenchOptions options, IBenchTarget target, BrokerCall
             await target.InitAsync(cancellationToken);
         await target.StartAsync(options.Concurrency, HandleAsync, cancellationToken);
         double startMs = Stopwatch.GetElapsedTime(start.Timestamp).TotalMilliseconds;
+        if (options.IdleBeforeFirst > TimeSpan.Zero)
+            await Task.Delay(options.IdleBeforeFirst, cancellationToken);
         var started = Stopwatch.GetTimestamp();
         await target.SendAsync(NewMessage(0), cancellationToken);
         await WaitAsync(TimeSpan.FromSeconds(60), cancellationToken);

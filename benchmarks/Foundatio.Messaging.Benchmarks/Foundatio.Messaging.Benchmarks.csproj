@@ -21,5 +21,6 @@
     <ProjectReference Include="..\..\src\Foundatio.Kafka\Foundatio.Kafka.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.AzureServiceBus\Foundatio.AzureServiceBus.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.RabbitMQ\Foundatio.RabbitMQ.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.AzureStorage\Foundatio.AzureStorage.csproj" />
   </ItemGroup>
 </Project>

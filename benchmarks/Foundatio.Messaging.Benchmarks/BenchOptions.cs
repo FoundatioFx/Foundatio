@@ -38,6 +38,8 @@ public sealed record BenchOptions
     public string Redis { get; init; } = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? "127.0.0.1:7600,abortConnect=false,allowAdmin=true";
     public string Kafka { get; init; } = Environment.GetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS") ?? "127.0.0.1:9092";
     public string Sqs { get; init; } = Environment.GetEnvironmentVariable("SQS_CONNECTION") ?? "serviceurl=http://127.0.0.1:4566;AccessKey=xxx;SecretKey=xxx";
+    public string AzureStorage { get; init; } = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION") ?? "UseDevelopmentStorage=true";
+    public TimeSpan IdleBeforeFirst { get; init; }
     public string ServiceBus { get; init; } = Environment.GetEnvironmentVariable("SERVICEBUS_CONNECTION") ?? "Endpoint=sb://127.0.0.1:5672/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true";
 
     public static BenchOptions Parse(string[] args)
@@ -73,6 +75,7 @@ public sealed record BenchOptions
             Groups = GetInt("groups", 0),
             Delay = GetTime("delay-ms", TimeSpan.Zero),
             WorkTime = GetTime("work-ms", TimeSpan.Zero),
+            IdleBeforeFirst = GetTime("idle-ms", TimeSpan.Zero),
             Fifo = values.ContainsKey("fifo"),
             KafkaConsumerProtocol = values.ContainsKey("kip848"),
             Output = values.TryGetValue("out", out string? output) ? output : null,

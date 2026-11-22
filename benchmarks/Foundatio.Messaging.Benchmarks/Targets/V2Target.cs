@@ -168,6 +168,9 @@ public sealed class V2Target(BenchOptions options, BrokerCalls calls) : BenchTar
                     MaxDeliveryCount = 10
                 });
                 break;
+            case "azurestorage":
+                builder.UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions { ConnectionString = Options.AzureStorage, Prefix = "bench-" });
+                break;
             case "rabbitmq":
                 builder.UseRabbitMQ(new RabbitMQMessageTransportOptions { ConnectionString = Options.RabbitConnection, Prefix = "bench" });
                 break;

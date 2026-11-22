@@ -18,6 +18,8 @@ public static class TargetFactory
         ("sqs", Api.Raw) => new RawSqsTarget(options),
         ("servicebus", Api.Legacy) => ServiceBusTargets.Legacy(options),
         ("servicebus", Api.Raw) => new RawServiceBusTarget(options),
+        ("azurestorage", Api.Legacy) => AzureStorageTargets.Legacy(options),
+        ("azurestorage", Api.Raw) => new RawAzureStorageTarget(options),
         _ => throw new ArgumentException($"No {options.Api} target for {options.Transport}")
     };
 }

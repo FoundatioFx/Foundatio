@@ -32,7 +32,7 @@ public abstract class BrokerCalls : IAsyncDisposable
     public static BrokerCalls Create(BenchOptions options) => options.Transport switch
     {
         "redis" => new RedisCalls(options),
-        "sqs" => new HttpCalls(),
+        "sqs" or "azurestorage" => new HttpCalls(),
         "servicebus" => new ServiceBusCalls(),
         "rabbitmq" when options.RabbitManagement is not null => new RabbitMQCalls(options.RabbitManagement),
         _ => new NoCalls()
@@ -115,9 +115,24 @@ public sealed class HttpCalls : BrokerCalls, IObserver<DiagnosticListener>, IObs
                 action = targets.First();
             else if (request.Content?.Headers.ContentType?.MediaType == "application/x-www-form-urlencoded")
                 action = "query:" + request.RequestUri?.Host;
+            else if (request.RequestUri is { } uri && uri.Host is "127.0.0.1" or "localhost" || request.RequestUri?.Host.Contains(".queue.", StringComparison.Ordinal) == true)
+                action = GetStorageQueueAction(request);
         }
 
         _counts.AddOrUpdate(action, 1, (_, c) => c + 1);
+    }
+
+    /// <summary>A Storage queue operation: the method and what it acts on (<c>GET messages</c> receives, <c>DELETE message</c> completes).</summary>
+    private static string GetStorageQueueAction(HttpRequestMessage request)
+    {
+        string path = request.RequestUri!.AbsolutePath.TrimEnd('/');
+        string query = request.RequestUri.Query;
+        string target = path.EndsWith("/messages", StringComparison.Ordinal) ? "messages"
+            : path.Contains("/messages/", StringComparison.Ordinal) ? "message"
+            : query.Contains("comp=list", StringComparison.Ordinal) ? "list"
+            : query.Contains("comp=metadata", StringComparison.Ordinal) ? "metadata"
+            : "queue";
+        return $"{request.Method} {target}";
     }
 
     public void OnCompleted() { }
