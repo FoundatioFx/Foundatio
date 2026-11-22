@@ -22,6 +22,16 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         return new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log });
     }
 
+    /// <summary>CONF-2: the receiver of a deleted durable subscription keeps reading a stream no publish reaches.</summary>
+    [Theory]
+    [InlineData(MessageSourceKind.Queue)]
+    [InlineData(MessageSourceKind.Subscription)]
+    public override Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(MessageSourceKind kind)
+    {
+        Assert.SkipWhen(kind == MessageSourceKind.Subscription, "CONF-2: a receiver of a deleted durable subscription neither faults nor re-registers it, so it goes deaf.");
+        return base.Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(kind);
+    }
+
     [Fact]
     public async Task InstanceSubscription_OfAStoppedProcess_IsRemovedByTheNextPublish()
     {

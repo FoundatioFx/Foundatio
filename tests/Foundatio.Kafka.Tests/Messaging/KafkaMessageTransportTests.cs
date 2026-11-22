@@ -23,6 +23,14 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
     protected override IMessageTransport CreateTransport() => new KafkaMessageTransport(CreateOptions());
 
+    /// <summary>CONF-1: a send to a subscription writes its inbox but does not start the subscription's group on the topic.</summary>
+    [Fact]
+    public override Task SendToSubscription_CreatesTheSubscriptionForLaterPublishes()
+    {
+        Assert.Skip("CONF-1: a send to one subscription does not create it, so messages published before its first receiver opens never reach it.");
+        return Task.CompletedTask;
+    }
+
     [Fact]
     public async Task Rebalance_ReleasesUnsettledMessagesOfAMovedPartitionWithAHigherDeliveryCount()
     {

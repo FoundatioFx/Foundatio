@@ -97,19 +97,13 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>A transport from <see cref="CreatePeerTransport"/>: another process connected to the same broker.</summary>
     protected IMessageTransport PeerTransport => _peerTransport ??= Track(CreatePeerTransport());
 
-    /// <summary>
-    /// A sent message is received with the same id, body, headers and group key, and a delivery count of 1. Header names
-    /// are case-sensitive: names that differ only in case are distinct headers.
-    /// </summary>
+    /// <summary>A sent message is received with the same id, body, headers and group key, and a delivery count of 1.</summary>
     [Fact]
     public async Task SendThenReceive_RoundTripsIdBodyAndHeaders()
     {
         var source = MessageSource.Queue(NewName("roundtrip"));
         await using var receiver = await CreateReceiverAsync(source);
-        var headers = new Dictionary<string, string>
-        {
-            ["message-type"] = "conformance.test", ["unicode"] = "héllo wörld ✓", ["empty"] = "", ["X-Mixed"] = "upper", ["x-mixed"] = "lower"
-        };
+        var headers = new Dictionary<string, string> { ["message-type"] = "conformance.test", ["unicode"] = "héllo wörld ✓", ["empty"] = "", ["X-Tenant"] = "Mixed Case" };
 
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("payload", "id-1", headers) with { GroupKey = "group-1" }], TestCancellationToken);
 
@@ -120,8 +114,24 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(1, message.DeliveryCount);
         foreach (var (key, value) in headers)
             Assert.True(message.Headers.TryGetValue(key, out string? received) && received == value, $"Header {key} came back as {received ?? "(missing)"}, not {value}.");
-        Assert.False(message.Headers.ContainsKey("X-MIXED"), "The received headers look names up ignoring case.");
 
+        await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    /// <summary>Header names are case-sensitive: names that differ only in case are distinct headers, and are looked up by their exact name.</summary>
+    [Fact]
+    public virtual async Task SendThenReceive_HeaderNamesThatDifferOnlyInCase_StayDistinct()
+    {
+        var source = MessageSource.Queue(NewName("header-case"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var headers = new Dictionary<string, string> { ["X-Mixed"] = "upper", ["x-mixed"] = "lower" };
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("cases", "id-cases", headers)], TestCancellationToken);
+
+        var message = await ReceiveOneAsync(receiver);
+        foreach (var (key, value) in headers)
+            Assert.True(message.Headers.TryGetValue(key, out string? received) && received == value, $"Header {key} came back as {received ?? "(missing)"}, not {value}.");
+        Assert.False(message.Headers.ContainsKey("X-MIXED"), "The received headers look names up ignoring case.");
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
@@ -889,7 +899,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// reach it too, before any receiver of it exists.
     /// </summary>
     [Fact]
-    public async Task SendToSubscription_CreatesTheSubscriptionForLaterPublishes()
+    public virtual async Task SendToSubscription_CreatesTheSubscriptionForLaterPublishes()
     {
         string topic = NewName("direct-creates");
         var source = MessageSource.Subscription(topic, "replayed");
@@ -968,7 +978,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     [Theory]
     [InlineData(MessageSourceKind.Queue)]
     [InlineData(MessageSourceKind.Subscription)]
-    public async Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(MessageSourceKind kind)
+    public virtual async Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(MessageSourceKind kind)
     {
         var source = kind == MessageSourceKind.Queue ? MessageSource.Queue(NewName("delete-open")) : MessageSource.Subscription(NewName("delete-open"), "open");
         var destination = kind == MessageSourceKind.Queue ? MessageDestination.Queue(source.Name) : MessageDestination.Topic(source.Topic!);
