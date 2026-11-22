@@ -93,6 +93,8 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
         RabbitMQMessageTransportNames.ValidatePrefix(options.Prefix, nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxMessageBytes, RabbitMQMessageTransportCodec.EncodingReserve * 2, nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThan(options.ReleaseDelay, TimeSpan.Zero, nameof(options));
+        if (options.PublishTimeout <= TimeSpan.Zero && options.PublishTimeout != Timeout.InfiniteTimeSpan)
+            throw new ArgumentOutOfRangeException(nameof(options), options.PublishTimeout, "PublishTimeout must be positive, or Timeout.InfiniteTimeSpan.");
 
         Options = options;
         Names = new RabbitMQMessageTransportNames(options.Prefix);
@@ -384,10 +386,54 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     }
 
     /// <summary>
-    /// Publishes every message and waits for the broker's confirms. Messages the broker returned as unroutable, or that
-    /// a channel closed on, are sent once more after <paramref name="ensure"/> declares their target again.
+    /// Publishes every message and waits for the broker's confirms, for at most <see cref="RabbitMQMessageTransportOptions.PublishTimeout"/>.
+    /// Messages the broker returned as unroutable, or that a channel closed on, are sent once more after
+    /// <paramref name="ensure"/> declares their target again.
     /// </summary>
     internal async Task PublishAsync(IReadOnlyList<Publish> publishes, Func<CancellationToken, Task> ensure, string target, CancellationToken cancellationToken)
+    {
+        if (Options.PublishTimeout == Timeout.InfiniteTimeSpan)
+        {
+            await PublishUntilConfirmedAsync(publishes, ensure, target, cancellationToken).AnyContext();
+            return;
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(Options.PublishTimeout);
+        try
+        {
+            await PublishUntilConfirmedAsync(publishes, ensure, target, timeout.Token).AnyContext();
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            // Not waited for: closing a connection to a node that stopped answering takes seconds.
+            _ = DropPublisherConnectionAsync();
+            throw new MessageBusException($"RabbitMQ did not confirm {publishes.Count} messages to {target} within {Options.PublishTimeout}; they may or may not have been delivered.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Aborts the publishing connection the transport opened, so the next send connects again instead of waiting on a
+    /// node that stopped confirming. A connection the caller gave the transport is left alone.
+    /// </summary>
+    private async Task DropPublisherConnectionAsync()
+    {
+        if (!_ownsConnections || Volatile.Read(ref _publisherConnection) is not { IsOpen: true } connection)
+            return;
+
+        Logger.LogWarning("RabbitMQ did not confirm publishes within {PublishTimeout}; dropping the publishing connection to {Host}:{Port} so the next send connects again",
+            Options.PublishTimeout, connection.Endpoint.HostName, connection.Endpoint.Port);
+        try
+        {
+            await connection.AbortAsync(TimeSpan.FromSeconds(1)).AnyContext();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Logger.LogDebug(ex, "Error aborting the RabbitMQ publishing connection");
+        }
+    }
+
+    private async Task PublishUntilConfirmedAsync(IReadOnlyList<Publish> publishes, Func<CancellationToken, Task> ensure, string target, CancellationToken cancellationToken)
     {
         var pending = publishes;
         for (int attempt = 1; ; attempt++)

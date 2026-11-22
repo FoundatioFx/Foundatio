@@ -101,6 +101,7 @@ m.UseKafka(new KafkaMessageTransportOptions { BootstrapServers = "broker:9092", 
 
 - It orders groups and delays messages through delay topics. It doesn't deduplicate, and leases never expire.
 - Competing instances share a topic's partitions, so create topics with at least as many partitions as you run instances.
+- A consumer that crashes keeps its partitions until the group's session timeout ends (45 seconds by default), so their messages wait that long; the README says how to shorten it.
 - See the [Kafka README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for how it maps to Kafka, retention and limits.
 
 ### Using Azure Service Bus
@@ -145,6 +146,7 @@ m.UseRabbitMQ(new RabbitMQMessageTransportOptions { Prefix = "myapp" });
 - Without a `ConnectionString`, `UseRabbitMQ` uses the `IConnection` registered in DI, and the host fails to start without one; that connection stays yours. With one, the transport opens and closes its own connections.
 - It delays messages for up to about 8.5 years, in whole seconds, through delay queues on the broker that need no plugin and survive restarts. It doesn't order groups or deduplicate, and leases never expire.
 - A handler that holds a message longer than the broker's `consumer_timeout` (30 minutes by default) loses its channel, and the message is delivered again; raise it for long handlers, or use jobs.
+- Sends wait for the broker's confirms for at most `PublishTimeout` (30 seconds), then throw `MessageBusException`. `Hosts` lists nodes to fail over between. On a cluster, set `cluster_partition_handling = pause_minority`: with the default, a node cut off from the others keeps its clients, whose sends time out and whose receivers get nothing for about a minute.
 - See the [RabbitMQ README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ#message-transport-preview) for how it maps to RabbitMQ, headers, counts and limits.
 
 ## Send or publish?

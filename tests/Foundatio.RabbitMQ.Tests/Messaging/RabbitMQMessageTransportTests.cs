@@ -948,6 +948,27 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task SendAsync_WhenTheBrokerNeverConfirms_FailsAfterThePublishTimeout()
+    {
+        // Arrange: a node cut off from its cluster takes publishes and never confirms them.
+        var broker = new Uri(Fixture.ConnectionString);
+        await using var proxy = TcpTestProxy.To(broker.Host, broker.Port);
+        var transport = Track(new RabbitMQMessageTransport(CreateOptions() with { Hosts = [proxy.Host], PublishTimeout = TimeSpan.FromSeconds(1) }));
+        var source = MessageSource.Queue(NewName("unconfirmed"));
+        DeleteAfterTest(source);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("confirmed")], TestCancellationToken);
+        proxy.StallFromBackend();
+
+        // Act
+        var stopwatch = Stopwatch.StartNew();
+        var exception = await Assert.ThrowsAsync<MessageBusException>(() => transport.SendAsync(MessageDestination.Queue(source.Name), [Message("unconfirmed")], TestCancellationToken));
+
+        // Assert
+        Assert.InRange(stopwatch.Elapsed, TimeSpan.FromSeconds(0.9), TimeSpan.FromSeconds(10));
+        Assert.Contains("may or may not", exception.Message);
+    }
+
+    [Fact]
     public async Task SendAsync_WhenAHostAcceptsConnectionsButNeverAnswers_ConnectsToAnotherHost()
     {
         // Arrange: a node that is paused, or a TCP load balancer whose backend is down, accepts the connection and

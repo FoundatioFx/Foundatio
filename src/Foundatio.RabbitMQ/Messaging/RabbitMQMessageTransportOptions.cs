@@ -62,6 +62,17 @@ public sealed record RabbitMQMessageTransportOptions
     /// </summary>
     public Action<ConnectionFactory>? ConfigureConnectionFactory { get; init; }
 
+    /// <summary>
+    /// How long a send, publish, abandon or dead-letter waits for the broker to confirm its messages, including
+    /// connecting and declaring what they go to, before it fails with <see cref="MessageBusException"/>; the messages
+    /// may or may not have been delivered. A node cut off from its cluster can take publishes and never confirm them, so
+    /// without a bound a send waits for as long as its caller's token. After a timeout the transport drops its
+    /// publishing connection, when it opened it, so the next send connects again, possibly to another of
+    /// <see cref="Hosts"/>. 30 seconds by default; <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> waits for the
+    /// caller's token alone.
+    /// </summary>
+    public TimeSpan PublishTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
     /// <summary>Used to turn delivery times into delays. Delay queues expire messages on the broker's clock.</summary>
     public TimeProvider? TimeProvider { get; init; }
 

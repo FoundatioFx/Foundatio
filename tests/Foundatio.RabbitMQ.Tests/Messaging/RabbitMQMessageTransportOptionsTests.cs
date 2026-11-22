@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
 using Foundatio.Xunit;
 using Xunit;
@@ -29,6 +30,24 @@ public class RabbitMQMessageTransportOptionsTests(ITestOutputHelper output) : Te
     public void Constructor_WithAnInvalidPrefix_Throws(string prefix)
     {
         Assert.Throws<ArgumentException>(() => new RabbitMQMessageTransport(new RabbitMQMessageTransportOptions { ConnectionString = ConnectionString, Prefix = prefix }));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void Constructor_WithAPublishTimeoutThatIsNotPositive_Throws(int milliseconds)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RabbitMQMessageTransport(new RabbitMQMessageTransportOptions
+        {
+            ConnectionString = ConnectionString,
+            PublishTimeout = TimeSpan.FromMilliseconds(milliseconds)
+        }));
+    }
+
+    [Fact]
+    public async Task Constructor_WithAnInfinitePublishTimeout_IsAccepted()
+    {
+        await using var transport = new RabbitMQMessageTransport(new RabbitMQMessageTransportOptions { ConnectionString = ConnectionString, PublishTimeout = System.Threading.Timeout.InfiniteTimeSpan });
     }
 
     [Fact]
