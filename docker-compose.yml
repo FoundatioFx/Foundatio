@@ -157,6 +157,14 @@ services:
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}
       ACCEPT_EULA: ${ACCEPT_EULA:-Y}
 
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    command: azurite --skipApiVersionCheck --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+    ports:
+      - 10000:10000
+      - 10001:10001
+      - 10002:10002
+
   ready:
     image: andrewlock/wait-for-dependencies
     depends_on:
@@ -178,6 +186,8 @@ services:
         condition: service_started
       servicebus-emulator:
         condition: service_started
+      azurite:
+        condition: service_started
     command: >
       redis-node-0:7000
       redis-node-1:7001
@@ -188,6 +198,8 @@ services:
       kafka:9092
       floci:4566
       servicebus-emulator:5672
+      azurite:10000
+      azurite:10001
 
 volumes:
   kafkadata:

@@ -10,7 +10,7 @@ Enqueues messages to an Azure Storage Queue with support for correlation IDs and
 
 **Usage:**
 ```bash
-dotnet run --project samples/Foundatio.AzureStorage.Enqueue --framework net8.0 -- [options]
+dotnet run --project samples/Foundatio.AzureStorage.Enqueue -- [options]
 ```
 
 **Options:**
@@ -25,17 +25,17 @@ dotnet run --project samples/Foundatio.AzureStorage.Enqueue --framework net8.0 -
 **Examples:**
 ```bash
 # Send a simple message using emulator
-dotnet run --project samples/Foundatio.AzureStorage.Enqueue --framework net8.0
+dotnet run --project samples/Foundatio.AzureStorage.Enqueue
 
 # Send message with metadata (Default mode)
-dotnet run --project samples/Foundatio.AzureStorage.Enqueue --framework net8.0 -- \
+dotnet run --project samples/Foundatio.AzureStorage.Enqueue -- \
   --message "Test Message" \
   --correlation-id "12345" \
   --property "Source=Sample" \
   --property "Priority=High"
 
 # Send message in Legacy mode (v11 SDK compatibility)
-dotnet run --project samples/Foundatio.AzureStorage.Enqueue --framework net8.0 -- \
+dotnet run --project samples/Foundatio.AzureStorage.Enqueue -- \
   --mode Legacy \
   --message "Legacy Message"
 ```
@@ -46,7 +46,7 @@ Dequeues and processes messages from an Azure Storage Queue, displaying all meta
 
 **Usage:**
 ```bash
-dotnet run --project samples/Foundatio.AzureStorage.Dequeue --framework net8.0 -- [options]
+dotnet run --project samples/Foundatio.AzureStorage.Dequeue -- [options]
 ```
 
 **Options:**
@@ -58,14 +58,14 @@ dotnet run --project samples/Foundatio.AzureStorage.Dequeue --framework net8.0 -
 **Examples:**
 ```bash
 # Process one message using emulator
-dotnet run --project samples/Foundatio.AzureStorage.Dequeue --framework net8.0
+dotnet run --project samples/Foundatio.AzureStorage.Dequeue
 
 # Process messages continuously (press Ctrl+C to stop)
-dotnet run --project samples/Foundatio.AzureStorage.Dequeue --framework net8.0 -- \
+dotnet run --project samples/Foundatio.AzureStorage.Dequeue -- \
   --count 0
 
 # Process messages in Legacy mode
-dotnet run --project samples/Foundatio.AzureStorage.Dequeue --framework net8.0 -- \
+dotnet run --project samples/Foundatio.AzureStorage.Dequeue -- \
   --mode Legacy
 ```
 
@@ -89,9 +89,9 @@ npm install -g azurite
 azurite --silent --location c:\azurite --debug c:\azurite\debug.log
 ```
 
-Or using Docker:
+Or using Docker, from the repository root:
 ```bash
-docker run -p 10000:10000 -p 10001:10001 -p 10002:10002 mcr.microsoft.com/azure-storage/azurite
+docker compose up -d azurite
 ```
 
 ### Connection String Priority
@@ -118,12 +118,12 @@ The applications check for connection strings in this order:
 
 1. Start Azurite:
    ```bash
-   azurite --silent --location c:\azurite
+   docker compose up -d azurite
    ```
 
 2. Send messages with metadata:
    ```bash
-   dotnet run --project samples/Foundatio.AzureStorage.Enqueue --framework net8.0 -- \
+   dotnet run --project samples/Foundatio.AzureStorage.Enqueue -- \
      --message "Hello from Foundatio" \
      --correlation-id "demo-123" \
      --property "Source=Demo" \
@@ -133,7 +133,7 @@ The applications check for connection strings in this order:
 
 3. Process the messages:
    ```bash
-   dotnet run --project samples/Foundatio.AzureStorage.Dequeue --framework net8.0 -- \
+   dotnet run --project samples/Foundatio.AzureStorage.Dequeue -- \
      --count 0
    ```
 
