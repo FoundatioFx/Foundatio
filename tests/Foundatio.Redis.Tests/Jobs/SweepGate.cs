@@ -91,7 +91,7 @@ public sealed class SweepGate
 
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
         {
-            if (targetMethod!.Name == nameof(IDatabaseAsync.ScriptEvaluateAsync) && args is [string, RedisKey[] { Length: 1 } keys, ..]
+            if (targetMethod!.Name == nameof(IDatabaseAsync.ScriptEvaluateAsync) && args is [string or byte[], RedisKey[] { Length: 1 } keys, ..]
                 && ((string)keys[0]!).EndsWith(":expiring", StringComparison.Ordinal))
                 return _gate.HoldAsync(() => (Task<RedisResult>)Forward(_inner, targetMethod, args)!);
 
