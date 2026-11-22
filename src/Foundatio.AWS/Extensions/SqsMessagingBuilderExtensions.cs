@@ -2,6 +2,7 @@ using System;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -16,7 +17,7 @@ public static class SqsMessagingBuilderExtensions
     /// <param name="options">
     /// The transport's options; without a connection string, the default AWS credential and region resolution is
     /// used. A <see cref="SqsMessageTransportOptions.LoggerFactory"/> or <see cref="SqsMessageTransportOptions.TimeProvider"/>
-    /// left unset is taken from the service provider.
+    /// left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseSqs(this FoundatioMessagingBuilder builder, SqsMessageTransportOptions? options = null)
     {
@@ -33,7 +34,7 @@ public static class SqsMessagingBuilderExtensions
     /// <param name="options">
     /// Builds the transport's options; without a connection string, the default AWS credential and region resolution
     /// is used. A <see cref="SqsMessageTransportOptions.LoggerFactory"/> or <see cref="SqsMessageTransportOptions.TimeProvider"/>
-    /// left unset is taken from the service provider.
+    /// left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseSqs(this FoundatioMessagingBuilder builder, Func<IServiceProvider, SqsMessageTransportOptions> options)
     {
@@ -50,7 +51,7 @@ public static class SqsMessagingBuilderExtensions
         return new SqsMessageTransport(options with
         {
             LoggerFactory = options.LoggerFactory ?? services.GetService<ILoggerFactory>(),
-            TimeProvider = options.TimeProvider ?? services.GetService<TimeProvider>()
+            TimeProvider = options.TimeProvider ?? services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider ?? services.GetService<TimeProvider>()
         });
     }
 }

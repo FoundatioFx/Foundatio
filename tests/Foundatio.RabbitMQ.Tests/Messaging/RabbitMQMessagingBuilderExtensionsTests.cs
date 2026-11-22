@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.RabbitMQ.Tests.Messaging;
@@ -110,6 +111,23 @@ public class RabbitMQMessagingBuilderExtensionsTests(RabbitMQTransportFixture fi
 
         // Assert
         Assert.Contains("IConnection", exception.Message);
+    }
+
+    [Fact]
+    public async Task UseRabbitMQ_WithAMessagingClock_UsesItOverTheRegisteredOne()
+    {
+        // Arrange
+        var messagingClock = new FakeTimeProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddFoundatioMessaging(m => m.UseRabbitMQ("amqp://guest:guest@localhost:5672").Configure(o => o.TimeProvider = messagingClock));
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<RabbitMQMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Same(messagingClock, transport.Options.TimeProvider);
     }
 
     public record Ping(string Text);

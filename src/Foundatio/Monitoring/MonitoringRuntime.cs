@@ -32,7 +32,7 @@ internal sealed class MonitoringRuntime : IAsyncDisposable
         _registrations = registrations;
         Options = registrations.Options;
         Tracker = services.GetRequiredService<WorkTracker>();
-        TimeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
+        TimeProvider = WorkTracker.ResolveTimeProvider(services);
         LoggerFactory = services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
         StartedAt = TimeProvider.GetUtcNow();
         MachineName = Environment.MachineName;

@@ -2,6 +2,7 @@ using System;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,7 @@ public static class RedisMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// The transport's options. A <see cref="RedisMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="RedisMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="RedisMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     /// <exception cref="InvalidOperationException">No <see cref="IConnectionMultiplexer"/> is registered when the transport is created.</exception>
     public static FoundatioMessagingBuilder UseRedis(this FoundatioMessagingBuilder builder, RedisMessageTransportOptions? options = null)
@@ -33,7 +34,7 @@ public static class RedisMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// Builds the transport's options. A <see cref="RedisMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="RedisMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="RedisMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     /// <exception cref="InvalidOperationException">No <see cref="IConnectionMultiplexer"/> is registered when the transport is created.</exception>
     public static FoundatioMessagingBuilder UseRedis(this FoundatioMessagingBuilder builder, Func<IServiceProvider, RedisMessageTransportOptions> options)
@@ -51,7 +52,7 @@ public static class RedisMessagingBuilderExtensions
     /// <param name="connection">The connection to use.</param>
     /// <param name="options">
     /// The transport's options. A <see cref="RedisMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="RedisMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="RedisMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseRedis(this FoundatioMessagingBuilder builder, IConnectionMultiplexer connection, RedisMessageTransportOptions? options = null)
     {
@@ -68,7 +69,7 @@ public static class RedisMessagingBuilderExtensions
         return new RedisMessageTransport(connection, options with
         {
             LoggerFactory = options.LoggerFactory ?? services.GetService<ILoggerFactory>(),
-            TimeProvider = options.TimeProvider ?? services.GetService<TimeProvider>()
+            TimeProvider = options.TimeProvider ?? services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider ?? services.GetService<TimeProvider>()
         });
     }
 

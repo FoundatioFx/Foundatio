@@ -2,6 +2,7 @@ using System;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -24,7 +25,7 @@ public static class KafkaMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// The transport's options. A <see cref="KafkaMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="KafkaMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="KafkaMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseKafka(this FoundatioMessagingBuilder builder, KafkaMessageTransportOptions options)
     {
@@ -40,7 +41,7 @@ public static class KafkaMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// Builds the transport's options. A <see cref="KafkaMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="KafkaMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="KafkaMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseKafka(this FoundatioMessagingBuilder builder, Func<IServiceProvider, KafkaMessageTransportOptions> options)
     {
@@ -57,7 +58,7 @@ public static class KafkaMessagingBuilderExtensions
         return new KafkaMessageTransport(options with
         {
             LoggerFactory = options.LoggerFactory ?? services.GetService<ILoggerFactory>(),
-            TimeProvider = options.TimeProvider ?? services.GetService<TimeProvider>()
+            TimeProvider = options.TimeProvider ?? services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider ?? services.GetService<TimeProvider>()
         });
     }
 }

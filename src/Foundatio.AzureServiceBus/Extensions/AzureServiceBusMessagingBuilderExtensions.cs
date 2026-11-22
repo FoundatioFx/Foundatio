@@ -4,6 +4,7 @@ using Azure.Messaging.ServiceBus.Administration;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -31,7 +32,7 @@ public static class AzureServiceBusMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// The transport's options. A <see cref="AzureServiceBusMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="AzureServiceBusMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="AzureServiceBusMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     /// <exception cref="InvalidOperationException">
     /// The options have no connection and no <see cref="ServiceBusClient"/> is registered when the transport is created,
@@ -51,7 +52,7 @@ public static class AzureServiceBusMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// Builds the transport's options. A <see cref="AzureServiceBusMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="AzureServiceBusMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="AzureServiceBusMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseAzureServiceBus(this FoundatioMessagingBuilder builder, Func<IServiceProvider, AzureServiceBusMessageTransportOptions> options)
     {
@@ -71,7 +72,7 @@ public static class AzureServiceBusMessagingBuilderExtensions
     /// </param>
     /// <param name="options">
     /// The transport's options; its connection settings are not used. A <see cref="AzureServiceBusMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="AzureServiceBusMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="AzureServiceBusMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseAzureServiceBus(this FoundatioMessagingBuilder builder, ServiceBusClient client, ServiceBusAdministrationClient? administrationClient,
         AzureServiceBusMessageTransportOptions? options = null)
@@ -107,6 +108,6 @@ public static class AzureServiceBusMessagingBuilderExtensions
     private static AzureServiceBusMessageTransportOptions WithServices(IServiceProvider services, AzureServiceBusMessageTransportOptions options) => options with
     {
         LoggerFactory = options.LoggerFactory ?? services.GetService<ILoggerFactory>(),
-        TimeProvider = options.TimeProvider ?? services.GetService<TimeProvider>()
+        TimeProvider = options.TimeProvider ?? services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider ?? services.GetService<TimeProvider>()
     };
 }

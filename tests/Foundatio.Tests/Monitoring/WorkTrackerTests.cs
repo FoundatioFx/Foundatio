@@ -1,6 +1,8 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Foundatio.Monitoring;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -14,6 +16,32 @@ public class WorkTrackerTests
     public WorkTrackerTests()
     {
         _tracker = new WorkTracker(_time, TimeSpan.FromSeconds(1), recentCapacity: 3, TimeSpan.FromMinutes(5));
+    }
+
+    [Theory]
+    [InlineData("messaging")]
+    [InlineData("jobs")]
+    public async Task Create_WithAMessagingOrJobsClock_UsesItOverTheRegisteredOne(string configured)
+    {
+        // Arrange
+        var featureClock = new FakeTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(_time);
+        if (configured == "messaging")
+            services.AddFoundatioMessaging(m => m.UseInMemory().Configure(o => o.TimeProvider = featureClock));
+        else
+            services.AddFoundatioJobs(j => j.UseInMemory().Configure(o => o.TimeProvider = featureClock));
+        services.AddFoundatioMonitoring();
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var tracker = provider.GetRequiredService<WorkTracker>();
+        var runtime = provider.GetRequiredService<MonitoringRuntime>();
+        featureClock.Advance(TimeSpan.FromHours(1));
+
+        // Assert
+        Assert.Equal(featureClock.GetTimestamp(), tracker.GetTimestamp());
+        Assert.Same(featureClock, runtime.TimeProvider);
     }
 
     [Fact]

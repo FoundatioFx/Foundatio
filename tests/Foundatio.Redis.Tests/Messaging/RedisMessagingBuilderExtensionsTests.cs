@@ -91,5 +91,24 @@ public class RedisMessagingBuilderExtensionsTests(ITestOutputHelper output) : Te
         Assert.Contains(nameof(IConnectionMultiplexer), exception.Message);
     }
 
+    [Fact]
+    public async Task UseRedis_WithAMessagingClock_UsesItOverTheRegisteredOne()
+    {
+        // Arrange
+        var muxer = SharedConnection.GetMuxer(Log);
+        Assert.SkipWhen(muxer is null, "RedisConnectionString is not configured.");
+        var messagingClock = new FakeTimeProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddFoundatioMessaging(m => m.UseRedis(muxer).Configure(o => o.TimeProvider = messagingClock));
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<RedisMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Same(messagingClock, transport.Options.TimeProvider);
+    }
+
     public record Ping(string Text);
 }

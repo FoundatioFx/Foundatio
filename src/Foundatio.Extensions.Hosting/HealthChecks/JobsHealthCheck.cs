@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace Foundatio.Extensions.Hosting.HealthChecks;
 
@@ -24,7 +25,7 @@ internal sealed class JobsHealthCheck : IHealthCheck
         if (_services.GetService<JobsStatus>() is not { } status)
             return Task.FromResult(new HealthCheckResult(context.Registration.FailureStatus, "Jobs are not configured: call AddFoundatioJobs."));
 
-        var now = (_services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        var now = (_services.GetService<IOptions<JobWorkerOptions>>()?.Value.TimeProvider ?? _services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         return Task.FromResult(ProcessingHealth.Evaluate(status.GetComponents(), "No jobs or CRON schedules are registered", now, _unhealthyAfter, context.Registration.FailureStatus));
     }
 }

@@ -2,7 +2,10 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
+using Foundatio.Jobs;
+using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Foundatio.Monitoring;
 
@@ -62,7 +65,19 @@ internal sealed class WorkTracker
     public static WorkTracker Create(IServiceProvider services)
     {
         var options = services.GetService<MonitoringRegistrations>()?.Options ?? new MonitoringOptions();
-        return new WorkTracker(services.GetService<TimeProvider>() ?? TimeProvider.System, options.ActiveThreshold, options.RecentCapacity, options.StatsWindow);
+        return new WorkTracker(ResolveTimeProvider(services), options.ActiveThreshold, options.RecentCapacity, options.StatsWindow);
+    }
+
+    /// <summary>
+    /// The clock monitoring uses in <paramref name="services"/>, so work is timed on the clock it runs on:
+    /// <see cref="MessagingOptions.TimeProvider"/>, then <see cref="JobWorkerOptions.TimeProvider"/>, the registered one, or the system clock.
+    /// </summary>
+    public static TimeProvider ResolveTimeProvider(IServiceProvider services)
+    {
+        return services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider
+            ?? services.GetService<IOptions<JobWorkerOptions>>()?.Value.TimeProvider
+            ?? services.GetService<TimeProvider>()
+            ?? TimeProvider.System;
     }
 
     /// <summary>How long work runs before it is listed as active, unless it reports progress sooner.</summary>

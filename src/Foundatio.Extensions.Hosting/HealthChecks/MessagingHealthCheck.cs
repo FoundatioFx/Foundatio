@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace Foundatio.Extensions.Hosting.HealthChecks;
 
@@ -24,7 +25,7 @@ internal sealed class MessagingHealthCheck : IHealthCheck
         if (_services.GetService<MessagingStatus>() is not { } status)
             return Task.FromResult(new HealthCheckResult(context.Registration.FailureStatus, "Messaging is not configured: call AddFoundatioMessaging."));
 
-        var now = (_services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
+        var now = (_services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider ?? _services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         return Task.FromResult(ProcessingHealth.Evaluate(status.GetProcessors(), "No message handlers are registered", now, _unhealthyAfter, context.Registration.FailureStatus));
     }
 }

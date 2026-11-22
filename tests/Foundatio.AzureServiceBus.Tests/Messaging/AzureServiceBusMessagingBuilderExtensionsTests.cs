@@ -12,6 +12,7 @@ using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.AzureServiceBus.Tests.Messaging;
@@ -165,6 +166,23 @@ public class AzureServiceBusMessagingBuilderExtensionsTests(ITestOutputHelper ou
         string? connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         Assert.SkipWhen(String.IsNullOrEmpty(connectionString), "ConnectionStrings:AzureServiceBusConnectionString is not configured.");
         return connectionString;
+    }
+
+    [Fact]
+    public async Task UseAzureServiceBus_WithAMessagingClock_UsesItOverTheRegisteredOne()
+    {
+        // Arrange
+        var messagingClock = new FakeTimeProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddFoundatioMessaging(m => m.UseAzureServiceBus("Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;").Configure(o => o.TimeProvider = messagingClock));
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<AzureServiceBusMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Same(messagingClock, transport.Options.TimeProvider);
     }
 
     public record Ping(string Text);

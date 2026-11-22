@@ -146,6 +146,14 @@ Implement `IJobStore` (10 methods). [View source](https://github.com/FoundatioFx
 
 Use the database's clock for "now" so workers with skewed clocks agree. Prove it with `JobStoreTestsBase`, exactly like the transport suite.
 
+## Registration helpers
+
+Give apps a `Use*` extension on `FoundatioMessagingBuilder` or `FoundatioJobsBuilder` that calls `UseTransport(factory)` or `UseStore(factory)`, so the service provider creates and disposes your transport or store. In the factory:
+
+- Fill a logger factory left unset from the service provider. Fill a clock left unset from `IOptions<MessagingOptions>` (`TimeProvider`) for a transport, or `IOptions<JobWorkerOptions>` for a store, then the registered `TimeProvider`: apps and the test harness set those to keep Foundatio on one clock while tests move the app's.
+- Use a client the app registered (a connection, an SDK client) when the options don't say how to connect, and leave it open on dispose; dispose only what you created.
+- Offer a `Use*(connectionString)` overload for the common case.
+
 ## Experimental API {#experimental-api}
 
 The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have been tried against Azure Service Bus only on its emulator, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin` with `MessageSourceStats`, `IWorkMonitor`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.

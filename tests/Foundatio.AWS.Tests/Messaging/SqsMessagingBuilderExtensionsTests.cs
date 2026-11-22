@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.AWS.Tests.Messaging;
@@ -61,6 +62,23 @@ public class SqsMessagingBuilderExtensionsTests(ITestOutputHelper output) : Test
         Assert.Equal("hello", ping.Text);
         Assert.Same(Log, transport.Options.LoggerFactory);
         Assert.True(transport.IsDisposed);
+    }
+
+    [Fact]
+    public async Task UseSqs_WithAMessagingClock_UsesItOverTheRegisteredOne()
+    {
+        // Arrange
+        var messagingClock = new FakeTimeProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddFoundatioMessaging(m => m.UseSqs(new SqsMessageTransportOptions { ConnectionString = "serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx" }).Configure(o => o.TimeProvider = messagingClock));
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<SqsMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Same(messagingClock, transport.Options.TimeProvider);
     }
 
     public record Ping(string Text);

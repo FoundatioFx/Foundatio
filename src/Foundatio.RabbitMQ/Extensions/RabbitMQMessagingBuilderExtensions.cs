@@ -2,6 +2,7 @@ using System;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -30,7 +31,7 @@ public static class RabbitMQMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// The transport's options. A <see cref="RabbitMQMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="RabbitMQMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="RabbitMQMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     /// <exception cref="InvalidOperationException">There is no connection string and no <see cref="IConnection"/> is registered when the transport is created.</exception>
     public static FoundatioMessagingBuilder UseRabbitMQ(this FoundatioMessagingBuilder builder, RabbitMQMessageTransportOptions? options = null)
@@ -48,7 +49,7 @@ public static class RabbitMQMessagingBuilderExtensions
     /// <param name="builder">The messaging builder.</param>
     /// <param name="options">
     /// Builds the transport's options. A <see cref="RabbitMQMessageTransportOptions.LoggerFactory"/> or
-    /// <see cref="RabbitMQMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider.
+    /// <see cref="RabbitMQMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     /// <exception cref="InvalidOperationException">There is no connection string and no <see cref="IConnection"/> is registered when the transport is created.</exception>
     public static FoundatioMessagingBuilder UseRabbitMQ(this FoundatioMessagingBuilder builder, Func<IServiceProvider, RabbitMQMessageTransportOptions> options)
@@ -68,7 +69,7 @@ public static class RabbitMQMessagingBuilderExtensions
     /// The transport's options; its <see cref="RabbitMQMessageTransportOptions.ConnectionString"/> is only used for the
     /// virtual host and credentials of <see cref="RabbitMQMessageTransportOptions.ManagementEndpoint"/>. A
     /// <see cref="RabbitMQMessageTransportOptions.LoggerFactory"/> or <see cref="RabbitMQMessageTransportOptions.TimeProvider"/>
-    /// left unset is taken from the service provider.
+    /// left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
     /// </param>
     public static FoundatioMessagingBuilder UseRabbitMQ(this FoundatioMessagingBuilder builder, IConnection connection, RabbitMQMessageTransportOptions? options = null)
     {
@@ -85,7 +86,7 @@ public static class RabbitMQMessagingBuilderExtensions
         options = options with
         {
             LoggerFactory = options.LoggerFactory ?? services.GetService<ILoggerFactory>(),
-            TimeProvider = options.TimeProvider ?? services.GetService<TimeProvider>()
+            TimeProvider = options.TimeProvider ?? services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider ?? services.GetService<TimeProvider>()
         };
 
         if (connection is not null)
