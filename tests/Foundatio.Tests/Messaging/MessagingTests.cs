@@ -866,6 +866,26 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Admin_GivesTheSourcesOfThisAppsHandlersAndOfAMessageType()
+    {
+        await using var host = await StartAsync(m => m
+            .UseServiceName("billing")
+            .MapMessage<OrderShipped>("orders.shipped")
+            .AddConsumer<PlaceOrder>((_, _, _) => Task.CompletedTask)
+            .AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask)
+            .AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Name = "audit" })
+            .AddSubscriber<UserRegistered>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Scope = SubscriptionScope.Instance }));
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+
+        Assert.Equal(MessageSource.Queue(QueueName<PlaceOrder>()), admin.GetQueue<PlaceOrder>());
+        Assert.Equal(MessageSource.Subscription("orders.shipped", "billing"), admin.GetSubscription<OrderShipped>());
+        Assert.Equal(MessageSource.Subscription("orders.shipped", "audit"), admin.GetSubscription<OrderShipped>("audit"));
+        Assert.Equal(
+            [MessageSource.Queue(QueueName<PlaceOrder>()), MessageSource.Subscription("orders.shipped", "audit"), MessageSource.Subscription("orders.shipped", "billing")],
+            admin.GetSources().OrderBy(s => s.ToString(), StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task AdminGetStatsAsync_CountsTheSourceThroughTheTransportAndRejectsDeadLetterSources()
     {
         await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((_, context, _) =>

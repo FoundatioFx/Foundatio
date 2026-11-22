@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using Foundatio.Messaging;
 
 namespace Foundatio.Monitoring;
 
@@ -22,7 +23,7 @@ internal sealed class InstanceSnapshot
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 
-    /// <summary>The sources the instance receives from, as <see cref="Messaging.Transport.MessageSource.ToString"/> writes them.</summary>
+    /// <summary>The sources the instance receives from, as <see cref="MessageSource.ToString"/> writes them.</summary>
     public IReadOnlyList<string> MessageSources { get; init; } = [];
 
     public IReadOnlyList<string> JobNames { get; init; } = [];

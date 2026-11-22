@@ -16,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using Moq;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs;
@@ -27,6 +28,24 @@ public class DurableJobsTests : TestWithLoggingBase
 
     public DurableJobsTests(ITestOutputHelper output) : base(output)
     {
+    }
+
+    [Fact]
+    public async Task JobHandle_CreatedForAMockedClient_ReadsAndCancelsThroughIt()
+    {
+        var client = new Mock<IJobClient>();
+        var handle = new JobHandle("job-1", client.Object);
+        client.Setup(c => c.EnqueueAsync(It.IsAny<ResizeImage>(), null, TestCancellationToken)).ReturnsAsync(handle);
+        client.Setup(c => c.CancelAsync("job-1", TestCancellationToken)).ReturnsAsync(true);
+
+        var enqueued = await client.Object.EnqueueAsync(new ResizeImage("cat.png", 64), cancellationToken: TestCancellationToken);
+
+        Assert.Equal("job-1", enqueued.Id);
+        Assert.True(await enqueued.CancelAsync(TestCancellationToken));
+        Assert.Null(await enqueued.GetAsync(TestCancellationToken));
+        client.Verify(c => c.GetAsync("job-1", TestCancellationToken));
+        Assert.Throws<ArgumentException>(() => new JobHandle("", client.Object));
+        Assert.Throws<ArgumentNullException>(() => new JobHandle("job-1", null!));
     }
 
     [Fact]

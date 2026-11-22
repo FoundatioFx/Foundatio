@@ -12,13 +12,32 @@ namespace Foundatio.Messaging;
 /// </summary>
 /// <example>
 /// <code>
-/// var source = MessageSource.Subscription("orders.order-placed", "billing");
+/// var source = admin.GetSubscription&lt;OrderPlaced&gt;();   // this service's subscription to the event
 /// var failed = await admin.PeekDeadLettersAsync(source);
 /// int replayed = await admin.ReplayDeadLettersAsync(source);
 /// </code>
 /// </example>
 public interface IMessageAdmin
 {
+    /// <summary>
+    /// The queues and durable subscriptions this app's registered handlers receive from, named as the transport sees
+    /// them. Instance subscriptions are left out: they have no dead letters, and the transport names them.
+    /// </summary>
+    IReadOnlyList<MessageSource> GetSources();
+
+    /// <summary>The queue messages of type <typeparamref name="T"/> are sent to, following this app's routing (<c>MapMessage</c> and <see cref="MessageAttribute"/>).</summary>
+    MessageSource GetQueue<T>() where T : class;
+
+    /// <summary>
+    /// The durable subscription named <paramref name="name"/> to the topic messages of type <typeparamref name="T"/>
+    /// are published to; by default the subscription of this service, which <c>AddSubscriber</c> uses unless its
+    /// options name another.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="name"/> is null and no service name is set, on a transport that needs one.
+    /// </exception>
+    MessageSource GetSubscription<T>(string? name = null) where T : class;
+
     /// <summary>
     /// Counts the messages of a queue or durable subscription that are queued, delayed, in flight and dead-lettered, as
     /// the transport reports them. The counts are approximate and may lag sends and settlements by a few seconds; each is

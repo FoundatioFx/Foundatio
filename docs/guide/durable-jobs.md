@@ -230,6 +230,13 @@ await new GenerateReportJob(fakeReports).HandleAsync(new GenerateReport("pdf", 2
 Assert.Equal(100, context.Progress);
 ```
 
+To unit test code that enqueues jobs, mock `IJobClient` and return a `JobHandle` you create:
+
+```csharp
+var jobs = new Mock<IJobClient>();
+jobs.Setup(j => j.EnqueueAsync(It.IsAny<GenerateReport>(), null, default)).ReturnsAsync(new JobHandle("job-1", jobs.Object));
+```
+
 With [`AddFoundatioTestHarness()`](./messaging#testing), jobs your app enqueues run on an in-memory store, and every finished run is recorded with its arguments, status, attempt, error, message and `Progress`:
 
 ```csharp

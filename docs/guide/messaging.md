@@ -263,10 +263,11 @@ public class ImportCatalogHandler(ICatalog catalog) : IMessageHandler<ImportCata
 
 ## Dead letters
 
-Every queue and durable subscription has a dead-letter queue. Count, inspect and replay it with `IMessageAdmin`, on any transport. `MessageSource` and `MessageSourceStats` are in the `Foundatio.Messaging.Transport` namespace:
+Every queue and durable subscription has a dead-letter queue. Count, inspect and replay it with `IMessageAdmin`, on any transport. The admin names sources by message type, following your routing (`[Message]`, `MapMessage`, the service name), so you don't build the names by hand:
 
 ```csharp
-var source = MessageSource.Subscription("orders.order-placed", "billing");   // or MessageSource.Queue("orders.send-receipt")
+var source = admin.GetSubscription<OrderPlaced>();   // this service's subscription; GetSubscription<OrderPlaced>("audit") for another, GetQueue<SendReceipt>() for a queue
+IReadOnlyList<MessageSource> mine = admin.GetSources();   // every queue and durable subscription this app's handlers receive from
 
 MessageSourceStats? counts = await admin.GetStatsAsync(source);   // Queued, Delayed, InFlight, DeadLettered; null where the transport can't tell
 IReadOnlyList<DeadLetterMessage> failed = await admin.PeekDeadLettersAsync(source);   // Reason, MessageType, Message (deserialized), Headers

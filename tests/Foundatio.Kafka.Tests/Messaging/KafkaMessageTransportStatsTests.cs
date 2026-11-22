@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Confluent.Kafka;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;

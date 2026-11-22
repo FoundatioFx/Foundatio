@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Azure;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Time.Testing;

@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Threading.Tasks;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Xunit;
 

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
 using Microsoft.Extensions.Logging;

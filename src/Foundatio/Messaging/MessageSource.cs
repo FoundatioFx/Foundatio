@@ -1,6 +1,7 @@
 using System;
+using Foundatio.Messaging.Transport;
 
-namespace Foundatio.Messaging.Transport;
+namespace Foundatio.Messaging;
 
 /// <summary>What a <see cref="MessageSource"/> receives from.</summary>
 public enum MessageSourceKind

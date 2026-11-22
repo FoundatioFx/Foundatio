@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Xunit;
 using RabbitMQ.Client;

@@ -26,12 +26,38 @@ internal sealed class MessageAdmin : IMessageAdmin
     private static readonly string[] ReplayRemovesHeaders = [KnownHeaders.DeadLetterReason, KnownHeaders.DeliverAt, KnownHeaders.ExpiresAt];
 
     private readonly MessagingRuntime _runtime;
+    private readonly IReadOnlyList<MessageHandlerRegistration> _handlers;
     private readonly ILogger _logger;
 
-    public MessageAdmin(MessagingRuntime runtime)
+    /// <param name="runtime">The runtime it administers.</param>
+    /// <param name="handlers">This app's registered handlers, for <see cref="GetSources"/>.</param>
+    public MessageAdmin(MessagingRuntime runtime, IReadOnlyList<MessageHandlerRegistration>? handlers = null)
     {
         _runtime = runtime;
+        _handlers = handlers ?? [];
         _logger = runtime.LoggerFactory.CreateLogger<MessageAdmin>();
+    }
+
+    public IReadOnlyList<MessageSource> GetSources()
+    {
+        return _handlers
+            .Where(h => h.Kind == MessageHandlerKind.Consumer || h.Scope != SubscriptionScope.Instance)
+            .Select(_runtime.GetSource)
+            .Distinct()
+            .ToList();
+    }
+
+    public MessageSource GetQueue<T>() where T : class => MessageSource.Queue(_runtime.Types.GetRoute(typeof(T)).Queue);
+
+    public MessageSource GetSubscription<T>(string? name = null) where T : class
+    {
+        if (name is null && !_runtime.CanNameSubscriptionsByDefault)
+        {
+            throw new InvalidOperationException($"No service name is set, so {typeof(T).Name} has no default subscription on this transport. "
+                + "Pass the subscription name, or set one with UseServiceName.");
+        }
+
+        return MessageSource.Subscription(_runtime.Types.GetRoute(typeof(T)).Topic, name ?? _runtime.ServiceName);
     }
 
     public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)

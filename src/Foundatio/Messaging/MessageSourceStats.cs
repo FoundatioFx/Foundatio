@@ -1,4 +1,4 @@
-namespace Foundatio.Messaging.Transport;
+namespace Foundatio.Messaging;
 
 /// <summary>
 /// Approximate counts of the messages in one queue or durable subscription, as the broker reports them, for

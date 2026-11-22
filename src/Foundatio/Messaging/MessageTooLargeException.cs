@@ -1,6 +1,7 @@
 using System;
+using Foundatio.Messaging.Transport;
 
-namespace Foundatio.Messaging.Transport;
+namespace Foundatio.Messaging;
 
 /// <summary>Thrown when a message is larger than <see cref="TransportCapabilities.MaxMessageSize"/>.</summary>
 public class MessageTooLargeException : MessageBusException

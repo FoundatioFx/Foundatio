@@ -13,8 +13,14 @@ public sealed class JobHandle
 
     private readonly IJobClient _client;
 
-    internal JobHandle(string id, IJobClient client)
+    /// <summary>
+    /// Creates a handle to the job <paramref name="id"/> that reads and cancels it through <paramref name="client"/>.
+    /// <c>IJobClient.EnqueueAsync</c> returns one; create your own to return from a mocked <see cref="IJobClient"/>.
+    /// </summary>
+    public JobHandle(string id, IJobClient client)
     {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        ArgumentNullException.ThrowIfNull(client);
         Id = id;
         _client = client;
     }
