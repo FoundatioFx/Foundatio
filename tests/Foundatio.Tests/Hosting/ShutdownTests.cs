@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
@@ -59,6 +60,37 @@ public class ShutdownTests : TestWithLoggingBase
         Assert.Equal(1, Volatile.Read(ref _work.MessagesFinished));
         Assert.Equal(1, Volatile.Read(ref _work.JobsFinished));
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1.75), $"Stopping took {stopwatch.Elapsed}; draining one after the other takes the sum of both timeouts, 2 s.");
+    }
+
+    [Theory]
+    [InlineData("messaging")]
+    [InlineData("jobs")]
+    [InlineData("cron")]
+    public async Task AddJobLifetimeService_WithOnlyMessageHandlersOrDurableJobs_KeepsTheHostRunning(string work)
+    {
+        using var host = new HostBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton<ILoggerFactory>(Log);
+                services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+                services.AddSingleton(_work);
+                services.AddJobLifetimeService();
+                if (work == "messaging")
+                    services.AddFoundatioMessaging(m => m.UseTransport(_transport).UseServiceName("tests").AddConsumer<SlowCommand>((_, _, _) => Task.CompletedTask));
+                else if (work == "jobs")
+                    services.AddFoundatioJobs(j => j.UseStore(_store).AddJob<SlowJob>());
+                else
+                    services.AddFoundatioJobs(j => j.UseStore(_store).AddCronJob("0 0 1 1 *", new SlowJobArguments()));
+            })
+            .Build();
+        var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+
+        await host.StartAsync(TestCancellationToken);
+        // The lifetime service first checks 3 s after the host starts.
+        await Task.Delay(TimeSpan.FromSeconds(3.5), TestCancellationToken);
+
+        Assert.False(lifetime.ApplicationStopping.IsCancellationRequested, "The host stopped itself although its message handlers or job worker were running.");
+        await host.StopAsync(TestCancellationToken);
     }
 
     /// <summary>Messaging is registered first, so the host stops the job worker first.</summary>
