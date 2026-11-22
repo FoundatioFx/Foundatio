@@ -106,7 +106,7 @@ var queue = new AzureServiceBusQueue<WorkItem>(o => {
 
 Queue using Azure Storage Queues (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs)
 
 ```csharp
 // dotnet add package Foundatio.AzureStorage

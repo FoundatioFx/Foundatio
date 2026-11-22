@@ -9,10 +9,10 @@
   Always matches CI to the exact HEAD commit of main (never "latest run on branch").
 .EXAMPLE
   ./ci-status.ps1
-  ./ci-status.ps1 -Repos Foundatio.AzureStorage,Foundatio.Aliyun -SkipTests
+  ./ci-status.ps1 -Repos Foundatio.Aliyun,Foundatio.Storage.SshNet -SkipTests
 #>
 param(
-  [string[]]$Repos = @("Foundatio","Foundatio.Repositories","Foundatio.Parsers","Foundatio.AzureStorage","Foundatio.Aliyun","Foundatio.Storage.SshNet","Foundatio.Mediator","Foundatio.CommandQuery","Foundatio.Lucene"),
+  [string[]]$Repos = @("Foundatio","Foundatio.Repositories","Foundatio.Parsers","Foundatio.Aliyun","Foundatio.Storage.SshNet","Foundatio.Mediator","Foundatio.CommandQuery","Foundatio.Lucene"),
   [string]$Root = "$HOME/code",
   [string]$Org = "FoundatioFx",
   [switch]$SkipTests

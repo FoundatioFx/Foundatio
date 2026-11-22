@@ -5,6 +5,8 @@
     <Project Path="samples/Foundatio.AzureServiceBus.Enqueue/Foundatio.AzureServiceBus.Enqueue.csproj" />
     <Project Path="samples/Foundatio.AzureServiceBus.Publish/Foundatio.AzureServiceBus.Publish.csproj" />
     <Project Path="samples/Foundatio.AzureServiceBus.Subscribe/Foundatio.AzureServiceBus.Subscribe.csproj" />
+    <Project Path="samples/Foundatio.AzureStorage.Dequeue/Foundatio.AzureStorage.Dequeue.csproj" />
+    <Project Path="samples/Foundatio.AzureStorage.Enqueue/Foundatio.AzureStorage.Enqueue.csproj" />
     <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
     <Project Path="samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
@@ -29,6 +31,7 @@
     <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
     <Project Path="tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj" />
     <Project Path="tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj" />
+    <Project Path="tests/Foundatio.AzureStorage.Tests/Foundatio.AzureStorage.Tests.csproj" />
     <Project Path="tests/Foundatio.Chaos/Foundatio.Chaos.csproj" />
     <Project Path="tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj" />
     <Project Path="tests/Foundatio.RabbitMQ.AppHost/Foundatio.RabbitMQ.AppHost.csproj" />
@@ -44,6 +47,7 @@
   </Folder>
   <Project Path="src/Foundatio.AWS/Foundatio.AWS.csproj" />
   <Project Path="src/Foundatio.AzureServiceBus/Foundatio.AzureServiceBus.csproj" />
+  <Project Path="src/Foundatio.AzureStorage/Foundatio.AzureStorage.csproj" />
   <Project Path="src/Foundatio.DataProtection/Foundatio.DataProtection.csproj" />
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
   <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />

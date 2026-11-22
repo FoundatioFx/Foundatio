@@ -6,8 +6,8 @@
     <Project Path="samples/Foundatio.AzureServiceBus.Enqueue/Foundatio.AzureServiceBus.Enqueue.csproj" />
     <Project Path="samples/Foundatio.AzureServiceBus.Publish/Foundatio.AzureServiceBus.Publish.csproj" />
     <Project Path="samples/Foundatio.AzureServiceBus.Subscribe/Foundatio.AzureServiceBus.Subscribe.csproj" />
-    <Project Path="../Foundatio.AzureStorage/samples/Foundatio.AzureStorage.Dequeue/Foundatio.AzureStorage.Dequeue.csproj" />
-    <Project Path="../Foundatio.AzureStorage/samples/Foundatio.AzureStorage.Enqueue/Foundatio.AzureStorage.Enqueue.csproj" />
+    <Project Path="samples/Foundatio.AzureStorage.Dequeue/Foundatio.AzureStorage.Dequeue.csproj" />
+    <Project Path="samples/Foundatio.AzureStorage.Enqueue/Foundatio.AzureStorage.Enqueue.csproj" />
     <Project Path="samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
     <Project Path="samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
     <Project Path="samples/Foundatio.RabbitMQ.Publish/Foundatio.RabbitMQ.Publish.csproj" />
@@ -33,7 +33,7 @@
     <Project Path="../Foundatio.Aliyun/tests/Foundatio.Aliyun.Tests/Foundatio.Aliyun.Tests.csproj" />
     <Project Path="tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj" />
     <Project Path="tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj" />
-    <Project Path="../Foundatio.AzureStorage/tests/Foundatio.AzureStorage.Tests/Foundatio.AzureStorage.Tests.csproj" />
+    <Project Path="tests/Foundatio.AzureStorage.Tests/Foundatio.AzureStorage.Tests.csproj" />
     <Project Path="tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj" />
     <Project Path="../Foundatio.Parsers/tests/Foundatio.Parsers.ElasticQueries.Tests/Foundatio.Parsers.ElasticQueries.Tests.csproj" />
     <Project Path="../Foundatio.Parsers/tests/Foundatio.Parsers.LuceneQueries.Tests/Foundatio.Parsers.LuceneQueries.Tests.csproj" />
@@ -55,7 +55,7 @@
   <Project Path="../Foundatio.Aliyun/src/Foundatio.Aliyun/Foundatio.Aliyun.csproj" />
   <Project Path="src/Foundatio.AWS/Foundatio.AWS.csproj" />
   <Project Path="src/Foundatio.AzureServiceBus/Foundatio.AzureServiceBus.csproj" />
-  <Project Path="../Foundatio.AzureStorage/src/Foundatio.AzureStorage/Foundatio.AzureStorage.csproj" />
+  <Project Path="src/Foundatio.AzureStorage/Foundatio.AzureStorage.csproj" />
   <Project Path="src/Foundatio.Kafka/Foundatio.Kafka.csproj" />
   <Project Path="../Foundatio.Parsers/src/Foundatio.Parsers.ElasticQueries/Foundatio.Parsers.ElasticQueries.csproj" />
   <Project Path="../Foundatio.Parsers/src/Foundatio.Parsers.LuceneQueries/Foundatio.Parsers.LuceneQueries.csproj" />
