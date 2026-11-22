@@ -26,7 +26,11 @@ public sealed class JobWorkerOptions
     /// </summary>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(20);
 
-    /// <summary>How long succeeded jobs are kept, without their arguments. Defaults to one day.</summary>
+    /// <summary>
+    /// How long succeeded jobs are kept, without their arguments. Zero stops reads returning a job as soon as it
+    /// succeeds. Defaults to one day. A job type's <see cref="JobTypeOptions.RetainSucceededFor"/> and a CRON schedule's
+    /// <see cref="CronJobOptions.RetainSucceededFor"/> override it.
+    /// </summary>
     public TimeSpan RetainSucceededFor { get; set; } = TimeSpan.FromDays(1);
 
     /// <summary>How long failed and cancelled jobs are kept, with their arguments. Defaults to seven days.</summary>
@@ -63,7 +67,7 @@ public sealed class JobWorkerOptions
         ArgumentOutOfRangeException.ThrowIfLessThan(LeaseDuration, TimeSpan.FromSeconds(1), nameof(LeaseDuration));
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(PollInterval, TimeSpan.Zero, nameof(PollInterval));
         ArgumentOutOfRangeException.ThrowIfLessThan(ShutdownTimeout, TimeSpan.Zero, nameof(ShutdownTimeout));
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(RetainSucceededFor, TimeSpan.Zero, nameof(RetainSucceededFor));
+        ArgumentOutOfRangeException.ThrowIfLessThan(RetainSucceededFor, TimeSpan.Zero, nameof(RetainSucceededFor));
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(RetainFailedFor, TimeSpan.Zero, nameof(RetainFailedFor));
         ArgumentNullException.ThrowIfNull(DefaultRetryPolicy, nameof(DefaultRetryPolicy));
         DefaultRetryPolicy.Validate();

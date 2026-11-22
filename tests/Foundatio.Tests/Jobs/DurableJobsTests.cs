@@ -635,6 +635,91 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task JobTypeRetainSucceededFor_OfZero_RemovesTheJobsOfThatTypeWhenTheySucceed()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(new JobTypeOptions { RetainSucceededFor = TimeSpan.Zero }).AddJob<SlowJob>());
+
+        var resized = await host.Jobs.EnqueueAsync(new ResizeImage("a.png", 1), cancellationToken: TestCancellationToken);
+        var slow = await host.Jobs.EnqueueAsync(new Slow(), cancellationToken: TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, (await slow.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+        await WaitForAsync(async () => await resized.GetAsync(TestCancellationToken) is null);
+        Assert.Equal(1, await host.Jobs.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task Cron_EveryFiveSecondsWithZeroRetention_RunsEachOccurrenceOnceAndKeepsAMinuteOfJobs()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryJobStore(time);
+        var schedule = new CronJobOptions { RetainSucceededFor = TimeSpan.Zero };
+        await using var host = await StartAsync(j => j.Configure(o => o.TimeProvider = time).AddCronJob<TickJob>("*/5 * * * * *", schedule), store: store);
+        await using var other = await StartAsync(j => j.Configure(o => o.TimeProvider = time).AddCronJob<TickJob>("*/5 * * * * *", schedule), store: store, startHostedServices: false);
+        var otherScheduler = other.CreateScheduler();
+        await WaitForAsync(() => Task.FromResult(_probe.Runs.Count == 1));
+
+        for (int occurrence = 2; occurrence <= 60; occurrence++)
+        {
+            time.Advance(TimeSpan.FromSeconds(5));
+            await WaitForAsync(() => Task.FromResult(_probe.Runs.Count == occurrence));
+            await WaitForAsync(async () => await store.CountAsync(JobState.Running, "tick", TestCancellationToken) == 0);
+            await otherScheduler.RunDueAsync(time.GetUtcNow().AddMilliseconds(500), TestCancellationToken);
+            Assert.Equal(0, await store.CountAsync(JobState.Queued, "tick", TestCancellationToken));
+        }
+
+        Assert.Equal(60, _probe.Contexts.Select(c => c.ScheduledFor).Distinct().Count());
+        Assert.InRange(await store.CountAsync(JobState.Succeeded, "tick", TestCancellationToken), 12, 14);
+    }
+
+    [Fact]
+    public async Task CronRetainSucceededFor_OverridesTheJobTypeAndWorkerRetentionForItsOccurrences()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryJobStore(time);
+        await using var host = await StartAsync(j => j
+            .Configure(o => o.TimeProvider = time)
+            .AddCronJob<TickJob>("0 * * * *", new CronJobOptions { RetainSucceededFor = TimeSpan.FromHours(3), JobTypeOptions = new JobTypeOptions { RetainSucceededFor = TimeSpan.FromHours(2) } }),
+            store: store, startHostedServices: false);
+        var worker = new JobWorker(host.Services.GetRequiredService<JobsRuntime>());
+        worker.Start();
+        try
+        {
+            await host.CreateScheduler().RunDueAsync(time.GetUtcNow(), TestCancellationToken);
+            var enqueued = await host.Jobs.EnqueueAsync<TickJob>(cancellationToken: TestCancellationToken);
+            await WaitForAsync(async () => await store.CountAsync(JobState.Succeeded, "tick", TestCancellationToken) == 2);
+
+            time.Advance(TimeSpan.FromHours(2.5));
+            Assert.Null(await enqueued.GetAsync(TestCancellationToken));
+            Assert.NotNull(await host.Jobs.GetAsync("cron:tick:20260101T000000Z", TestCancellationToken));
+            time.Advance(TimeSpan.FromHours(1));
+            Assert.Null(await host.Jobs.GetAsync("cron:tick:20260101T000000Z", TestCancellationToken));
+        }
+        finally
+        {
+            await worker.StopAsync(TestCancellationToken);
+        }
+    }
+
+    [Fact]
+    public void MisfireThreshold_LongerThanRetention_ThrowsOnlyForASchedulesWhoseJobRunsElsewhere()
+    {
+        var registered = new ServiceCollection().AddSingleton(_probe).AddFoundatioJobs(j => j
+            .UseInMemory()
+            .Configure(o => o.RetainSucceededFor = TimeSpan.FromMinutes(10))
+            .AddCronJob<TickJob>("* * * * *", new CronJobOptions { RetainSucceededFor = TimeSpan.Zero }));
+        using var provider = registered.BuildServiceProvider();
+        Assert.NotNull(provider.GetRequiredService<IJobClient>());
+
+        var elsewhere = new ServiceCollection().AddFoundatioJobs(j => j
+            .UseInMemory()
+            .Configure(o => o.RetainSucceededFor = TimeSpan.FromMinutes(10))
+            .AddCronJob("* * * * *", new ResizeImage("a.png", 1)));
+        using var producer = elsewhere.BuildServiceProvider();
+        var error = Assert.Throws<InvalidOperationException>(() => producer.GetRequiredService<IJobClient>());
+        Assert.Contains("misfire threshold", error.Message);
+    }
+
+    [Fact]
     public async Task Query_ListsJobsNewestFirstWithFilters()
     {
         await using var host = await StartAsync(_ => { });

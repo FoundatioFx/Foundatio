@@ -112,7 +112,8 @@ internal sealed class JobRegistration
     {
         string concurrency = options.MaxConcurrency is { } max ? $"MaxConcurrency {max}" : "MaxConcurrency not set";
         string retries = options.RetryPolicy is { } policy ? $"RetryPolicy with MaxAttempts {policy.MaxAttempts}" : "RetryPolicy not set";
-        return $"{concurrency}, {retries}";
+        string retention = options.RetainSucceededFor is { } retain ? $", RetainSucceededFor {retain}" : "";
+        return $"{concurrency}, {retries}{retention}";
     }
 
     /// <summary>The arguments types of the <see cref="IJobHandler{TArgs}"/> interfaces <paramref name="jobType"/> implements.</summary>

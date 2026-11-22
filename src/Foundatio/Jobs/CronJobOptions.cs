@@ -21,6 +21,16 @@ public sealed record CronJobOptions
     public bool AllowConcurrent { get; init; }
 
     /// <summary>
+    /// How long the schedule's jobs are kept after they succeed. Zero keeps none for longer than running each
+    /// occurrence once needs: until the next occurrence is due, or <see cref="MisfireThreshold"/> has passed if that is
+    /// sooner, plus a minute. Use it for schedules that run every few seconds, which would otherwise keep a record of
+    /// every run for <see cref="JobWorkerOptions.RetainSucceededFor"/>. Defaults to the job type's
+    /// <see cref="JobTypeOptions.RetainSucceededFor"/>, then <see cref="JobWorkerOptions.RetainSucceededFor"/>. Applied by
+    /// the processes that register the schedule and run its job, as <c>AddCronJob&lt;TJob&gt;</c> does.
+    /// </summary>
+    public TimeSpan? RetainSucceededFor { get; init; }
+
+    /// <summary>
     /// Settings for the job type, applied by <c>AddCronJob&lt;TJob&gt;(cronExpression, options)</c>, which registers the
     /// job, as if passed to <c>AddJob&lt;TJob&gt;(options)</c>. A schedule of job arguments does not register the job, so it
     /// throws when this is set.

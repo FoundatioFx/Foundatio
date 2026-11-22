@@ -31,6 +31,38 @@ public class CronExpressionTests
         Assert.Equal(Parse(expected).Offset, next?.Offset);
     }
 
+    /// <summary>
+    /// The scheduler's binary search for the latest occurrence in a window finds what enumerating every occurrence
+    /// in it finds, for schedules from every second to monthly, in UTC and in a zone with daylight saving time.
+    /// </summary>
+    [Theory]
+    [InlineData("* * * * * *", true)]
+    [InlineData("*/5 * * * * *", true)]
+    [InlineData("7 */13 * * * *", true)]
+    [InlineData("0 * * * *", false)]
+    [InlineData("30 2 * * *", false)]
+    [InlineData("0 9 * * MON-FRI", false)]
+    [InlineData("0 0 1 * *", false)]
+    public void GetLatestOccurrence_MatchesTheLastOccurrenceEnumeratedInTheWindow(string expression, bool includeSeconds)
+    {
+        var random = new Random(42);
+        var chicago = TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Central Standard Time" : "America/Chicago");
+        foreach (var zone in new[] { TimeZoneInfo.Utc, chicago })
+        {
+            var schedule = new Foundatio.Jobs.CronSchedule("schedule", "job", CronExpression.Parse(expression, includeSeconds ? CronFormat.IncludeSeconds : CronFormat.Standard), null,
+                new Foundatio.Jobs.CronJobOptions { TimeZone = zone });
+            for (int i = 0; i < 200; i++)
+            {
+                var to = new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(random.Next(0, 300 * 24 * 3600)).AddMilliseconds(random.Next(0, 1000));
+                var from = to - TimeSpan.FromSeconds(random.Next(0, 3 * 24 * 3600));
+
+                var expected = schedule.Expression.GetOccurrences(from, to, zone, fromInclusive: true, toInclusive: true).Cast<DateTimeOffset?>().LastOrDefault();
+
+                Assert.Equal(expected, schedule.GetLatestOccurrence(from, to));
+            }
+        }
+    }
+
     [Theory]
     [InlineData("@every_minute", false, "* * * * *")]
     [InlineData("@hourly", false, "0 * * * *")]

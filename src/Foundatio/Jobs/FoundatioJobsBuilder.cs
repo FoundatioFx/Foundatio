@@ -147,7 +147,7 @@ public sealed class FoundatioJobsBuilder
     /// to run in this process. Schedule a legacy <see cref="IJob"/> as <c>AddCronJob&lt;LegacyJob&lt;TJob&gt;&gt;(...)</c>.
     /// </summary>
     /// <param name="cronExpression">Five fields (minute precision) or six (seconds first), for example <c>"0 * * * *"</c> for hourly.</param>
-    /// <param name="options">The schedule's time zone, name, overlap and misfire behavior.</param>
+    /// <param name="options">The schedule's time zone, name, overlap, misfire behavior and retention.</param>
     public FoundatioJobsBuilder AddCronJob<TJob>(string cronExpression, CronJobOptions? options = null) where TJob : class, IJobHandler
     {
         options ??= new CronJobOptions();
@@ -180,6 +180,8 @@ public sealed class FoundatioJobsBuilder
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cronExpression);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MisfireThreshold, TimeSpan.Zero, nameof(options.MisfireThreshold));
+        if (options.RetainSucceededFor is { } retention)
+            ArgumentOutOfRangeException.ThrowIfLessThan(retention, TimeSpan.Zero, nameof(options.RetainSucceededFor));
         options.JobTypeOptions?.Validate();
 
         string name = options.Name is { } scheduleName ? Messaging.MessageTypeRegistry.ValidateName(scheduleName, nameof(options.Name)) : jobName;

@@ -28,6 +28,9 @@ public sealed record JobCompletion
     /// <summary>For <see cref="JobState.Queued"/>, true when this run should not count as an attempt (it was interrupted by shutdown).</summary>
     public bool RefundAttempt { get; private init; }
 
+    /// <summary>This completion, kept for at least <paramref name="minimum"/> when it ends the job.</summary>
+    internal JobCompletion RetainingAtLeast(TimeSpan minimum) => State != JobState.Queued && RetainFor < minimum ? this with { RetainFor = minimum } : this;
+
     /// <summary>The run succeeded. The store drops the job's arguments and keeps the rest of its record for <paramref name="retainFor"/>.</summary>
     public static JobCompletion Succeeded(TimeSpan retainFor, string? message = null) => new() { State = JobState.Succeeded, RetainFor = retainFor, Message = message };
     /// <summary>The job failed for good, for example with no attempts left. The record is kept for <paramref name="retainFor"/>.</summary>

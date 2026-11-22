@@ -317,7 +317,7 @@ internal sealed class JobWorker
         {
             if (_logger.IsEnabled(LogLevel.Debug))
                 _logger.LogDebug("Job {JobName} {JobId} succeeded", job.Name, job.Id);
-            completion = JobCompletion.Succeeded(_runtime.Options.RetainSucceededFor);
+            completion = JobCompletion.Succeeded(GetRetainSucceededFor(job, registration));
         }
         else
         {
@@ -451,11 +451,26 @@ internal sealed class JobWorker
         return JobCompletion.Failed(_runtime.Options.RetainFailedFor, description);
     }
 
+    /// <summary>How long a succeeded <paramref name="job"/> is kept: its CRON schedule's retention, its type's, or the worker's.</summary>
+    private TimeSpan GetRetainSucceededFor(JobInfo job, JobRegistration registration)
+    {
+        return (GetSchedule(job)?.Options.RetainSucceededFor ?? registration.Options.RetainSucceededFor) ?? _runtime.Options.RetainSucceededFor;
+    }
+
+    private CronSchedule? GetSchedule(JobInfo job)
+    {
+        return job.ScheduleName is { } name && _runtime.Registrations.Schedules.TryGetValue(name, out var schedule) && schedule.JobName == job.Name ? schedule : null;
+    }
+
     /// <param name="job">The claimed job.</param>
     /// <param name="completion">How the run ended.</param>
     /// <param name="context">The run's context, whose last progress message the store holds as the job's message unless <paramref name="completion"/> sets one.</param>
     private async Task CompleteAsync(JobInfo job, JobCompletion completion, JobRunContext? context = null)
     {
+        // However short the retention, a CRON occurrence's job outlives the time a scheduler could create it again.
+        if (GetSchedule(job) is { } schedule && completion.State != JobState.Queued)
+            completion = completion.RetainingAtLeast(schedule.GetKeepUntil(job.ScheduledFor) - _runtime.TimeProvider.GetUtcNow());
+
         for (int attempt = 1; ; attempt++)
         {
             try

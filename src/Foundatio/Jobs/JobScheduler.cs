@@ -113,11 +113,7 @@ internal sealed class JobScheduler
 
     private async Task CreateDueOccurrenceAsync(CronSchedule schedule, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var occurrence = schedule.Expression
-            .GetOccurrences(now - schedule.Options.MisfireThreshold, now, schedule.TimeZone, fromInclusive: true, toInclusive: true)
-            .Cast<DateTimeOffset?>()
-            .LastOrDefault();
-
+        var occurrence = schedule.GetLatestOccurrence(now - schedule.Options.MisfireThreshold, now);
         if (occurrence is not { } due || _lastCreated.TryGetValue(schedule.Name, out var last) && last >= due)
             return;
 

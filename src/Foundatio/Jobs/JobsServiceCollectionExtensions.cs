@@ -55,7 +55,9 @@ public static class JobsServiceCollectionExtensions
         var options = services.GetRequiredService<IOptions<JobWorkerOptions>>().Value;
         options.Validate();
 
-        foreach (var schedule in registrations.Schedules.Values)
+        // The worker here keeps the jobs of schedules it runs for as long as they could be created again; a schedule
+        // whose job runs elsewhere relies on the retention there, which is assumed to match this process's.
+        foreach (var schedule in registrations.Schedules.Values.Where(s => !registrations.Jobs.ContainsKey(s.JobName)))
         {
             var retention = options.RetainSucceededFor < options.RetainFailedFor ? options.RetainSucceededFor : options.RetainFailedFor;
             if (schedule.Options.MisfireThreshold >= retention)
