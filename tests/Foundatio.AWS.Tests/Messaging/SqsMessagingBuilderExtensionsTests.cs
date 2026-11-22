@@ -3,6 +3,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon.Runtime;
+using Amazon.SimpleNotificationService;
+using Amazon.SQS;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Xunit;
@@ -65,6 +68,82 @@ public class SqsMessagingBuilderExtensionsTests(ITestOutputHelper output) : Test
     }
 
     [Fact]
+    public async Task UseSqs_WithClientsInServicesAndNoConnectionString_UsesThem()
+    {
+        // Arrange
+        using var sqs = CreateSqsClient();
+        using var sns = CreateSnsClient();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAmazonSQS>(sqs);
+        services.AddSingleton<IAmazonSimpleNotificationService>(sns);
+        services.AddFoundatioMessaging(m => m.UseSqs());
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<SqsMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Same(sqs, transport.Sqs);
+        Assert.Same(sns, transport.Sns);
+    }
+
+    [Fact]
+    public async Task UseSqs_WithOnlyAnSqsClientInServices_FailsWhenTheTransportIsCreated()
+    {
+        // Arrange
+        using var sqs = CreateSqsClient();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAmazonSQS>(sqs);
+        services.AddFoundatioMessaging(m => m.UseSqs());
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var exception = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Contains(nameof(IAmazonSimpleNotificationService), exception.Message);
+    }
+
+    [Fact]
+    public async Task UseSqs_WithClients_UsesThemOverRegisteredOnes()
+    {
+        // Arrange
+        using var sqs = CreateSqsClient();
+        using var sns = CreateSnsClient();
+        using var registered = CreateSqsClient();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAmazonSQS>(registered);
+        services.AddFoundatioMessaging(m => m.UseSqs(sqs, sns, new SqsMessageTransportOptions { Prefix = "helpers" }));
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<SqsMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Same(sqs, transport.Sqs);
+        Assert.Same(sns, transport.Sns);
+        Assert.Equal("helpers", transport.Options.Prefix);
+    }
+
+    [Fact]
+    public async Task UseSqs_WithAConnectionString_CreatesItsOwnClientsOverRegisteredOnes()
+    {
+        // Arrange
+        using var registered = CreateSqsClient();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAmazonSQS>(registered);
+        services.AddFoundatioMessaging(m => m.UseSqs(LocalConnectionString));
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<SqsMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+
+        // Assert
+        Assert.Equal(LocalConnectionString, transport.Options.ConnectionString);
+        Assert.NotSame(registered, transport.Sqs);
+    }
+
+    [Fact]
     public async Task UseSqs_WithAMessagingClock_UsesItOverTheRegisteredOne()
     {
         // Arrange
@@ -80,6 +159,12 @@ public class SqsMessagingBuilderExtensionsTests(ITestOutputHelper output) : Test
         // Assert
         Assert.Same(messagingClock, transport.Options.TimeProvider);
     }
+
+    private const string LocalConnectionString = "serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx";
+
+    private static AmazonSQSClient CreateSqsClient() => new(new BasicAWSCredentials("xxx", "xxx"), new AmazonSQSConfig { ServiceURL = "http://localhost:4566" });
+
+    private static AmazonSimpleNotificationServiceClient CreateSnsClient() => new(new BasicAWSCredentials("xxx", "xxx"), new AmazonSimpleNotificationServiceConfig { ServiceURL = "http://localhost:4566" });
 
     public record Ping(string Text);
 }

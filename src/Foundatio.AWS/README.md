@@ -69,9 +69,10 @@ services.AddFoundatioMessaging(m => m
     }));
 ```
 
-- `UseSqs()`, with no connection string, uses the default AWS credential and region resolution, such as an IAM role.
+- `UseSqs("Region=us-east-1")` connects with a connection string and the default options.
+- `UseSqs()`, with no connection string, uses the `IAmazonSQS` and `IAmazonSimpleNotificationService` registered in DI (for example with `AddAWSService<IAmazonSQS>()` and `AddAWSService<IAmazonSimpleNotificationService>()`), which stay yours; with neither registered, it uses the default AWS credential and region resolution, such as an IAM role. `UseSqs(sqs, sns, options)` takes the clients instead.
 - `UseSqs(sp => new SqsMessageTransportOptions { ... })` builds the options from the service provider, for example from configuration.
-- The service provider creates the transport and disposes it, with its SQS and SNS clients, at shutdown. `LoggerFactory` and `TimeProvider` come from DI unless the options set them.
+- The service provider creates the transport and disposes it, with the SQS and SNS clients it created, at shutdown. `LoggerFactory` and `TimeProvider` come from DI unless the options set them; the clock is `MessagingOptions.TimeProvider` when that is set.
 
 How it maps to AWS:
 
