@@ -23,6 +23,7 @@ internal sealed class JobWorker
     private static readonly TimeSpan MinPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan MaxRenewInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan AbortGracePeriod = TimeSpan.FromSeconds(5);
+    private const int MaxClaimBatch = 100;
 
     private readonly JobsRuntime _runtime;
     private readonly ILogger _logger;
@@ -96,6 +97,10 @@ internal sealed class JobWorker
         }
     }
 
+    /// <summary>
+    /// Waits for a free slot, then claims as many jobs as there are free slots in one store call, so a worker is not
+    /// limited to one job per round trip to the store.
+    /// </summary>
     private async Task ClaimLoopAsync()
     {
         var token = _stopClaiming.Token;
@@ -112,24 +117,31 @@ internal sealed class JobWorker
                 break;
             }
 
-            var names = !_limitsByName ? _allNames : _runtime.Jobs.Values
-                .Where(j => j.Options.MaxConcurrency is not { } limit || _runningByName.GetValueOrDefault(j.Name) < limit)
-                .Select(j => j.Name)
-                .ToList();
+            int slots = 1;
+            while (slots < MaxClaimBatch && await _slots.WaitAsync(0, CancellationToken.None).AnyContext())
+                slots++;
 
-            JobInfo? job = null;
+            var names = _allNames;
+            int maxCount = slots;
+            if (_limitsByName)
+                (names, maxCount) = GetClaimableNames(slots);
+
+            IReadOnlyList<JobInfo> jobs = [];
             var workAvailable = _runtime.WorkAvailable;
             long claimSent = _runtime.TimeProvider.GetTimestamp();
             try
             {
                 if (names.Count > 0)
-                    job = await _runtime.Store.ClaimAsync(new JobClaimRequest { Names = names, WorkerId = _runtime.WorkerId, LeaseDuration = _runtime.Options.LeaseDuration }, token).AnyContext();
+                {
+                    var request = new JobClaimRequest { Names = names, WorkerId = _runtime.WorkerId, LeaseDuration = _runtime.Options.LeaseDuration };
+                    jobs = await _runtime.Store.ClaimBatchAsync(request, maxCount, token).AnyContext();
+                }
 
                 Status.RecordSuccess();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
-                _slots.Release();
+                _slots.Release(slots);
                 break;
             }
             catch (Exception ex)
@@ -139,9 +151,11 @@ internal sealed class JobWorker
                 idle = _runtime.Options.PollInterval;
             }
 
-            if (job is null)
+            if (jobs.Count < slots)
+                _slots.Release(slots - jobs.Count);
+
+            if (jobs.Count == 0)
             {
-                _slots.Release();
                 await WaitForWorkAsync(workAvailable, idle, token).AnyContext();
                 idle = TimeSpan.FromTicks(Math.Min(idle.Ticks * 2, _runtime.Options.PollInterval.Ticks));
                 continue;
@@ -149,18 +163,50 @@ internal sealed class JobWorker
 
             if (token.IsCancellationRequested)
             {
-                // Shutdown began while the claim was in flight: hand the job back for another worker rather than start it now.
-                await CompleteAsync(job, JobCompletion.Release()).AnyContext();
-                _slots.Release();
+                // Shutdown began while the claim was in flight: hand the jobs back for another worker rather than start them now.
+                foreach (var job in jobs)
+                    await CompleteAsync(job, JobCompletion.Release()).AnyContext();
+
+                _slots.Release(jobs.Count);
                 break;
             }
 
             idle = MinPollInterval;
-            Interlocked.Increment(ref _running);
-            _runningByName.AddOrUpdate(job.Name, 1, (_, count) => count + 1);
-            // On the thread pool, as Task.Run would, without a task and delegate nobody awaits.
-            ThreadPool.QueueUserWorkItem(static state => _ = state.Worker.RunClaimedAsync(state.Job, state.ClaimSent), (Worker: this, Job: job, ClaimSent: claimSent), preferLocal: false);
+            foreach (var job in jobs)
+            {
+                Interlocked.Increment(ref _running);
+                _runningByName.AddOrUpdate(job.Name, 1, (_, count) => count + 1);
+                // On the thread pool, as Task.Run would, without a task and delegate nobody awaits.
+                ThreadPool.QueueUserWorkItem(static state => _ = state.Worker.RunClaimedAsync(state.Job, state.ClaimSent), (Worker: this, Job: job, ClaimSent: claimSent), preferLocal: false);
+            }
         }
+    }
+
+    /// <summary>
+    /// The job names under their type's concurrency limit, and how many jobs a claim of them may take: no more than
+    /// <paramref name="slots"/>, nor than any of those limited types has room for, since every job claimed could be of that type.
+    /// </summary>
+    private (List<string> Names, int MaxCount) GetClaimableNames(int slots)
+    {
+        var names = new List<string>(_allNames.Count);
+        int maxCount = slots;
+        foreach (var registration in _runtime.Jobs.Values)
+        {
+            if (registration.Options.MaxConcurrency is not { } limit)
+            {
+                names.Add(registration.Name);
+                continue;
+            }
+
+            int room = limit - _runningByName.GetValueOrDefault(registration.Name);
+            if (room <= 0)
+                continue;
+
+            names.Add(registration.Name);
+            maxCount = Math.Min(maxCount, room);
+        }
+
+        return (names, maxCount);
     }
 
     private async Task RunClaimedAsync(JobInfo claimed, long claimSent)

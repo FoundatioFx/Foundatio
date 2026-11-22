@@ -97,6 +97,7 @@ Implement `IJobStore` (10 methods). [View source](https://github.com/FoundatioFx
 
 - `CreateAsync` (false if the id exists), `GetAsync`, `QueryAsync` (newest first, continuation token), `CountAsync`, `DeleteAsync`. Persist every field of `JobInfo`, including all `Headers` exactly as given (case-sensitive names, possibly empty values).
 - `ClaimAsync`: atomically take the longest-due job among the requested names: queued and available, or running with an expired lease. Increment `Attempt`, issue a new `ClaimToken` and lease.
+- `ClaimBatchAsync`: claim up to `maxCount` jobs at once, longest due first, each as `ClaimAsync` would and with its own `ClaimToken`. Workers call it to fill all their free slots, so a store with a network round trip should claim the batch in one call (one script, statement or transaction); the default implementation claims one job with `ClaimAsync`, which caps a worker at one job per round trip.
 - `RenewAsync`, `ReportProgressAsync`, `CompleteAsync`: only for the current claim token. Completion is fenced by the token, not the lease, so a slow worker that wasn't replaced can still record its result.
 - `RequestCancellationAsync`: queued jobs become cancelled; running jobs are flagged and `RenewAsync` reports it.
 - Terminal jobs expire after `JobCompletion.RetainFor`. A job that succeeds drops its `Payload` and keeps the rest of its record; failed and cancelled jobs keep theirs.

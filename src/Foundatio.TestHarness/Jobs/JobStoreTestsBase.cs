@@ -160,6 +160,61 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(20, claimed.Distinct().Count());
     }
 
+    /// <summary>
+    /// A batch claim takes up to the count asked for, those due longest first across the requested names, each running
+    /// with the next attempt and its own claim token, which renews and completes only that job.
+    /// </summary>
+    [Fact]
+    public async Task ClaimBatch_ClaimsUpToTheCountDueLongestFirstEachWithItsOwnToken()
+    {
+        string name = NewName(), other = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var jobs = Enumerable.Range(0, 5).Select(i => NewJob(i % 2 == 0 ? name : other) with { AvailableAt = now.AddMinutes(-10 + i) }).ToList();
+        foreach (var job in jobs)
+            await Store.CreateAsync(job, TestCancellationToken);
+
+        var claimed = await Store.ClaimBatchAsync(Claim(name, other), 3, TestCancellationToken);
+
+        Assert.Equal(jobs.Take(3).Select(j => j.Id), claimed.Select(j => j.Id));
+        Assert.All(claimed, job =>
+        {
+            Assert.Equal(JobState.Running, job.State);
+            Assert.Equal(1, job.Attempt);
+            Assert.Equal("worker-1", job.WorkerId);
+            Assert.NotNull(job.ClaimToken);
+        });
+        Assert.Equal(3, claimed.Select(j => j.ClaimToken).Distinct().Count());
+        Assert.Equal(JobLeaseStatus.Lost, await Store.RenewAsync(claimed[0].Id, claimed[1].ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
+        Assert.True(await Store.CompleteAsync(claimed[1].Id, claimed[1].ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(1)), TestCancellationToken));
+        Assert.Equal(JobLeaseStatus.Renewed, await Store.RenewAsync(claimed[0].Id, claimed[0].ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
+
+        var rest = await Store.ClaimBatchAsync(Claim(name, other), 10, TestCancellationToken);
+        Assert.Equal(jobs.Skip(3).Select(j => j.Id), rest.Select(j => j.Id));
+        Assert.Empty(await Store.ClaimBatchAsync(Claim(name, other), 10, TestCancellationToken));
+    }
+
+    /// <summary>Concurrent batch claims never hand the same job to two workers.</summary>
+    [Fact]
+    public async Task ClaimBatch_FromConcurrentWorkers_ClaimsEachJobOnce()
+    {
+        string name = NewName();
+        for (int i = 0; i < 60; i++)
+            await Store.CreateAsync(NewJob(name), TestCancellationToken);
+
+        var claimed = new ConcurrentBag<string>();
+        await Parallel.ForEachAsync(Enumerable.Range(0, 8), TestCancellationToken, async (worker, token) =>
+        {
+            while (await Store.ClaimBatchAsync(Claim(name) with { WorkerId = $"worker-{worker}" }, 4, token) is { Count: > 0 } jobs)
+            {
+                foreach (var job in jobs)
+                    claimed.Add(job.Id);
+            }
+        });
+
+        Assert.Equal(60, claimed.Count);
+        Assert.Equal(60, claimed.Distinct().Count());
+    }
+
     /// <summary>A job whose lease ran out is claimed again with a new claim token and the next attempt.</summary>
     [Fact]
     public async Task Claim_AfterTheLeaseExpires_ReclaimsWithANewTokenAndAttempt()

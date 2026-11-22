@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
@@ -45,6 +46,19 @@ public interface IJobStore
     /// <see cref="JobInfo.Attempt"/>, assigns a new <see cref="JobInfo.ClaimToken"/> and lease, and returns it.
     /// </summary>
     Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Claims up to <paramref name="maxCount"/> jobs at once, each as <see cref="ClaimAsync"/> claims one and with its
+    /// own <see cref="JobInfo.ClaimToken"/>, those due longest first. Returns an empty list when none is due, and may
+    /// return fewer than are due. Workers call this to fill their free slots, so a store with a network round trip
+    /// should claim the batch in one; the default claims one job with <see cref="ClaimAsync"/>.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxCount"/> is less than 1.</exception>
+    async Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxCount, 1);
+        return await ClaimAsync(request, cancellationToken).ConfigureAwait(false) is { } job ? [job] : [];
+    }
 
     /// <summary>
     /// Extends the lease of a running job if <paramref name="claimToken"/> still holds it, including after the lease

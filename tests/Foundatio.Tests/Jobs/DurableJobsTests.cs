@@ -403,6 +403,24 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Worker_ClaimsAJobForEveryFreeSlotInOneStoreCall()
+    {
+        var store = new ClaimCountingJobStore(_store);
+        await using var host = await StartAsync(j => j.Configure(o => o.MaxConcurrency = 6).AddJob<SlowJob>(), startHostedServices: false, store: store);
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 6; i++)
+            handles.Add(await host.Jobs.EnqueueAsync(new Slow(), cancellationToken: TestCancellationToken));
+
+        foreach (var service in host.Services.GetServices<IHostedService>())
+            await service.StartAsync(TestCancellationToken);
+        foreach (var handle in handles)
+            Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+
+        Assert.Equal((6, 6), store.Claims.First());
+        Assert.Equal(6, _probe.PeakConcurrency);
+    }
+
+    [Fact]
     public async Task JobTypeMaxConcurrency_LimitsRunningJobsOfThatType()
     {
         await using var host = await StartAsync(j => j.AddJob<SlowJob>(new JobTypeOptions { MaxConcurrency = 2 }));
@@ -920,6 +938,31 @@ public class DurableJobsTests : TestWithLoggingBase
         public Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default) => Inner.CompleteAsync(jobId, claimToken, completion, cancellationToken);
         public Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default) => Inner.RequestCancellationAsync(jobId, retainFor, cancellationToken);
         public Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => Inner.DeleteAsync(jobId, cancellationToken);
+    }
+
+    /// <summary>Records each batch claim's requested and claimed counts.</summary>
+    private sealed class ClaimCountingJobStore(IJobStore inner) : IJobStore
+    {
+        public ConcurrentQueue<(int MaxCount, int Claimed)> Claims { get; } = new();
+
+        public async Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default)
+        {
+            var jobs = await inner.ClaimBatchAsync(request, maxCount, cancellationToken);
+            if (jobs.Count > 0)
+                Claims.Enqueue((maxCount, jobs.Count));
+            return jobs;
+        }
+
+        public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => inner.CreateAsync(job, cancellationToken);
+        public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => inner.GetAsync(jobId, cancellationToken);
+        public Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => inner.QueryAsync(query, cancellationToken);
+        public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => inner.CountAsync(state, name, cancellationToken);
+        public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default) => inner.ClaimAsync(request, cancellationToken);
+        public Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) => inner.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
+        public Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default) => inner.ReportProgressAsync(jobId, claimToken, percent, message, cancellationToken);
+        public Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default) => inner.CompleteAsync(jobId, claimToken, completion, cancellationToken);
+        public Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default) => inner.RequestCancellationAsync(jobId, retainFor, cancellationToken);
+        public Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => inner.DeleteAsync(jobId, cancellationToken);
     }
 
     public sealed class ResizeImageJob : IJobHandler<ResizeImage>

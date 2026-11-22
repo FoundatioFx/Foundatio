@@ -131,42 +131,65 @@ public sealed class InMemoryJobStore : IJobStore
     /// <inheritdoc />
     public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
     {
+        ValidateClaim(request);
+        lock (_lock)
+            return Task.FromResult(ClaimNextLocked(request, RemoveExpired()));
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default)
+    {
+        ValidateClaim(request);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxCount, 1);
+        lock (_lock)
+        {
+            var now = RemoveExpired();
+            List<JobInfo>? claimed = null;
+            while ((claimed?.Count ?? 0) < maxCount && ClaimNextLocked(request, now) is { } job)
+                (claimed ??= new List<JobInfo>(maxCount)).Add(job);
+
+            return Task.FromResult<IReadOnlyList<JobInfo>>(claimed ?? (IReadOnlyList<JobInfo>)[]);
+        }
+    }
+
+    private static void ValidateClaim(JobClaimRequest request)
+    {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Names, nameof(request));
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WorkerId, nameof(request));
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.LeaseDuration, TimeSpan.Zero, nameof(request));
-        lock (_lock)
+    }
+
+    private JobInfo? ClaimNextLocked(JobClaimRequest request, DateTimeOffset now)
+    {
+        Entry? next = null;
+        foreach (string name in request.Names)
         {
-            var now = RemoveExpired();
-            Entry? next = null;
-            foreach (string name in request.Names)
+            if (_dueByName.TryGetValue(name, out var due) && due.Min is { } first && first.DueTicks <= now.UtcTicks
+                && (next is null || DueComparer.Instance.Compare(first, next) < 0))
             {
-                if (_dueByName.TryGetValue(name, out var due) && due.Min is { } first && first.DueTicks <= now.UtcTicks
-                    && (next is null || DueComparer.Instance.Compare(first, next) < 0))
-                {
-                    next = first;
-                }
+                next = first;
             }
-
-            if (next is null)
-                return Task.FromResult<JobInfo?>(null);
-
-            var job = next.Job with
-            {
-                State = JobState.Running,
-                Attempt = next.Job.Attempt + 1,
-                ClaimToken = Guid.NewGuid().ToString("N"),
-                LeaseExpiresAt = now.Add(request.LeaseDuration),
-                WorkerId = request.WorkerId,
-                StartedAt = next.Job.StartedAt ?? now,
-                UpdatedAt = now
-            };
-
-            Unschedule(next);
-            Update(next, job);
-            Schedule(next, job.LeaseExpiresAt.Value);
-            return Task.FromResult<JobInfo?>(job);
         }
+
+        if (next is null)
+            return null;
+
+        var job = next.Job with
+        {
+            State = JobState.Running,
+            Attempt = next.Job.Attempt + 1,
+            ClaimToken = Guid.NewGuid().ToString("N"),
+            LeaseExpiresAt = now.Add(request.LeaseDuration),
+            WorkerId = request.WorkerId,
+            StartedAt = next.Job.StartedAt ?? now,
+            UpdatedAt = now
+        };
+
+        Unschedule(next);
+        Update(next, job);
+        Schedule(next, job.LeaseExpiresAt.Value);
+        return job;
     }
 
     /// <inheritdoc />

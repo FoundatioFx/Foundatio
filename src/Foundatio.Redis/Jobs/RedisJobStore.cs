@@ -24,6 +24,9 @@ public sealed class RedisJobStore : IJobStore
 {
     private const int ClaimCandidates = 8;
     private const int MaxClaimRounds = 10;
+    private const int MaxClaimBatch = 100;
+    // A claim token is this many random characters and the claim's number in 8 hex digits (TokenNameOffset in all), then the job's name.
+    private const int ClaimTokenPrefixLength = 24;
     private const int MaxRetries = 3;
     private const int SweepBatchSize = 250;
     private const int MaxSweepBatches = 20;
@@ -155,31 +158,43 @@ public sealed class RedisJobStore : IJobStore
     /// <inheritdoc />
     public async Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
     {
+        var claimed = await ClaimBatchAsync(request, 1, cancellationToken).AnyContext();
+        return claimed.Count > 0 ? claimed[0] : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Names);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.WorkerId);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.LeaseDuration, TimeSpan.Zero, nameof(request));
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxCount, 1);
         cancellationToken.ThrowIfCancellationRequested();
         if (request.Names.Count == 0)
-            return null;
+            return [];
 
         SweepIfDue();
         string[] names = request.Names.Distinct(StringComparer.Ordinal).ToArray();
         var setKeys = names.SelectMany(n => new RedisKey[] { QueuedKey(n), RunningKey(n) }).ToArray();
+        int candidateCount = ClaimCandidates + Math.Min(maxCount, MaxClaimBatch);
 
-        // Find the jobs due longest, then claim the first of them that no other worker has taken in the meantime.
+        // Find the jobs due longest, then claim those of them that no other worker has taken in the meantime.
         // Two scripts, because a script can only touch the jobs whose keys it is given.
         for (int round = 0; round < MaxClaimRounds; round++)
         {
-            var candidates = (RedisResult[])(await Database.ScriptEvaluateAsync(CandidatesScript, setKeys, [ClaimCandidates]).AnyContext())!;
+            var candidates = (RedisResult[])(await Database.ScriptEvaluateAsync(CandidatesScript, setKeys, [candidateCount]).AnyContext())!;
             if (candidates.Length == 0)
-                return null;
+                return [];
 
             var keys = new List<RedisKey>(2 + 4 * names.Length + candidates.Length / 3) { IndexKey(JobState.Queued, null), IndexKey(JobState.Running, null) };
             foreach (string name in names)
                 keys.AddRange([QueuedKey(name), RunningKey(name), IndexKey(JobState.Queued, name), IndexKey(JobState.Running, name)]);
 
-            var values = new List<RedisValue>(4 + names.Length + candidates.Length) { request.WorkerId, ToMicroseconds(request.LeaseDuration), Guid.NewGuid().ToString("N"), names.Length };
+            var values = new List<RedisValue>(5 + names.Length + candidates.Length)
+            {
+                request.WorkerId, ToMicroseconds(request.LeaseDuration), Guid.NewGuid().ToString("N")[..ClaimTokenPrefixLength], names.Length, Math.Min(maxCount, MaxClaimBatch)
+            };
             values.AddRange(names.Select(n => (RedisValue)n));
             for (int i = 0; i + 2 < candidates.Length; i += 3)
             {
@@ -188,12 +203,12 @@ public sealed class RedisJobStore : IJobStore
                 values.AddRange([id, (long)candidates[i + 1], (string)candidates[i + 2]!]);
             }
 
-            var claimed = await Database.ScriptEvaluateAsync(ClaimScript, keys.ToArray(), values.ToArray()).AnyContext();
-            if (!claimed.IsNull)
-                return ToJob((RedisValue[])claimed!);
+            var claimed = (RedisResult[])(await Database.ScriptEvaluateAsync(ClaimScript, keys.ToArray(), values.ToArray()).AnyContext())!;
+            if (claimed.Length > 0)
+                return claimed.Select(job => ToJob((RedisValue[])job!)).ToList();
         }
 
-        return null;
+        return [];
     }
 
     /// <inheritdoc />
