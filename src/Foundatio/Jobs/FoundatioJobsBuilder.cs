@@ -1,8 +1,8 @@
 using System;
+using System.Collections.Generic;
 using Foundatio.Extensions;
 using Foundatio.Jobs.Cronos;
 using Foundatio.Jobs.Store;
-using System.Collections.Generic;
 using Foundatio.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
