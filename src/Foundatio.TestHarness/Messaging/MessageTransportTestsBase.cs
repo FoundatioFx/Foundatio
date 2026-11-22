@@ -1756,6 +1756,37 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>
+    /// End to end: an instance-scoped handler class of several event types that share a topic opens one instance
+    /// subscription per host, and gets each event once.
+    /// </summary>
+    [Fact]
+    public async Task Messaging_InstanceSubscriberOfSeveralTypesOnOneTopic_OpensOneSubscriptionAndGetsEachEventOnce()
+    {
+        string topic = NewName("notifications");
+        var first = new ConformanceNotifications.Log();
+        var second = new ConformanceNotifications.Log();
+        Action<FoundatioMessagingBuilder> configure = m => m
+            .MapMessage<ConformanceMessage>($"{topic}.message", topic: topic)
+            .MapMessage<ConformanceSignal>($"{topic}.signal", topic: topic)
+            .AddSubscriber<ConformanceNotifications>(new SubscriptionOptions { Scope = SubscriptionScope.Instance });
+
+        await using var firstHost = await MessagingTestHost.StartAsync(Transport, Log, "web", configure, s => s.AddSingleton(first));
+        await using var secondHost = await MessagingTestHost.StartAsync(PeerTransport, Log, "web", configure, s => s.AddSingleton(second));
+
+        await firstHost.Client.PublishAsync(new ConformanceMessage(1), cancellationToken: TestCancellationToken);
+        await firstHost.Client.PublishAsync(new ConformanceSignal("a"), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => first.Received.Count >= 2 && second.Received.Count >= 2);
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+
+        foreach (var (host, log) in new[] { (firstHost, first), (secondHost, second) })
+        {
+            var processor = Assert.Single(host.Services.GetRequiredService<MessagingStatus>().GetProcessors());
+            Assert.StartsWith($"instance:{topic}/", processor.Name);
+            Assert.Equal(["message:1", "signal:a"], log.Received.Order());
+        }
+    }
+
     /// <summary>End to end: a handler that keeps throwing is retried, then its message is dead-lettered.</summary>
     [Fact]
     public async Task Messaging_FailingMessageIsRetriedThenDeadLettered()
@@ -2279,4 +2310,33 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>The message the end-to-end tests send.</summary>
     /// <param name="Value">Tells the messages of a test apart.</param>
     public sealed record ConformanceMessage(int Value);
+
+    /// <summary>A second event type, for tests of several types on one topic.</summary>
+    /// <param name="Name">Tells the signals of a test apart.</param>
+    public sealed record ConformanceSignal(string Name);
+
+    /// <summary>Handles both conformance event types, recording each in <see cref="Log"/>.</summary>
+    public sealed class ConformanceNotifications(ConformanceNotifications.Log log) : IMessageHandler<ConformanceMessage>, IMessageHandler<ConformanceSignal>
+    {
+        /// <inheritdoc />
+        public Task HandleAsync(ConformanceMessage message, IMessageContext context, CancellationToken cancellationToken)
+        {
+            log.Received.Enqueue($"message:{message.Value}");
+            return Task.CompletedTask;
+        }
+
+        /// <inheritdoc />
+        public Task HandleAsync(ConformanceSignal message, IMessageContext context, CancellationToken cancellationToken)
+        {
+            log.Received.Enqueue($"signal:{message.Name}");
+            return Task.CompletedTask;
+        }
+
+        /// <summary>What one host's handler received.</summary>
+        public sealed class Log
+        {
+            /// <summary>The events received, as "message:value" or "signal:name".</summary>
+            public ConcurrentQueue<string> Received { get; } = new();
+        }
+    }
 }

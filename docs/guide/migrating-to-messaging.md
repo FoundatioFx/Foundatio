@@ -137,7 +137,18 @@ builder.Services.AddFoundatioMessaging(m => m
 - **Use the same name everywhere.** The `MapMessage` or `[Message]` name chooses the topic, so a service that maps the type to another name, or not at all, uses another topic.
 - Only `AddLegacyMessageBus()` takes part. An original bus such as `RedisMessageBus` uses its own channels, and neither side receives the other's messages.
 - A legacy subscriber of a base type, or of `IMessage`, receives what `IMessageClient` publishes only for types it subscribes to by name: it subscribes to the topic of the type it names.
-- A legacy publish of a type messaging knows is sent twice, once to each side, so it costs a second send.
+- A legacy publish of a type messaging knows is sent twice, once to each side, so it costs a second send, and every process with `AddLegacyMessageBus()` receives the legacy copy.
+
+Once the publishers you can't change are the last legacy code for a type, list it in `MigratedMessageTypes`. Its legacy publishes are then sent once, to its topic, as if published with `IMessageClient.PublishAsync`:
+
+```csharp
+m.MapMessage<EntityChanged>("entity-changed")
+ .AddLegacyMessageBus(o => o.MigratedMessageTypes.Add(typeof(EntityChanged)));
+```
+
+- Legacy subscribers keep working: a subscriber of the type, of a base type or of `IMessage` receives it once, from its topic.
+- Set it the same way in every process that shares the bus. A process that doesn't list the type still delivers it to its legacy subscribers of that exact type, when it knows the type, but not to its subscribers of a base type or of `IMessage`.
+- It applies to the listed types only, not to types derived from them.
 
 ## Moving IMessageBus to the new transport
 
@@ -191,16 +202,16 @@ To move a job before converting it, register the class unchanged with `j.AddLega
 
 ## Tests
 
-The test harness replaces stepping a job by hand. With `AddFoundatioTestHarness(o => o.StartPaused = true)`, nothing is handled until the test asks, and `ProcessPendingAsync` runs what is pending through the real dispatcher and worker, so retries, dead letters and settlement behave as in production:
+The test harness replaces stepping a job by hand. With `AddFoundatioTestHarness(o => o.StartPaused = true)`, nothing is handled until the test asks, and `ProcessNextAsync` and `ProcessPendingAsync` run what is pending through the real dispatcher and worker, so retries, dead letters and settlement behave as in production:
 
 | Before | After |
 |---|---|
-| `await job.RunAsync()` (one queue entry) | `await harness.ProcessPendingAsync<WorkItem>()`. It runs everything due on that queue, not just one entry |
+| `await job.RunAsync()` (one queue entry) | `await harness.ProcessNextAsync<WorkItem>()`. What the handler sends back to that queue, and a retry, wait for the next call |
 | `await job.RunUntilEmptyAsync()` | `await harness.ProcessPendingAsync<WorkItem>()`, or `ProcessPendingAsync()` for everything due, including what the handlers send |
 | `Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued)` | `Assert.Single(harness.Sent<WorkItem>())` |
 | `Assert.Equal(0, stats.Completed)` before running the job | `Assert.Empty(harness.HandledMessages)` while paused |
-| `Assert.Equal(1, stats.Deadletter)` | `Assert.Single(harness.HandledMessages, m => m.Outcome == MessageOutcome.DeadLettered)`, with `o.RetryDelay = TimeSpan.Zero` so the retries run within the call |
+| `Assert.Equal(1, stats.Deadletter)` | `Assert.Single(harness.HandledMessages, m => m.Outcome == MessageOutcome.DeadLettered)`, with `o.RetryDelay = TimeSpan.Zero` so the retries run within one `ProcessPendingAsync` call, or one per `ProcessNextAsync` call |
 | Resetting queues between tests | `harness.Reset()` |
 | Calling a job's `RunAsync()` for a CRON job | `await harness.TriggerCronJobAsync("schedule-name")` |
 
-Without `StartPaused`, handlers run on their own; wait for them with `harness.WaitForHandledAsync<T>()` or `harness.WaitForIdleAsync()`. See [Testing](./messaging#testing) and [Running work step by step](./messaging#running-work-step-by-step).
+Without `StartPaused`, handlers run on their own; wait for them with `harness.WaitForHandledAsync<T>()` or `harness.WaitForIdleAsync()`. `WaitForIdleAsync()` also works while paused: it runs everything and pauses again, so a base class shared by paused and running tests needs no branch. See [Testing](./messaging#testing) and [Running work step by step](./messaging#running-work-step-by-step).

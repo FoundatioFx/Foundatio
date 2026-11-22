@@ -212,6 +212,16 @@ m.AddSubscriber<InvalidateLocalCache>(new SubscriptionOptions { Scope = Subscrip
 await using var subscription = await messages.SubscribeAsync<OrderPlaced>((order, context, ct) => hub.NotifyAsync(order, ct));
 ```
 
+Each instance opens one subscription per topic it subscribes to, and an event type has its own topic by default. So a handler class of six event types opens six instance subscriptions in every instance, and on Redis each one is a stream with its own heartbeat. To use one, route the types to one topic, the way the legacy bus carried every type on one topic:
+
+```csharp
+m.MapMessage<PlanChanged>("plan-changed", topic: "notifications")
+ .MapMessage<SystemNotification>("system-notification", topic: "notifications")
+ .AddSubscriber<NotificationBroker>(new SubscriptionOptions { Scope = SubscriptionScope.Instance });
+```
+
+Map them the same way in every service that publishes or subscribes to them. A service that subscribes to only some of the topic's types still receives the others and skips them.
+
 ### Service names and shared subscriptions
 
 A service's subscription to a topic is named after the service, set with `m.UseServiceName("billing")`. The broker keeps the subscription under that name, so choose it deliberately: two services with the same name split each other's events, and renaming a service starts new subscriptions that receive events published from then on, leaving the old ones' backlog behind. On every transport except the in-memory one, the host fails to start when a service-scoped subscriber has no name to use. Only the in-memory transport, and so the test harness, defaults it to the host's application name.
@@ -411,8 +421,22 @@ Assert.Equal(5, deadLetter.Attempt);           // the default policy's attempts,
 
 - `SentMessages`, `PublishedMessages` and `HandledMessages` record each message with its id, correlation id, attempt and headers. Deliveries also record how they ended (`Completed`, `Retried`, `DeadLettered`, `Skipped`, `Expired` or `Released`), the error, the handlers that ran to completion (`Handlers`), and the last `Progress` and `ProgressMessage` the handler reported. `Sent<T>()` and `Published<T>()` return the messages themselves.
 - `WaitForHandledAsync<T>(count)` and `WaitForDeadLetteredAsync<T>(count)` return the deliveries once there are enough. They count deliveries of `T` to each queue or subscription, so two handlers that share a subscription count once; `WaitForHandledByAsync<THandler>(count)` and `HandledBy<THandler>()` count one handler's. On timeout (30 seconds by default) the exception says what happened instead, including "did you mean `PublishAsync`?" when an event was sent to its subscribers.
-- `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored.
+- `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored. While processing is [paused](#running-work-step-by-step), it runs the work until the app is idle and pauses again, so a base class shared by paused and running tests can call it either way.
 - `Reset()` forgets everything recorded, so counts and waits start again. When tests share a host, call `WaitForIdleAsync()` and then `Reset()` at the start of each test.
+
+To make a send or publish fail in a test, wrap the client in a `MessageClientDecorator` and override only that call; the other calls and overloads pass through:
+
+```csharp
+sealed class FailFirstPublish(IMessageClient inner) : MessageClientDecorator(inner)
+{
+    private int _publishes;
+
+    public override Task<string> PublishAsync<T>(T message, PublishOptions? options = null, CancellationToken cancellationToken = default)
+        => Interlocked.Increment(ref _publishes) == 1
+            ? Task.FromException<string>(new InvalidOperationException("Simulated failure"))
+            : base.PublishAsync(message, options, cancellationToken);
+}
+```
 
 ### Clocks and retries
 
@@ -424,7 +448,7 @@ The harness runs messaging, jobs, its transport and its store on the system cloc
 
 ### Running work step by step
 
-With processing paused, messages and jobs wait until the test runs them, so it can check what is queued before it is handled, and run a pipeline one step at a time. The work runs through the real dispatcher and worker, so retries, dead letters and settlement behave as in production. This replaces calling a legacy job's `RunAsync()` or `RunUntilEmptyAsync()` in a test.
+With processing paused, messages and jobs wait until the test runs them, so it can check what is queued before it is handled, and run a pipeline one step at a time. The work runs through the real dispatcher and worker, so retries, dead letters and settlement behave as in production. `ProcessNextAsync<T>()` replaces calling a legacy job's `RunAsync()` in a test, and `ProcessPendingAsync<T>()` its `RunUntilEmptyAsync()`.
 
 ```csharp
 builder.Services.AddFoundatioTestHarness(o =>
@@ -445,8 +469,19 @@ Assert.Equal(JobState.Succeeded, Assert.Single(rest.JobRuns).State);
 ```
 
 - `ProcessPendingAsync()` runs what is due until nothing is left, including what the handlers send and enqueue, and returns the deliveries and job runs it saw. `ProcessPendingAsync<T>()` runs only the queues and subscriptions that deliver `T` to your handlers (everything due in them), and the jobs that take `T` as arguments or are the job class `T`; what they send elsewhere stays pending.
+- `ProcessNextAsync<T>()` runs one delivery or job run of that scope, `ProcessNextAsync<T>(3)` up to three, and `ProcessNextAsync()` the next one from anywhere. What they send back to the same queue, and retries, wait for the next call, so a test can assert after each step:
+
+  ```csharp
+  await messages.SendAsync(new ImportBatch([1, 2]));                 // the handler sends each item back as its own batch
+  await harness.ProcessNextAsync<ImportBatch>();                       // one delivery: the batch
+  Assert.Equal(3, harness.Sent<ImportBatch>().Count);                  // the two items wait
+  await harness.ProcessNextAsync<ImportBatch>();                       // item 1
+  await harness.ProcessNextAsync<ImportBatch>();                       // item 2
+  ```
+
+  With `RetryDelay = TimeSpan.Zero`, each retry is the next step, and the last one dead-letters it. It throws unless processing is paused.
 - Delayed messages and jobs, and retries waiting out their delay, are not due: set `RetryDelay`, or advance a fake `TimeProvider`, then call it again.
-- While paused, receivers stay open, so subscriptions, instance subscriptions included, keep receiving what is published. `WaitForIdleAsync()` times out, saying processing is paused. `ResumeProcessing()` lets everything run on its own again.
+- While paused, receivers stay open, so subscriptions, instance subscriptions included, keep receiving what is published. `WaitForIdleAsync()` runs everything, delayed work and retries included, until the app is idle, then pauses again. `ResumeProcessing()` lets everything run on its own again.
 
 ### Several hosts on one transport
 
