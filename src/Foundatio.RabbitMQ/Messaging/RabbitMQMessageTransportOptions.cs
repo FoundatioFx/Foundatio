@@ -39,9 +39,10 @@ public sealed record RabbitMQMessageTransportOptions
     /// <summary>
     /// The largest message body the broker accepts, its <c>max_message_size</c> (16 MiB by default on RabbitMQ 4).
     /// The transport reserves part of it for headers it moves into the body (see
-    /// <see cref="RabbitMQMessageTransport.Capabilities"/>), so it must not be larger than the broker's setting.
+    /// <see cref="RabbitMQMessageTransport.Capabilities"/>), so it must not be larger than the broker's setting. At most
+    /// 512 MiB, the largest the broker allows.
     /// </summary>
-    public int MaxMessageBytes { get; init; } = 16 * 1024 * 1024;
+    public long MaxMessageSize { get; init; } = 16 * 1024 * 1024;
 
     /// <summary>
     /// The RabbitMQ management API, for example "http://guest:guest@localhost:15672", used by

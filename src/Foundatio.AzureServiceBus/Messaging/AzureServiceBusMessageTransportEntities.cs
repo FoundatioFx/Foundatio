@@ -114,13 +114,13 @@ internal sealed class AzureServiceBusMessageTransportEntities
         await EnsureTopicAsync(topic, cancellationToken).AnyContext();
         try
         {
-            return (await CreateSubscriptionAsync(topic, subscription, _options.InstanceSubscriptionIdleTimeout, cancellationToken).AnyContext()).LockDuration;
+            return (await CreateSubscriptionAsync(topic, subscription, _options.InstanceSubscriptionTimeout, cancellationToken).AnyContext()).LockDuration;
         }
         catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
         {
             ForgetTopic(topic);
             await EnsureTopicAsync(topic, cancellationToken).AnyContext();
-            return (await CreateSubscriptionAsync(topic, subscription, _options.InstanceSubscriptionIdleTimeout, cancellationToken).AnyContext()).LockDuration;
+            return (await CreateSubscriptionAsync(topic, subscription, _options.InstanceSubscriptionTimeout, cancellationToken).AnyContext()).LockDuration;
         }
     }
 
@@ -181,7 +181,7 @@ internal sealed class AzureServiceBusMessageTransportEntities
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not delete instance subscription {Subscription} of topic {Topic}; Service Bus removes it once it has been idle for {IdleTimeout}",
-                subscription, topic, _options.InstanceSubscriptionIdleTimeout);
+                subscription, topic, _options.InstanceSubscriptionTimeout);
         }
     }
 
@@ -249,7 +249,7 @@ internal sealed class AzureServiceBusMessageTransportEntities
                 RequiresDuplicateDetection = _options.RequiresDuplicateDetection
             };
             if (_options.RequiresDuplicateDetection)
-                options.DuplicateDetectionHistoryTimeWindow = _options.DuplicateDetectionWindow;
+                options.DuplicateDetectionHistoryTimeWindow = _options.DeduplicationWindow;
             if (LargeMessageSizeInKilobytes is { } kilobytes)
                 options.MaxMessageSizeInKilobytes = kilobytes;
 
@@ -282,7 +282,7 @@ internal sealed class AzureServiceBusMessageTransportEntities
         {
             var options = new CreateTopicOptions(name) { RequiresDuplicateDetection = _options.RequiresDuplicateDetection };
             if (_options.RequiresDuplicateDetection)
-                options.DuplicateDetectionHistoryTimeWindow = _options.DuplicateDetectionWindow;
+                options.DuplicateDetectionHistoryTimeWindow = _options.DeduplicationWindow;
             if (LargeMessageSizeInKilobytes is { } kilobytes)
                 options.MaxMessageSizeInKilobytes = kilobytes;
 

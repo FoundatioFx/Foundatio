@@ -91,7 +91,8 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     private RabbitMQMessageTransport(IConnection? connection, RabbitMQMessageTransportOptions options, bool ownsConnections)
     {
         RabbitMQMessageTransportNames.ValidatePrefix(options.Prefix, nameof(options));
-        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxMessageBytes, RabbitMQMessageTransportCodec.EncodingReserve * 2, nameof(options));
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxMessageSize, RabbitMQMessageTransportCodec.EncodingReserve * 2, nameof(options));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxMessageSize, 512L * 1024 * 1024, nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThan(options.ReleaseDelay, TimeSpan.Zero, nameof(options));
         if (options.PublishTimeout <= TimeSpan.Zero && options.PublishTimeout != Timeout.InfiniteTimeSpan)
             throw new ArgumentOutOfRangeException(nameof(options), options.PublishTimeout, "PublishTimeout must be positive, or Timeout.InfiniteTimeSpan.");
@@ -115,7 +116,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
             MinRetryDelay = options.DelayedDelivery ? RabbitMQDelayLevels.Resolution : TimeSpan.Zero,
             MaxSendBatchSize = 1000,
             MaxReceiveBatchSize = 100,
-            MaxMessageSize = options.MaxMessageBytes - RabbitMQMessageTransportCodec.EncodingReserve,
+            MaxMessageSize = options.MaxMessageSize - RabbitMQMessageTransportCodec.EncodingReserve,
             MaxLeaseDuration = null,
             LeaseExpiration = false,
             OrderedGroups = false,
@@ -140,7 +141,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// Send, publish and retry delays of up to 2^28 - 1 seconds (about 8.5 years) when
     /// <see cref="RabbitMQMessageTransportOptions.DelayedDelivery"/> is on, rounded up to whole seconds; retries shorter
     /// than a second are held by Foundatio in-process. Without delayed delivery there are none. Messages may be
-    /// <see cref="RabbitMQMessageTransportOptions.MaxMessageBytes"/> less 16 KiB, which the transport keeps for headers it
+    /// <see cref="RabbitMQMessageTransportOptions.MaxMessageSize"/> less 16 KiB, which the transport keeps for headers it
     /// moves into the body. Leases do not expire. Groups are not ordered and messages are not deduplicated.
     /// </summary>
     public TransportCapabilities Capabilities { get; }
@@ -191,8 +192,8 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
                 throw new MessageTooLargeException($"Message {message.MessageId} is {size} bytes with headers and ids, which exceeds the transport limit of {maxSize} bytes.") { Size = size, Limit = maxSize };
 
             var (properties, body) = RabbitMQMessageTransportCodec.Encode(message.MessageId, message.Body, message.Headers, message.GroupKey, 0, now, headerTableLimit);
-            if (body.Length > Options.MaxMessageBytes)
-                throw new MessageTooLargeException($"Message {message.MessageId} encodes to {body.Length} bytes, which exceeds MaxMessageBytes of {Options.MaxMessageBytes}.") { Size = body.Length, Limit = Options.MaxMessageBytes };
+            if (body.Length > Options.MaxMessageSize)
+                throw new MessageTooLargeException($"Message {message.MessageId} encodes to {body.Length} bytes, which exceeds MaxMessageSize of {Options.MaxMessageSize}.") { Size = body.Length, Limit = Options.MaxMessageSize };
 
             long delaySeconds = message.DeliverAt is { } deliverAt ? RabbitMQDelayLevels.ToSeconds(deliverAt - now) : 0;
             if (delaySeconds > 0)
@@ -670,7 +671,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
             Uri = uri,
             AutomaticRecoveryEnabled = false,
             TopologyRecoveryEnabled = false,
-            MaxInboundMessageBodySize = (uint)Math.Max(options.MaxMessageBytes + 1024 * 1024, 64 * 1024 * 1024)
+            MaxInboundMessageBodySize = (uint)Math.Max(options.MaxMessageSize + 1024 * 1024, 64 * 1024 * 1024)
         };
         options.ConfigureConnectionFactory?.Invoke(factory);
         factory.AutomaticRecoveryEnabled = false;

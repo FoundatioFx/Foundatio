@@ -92,7 +92,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
             ArgumentOutOfRangeException.ThrowIfLessThan(partitions, 1, nameof(options));
         if (options.ReplicationFactor is { } replicationFactor)
             ArgumentOutOfRangeException.ThrowIfLessThan(replicationFactor, (short)1, nameof(options));
-        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxMessageBytes, KafkaMessageTransportCodec.EncodingReserve * 2, nameof(options));
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxMessageSize, KafkaMessageTransportCodec.EncodingReserve * 2, nameof(options));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxMessageSize, 1_000_000_000, nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.CommitInterval, TimeSpan.Zero, nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThan(options.RebalanceGracePeriod, TimeSpan.Zero, nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThan(options.ReceiverJoinTimeout, TimeSpan.Zero, nameof(options));
@@ -110,7 +111,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
             MinRetryDelay = options.DelayedDelivery ? KafkaDelayTiers.Smallest : TimeSpan.Zero,
             MaxSendBatchSize = 1000,
             MaxReceiveBatchSize = 100,
-            MaxMessageSize = options.MaxMessageBytes - KafkaMessageTransportCodec.EncodingReserve,
+            MaxMessageSize = options.MaxMessageSize - KafkaMessageTransportCodec.EncodingReserve,
             MaxLeaseDuration = null,
             LeaseExpiration = false,
             OrderedGroups = true,
@@ -166,7 +167,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
         };
 
         long maxSize = Capabilities.MaxMessageSize!.Value;
-        long maxRecordSize = Options.MaxMessageBytes - KafkaMessageTransportCodec.EncodingReserve / 2;
+        long maxRecordSize = Options.MaxMessageSize - KafkaMessageTransportCodec.EncodingReserve / 2;
         var now = TimeProvider.GetUtcNow();
         var records = new List<(string Topic, Message<byte[]?, byte[]> Message)>(messages.Count);
         bool delayed = false;
@@ -492,7 +493,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
         string topic = Names.ReceiverState;
         try
         {
-            if (!Options.CreateTopics)
+            if (!Options.CreateEntities)
             {
                 var metadata = await Task.Run(() => _admin.GetMetadata(topic, AdminTimeout)).AnyContext();
                 if (metadata.Topics.FirstOrDefault(t => t.Topic == topic) is not { Error.IsError: false })
@@ -806,7 +807,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
         {
             await ProduceOnceAsync(topic, message, cancellationToken).AnyContext();
         }
-        catch (ProduceException<byte[]?, byte[]> ex) when (Options.CreateTopics && ex.Error.Code is ErrorCode.UnknownTopicOrPart or ErrorCode.Local_UnknownTopic)
+        catch (ProduceException<byte[]?, byte[]> ex) when (Options.CreateEntities && ex.Error.Code is ErrorCode.UnknownTopicOrPart or ErrorCode.Local_UnknownTopic)
         {
             // Deleted since this process created it (DeleteAsync elsewhere): create it again, then send once more.
             Logger.LogDebug("Topic {Topic} no longer exists; creating it again", topic);
@@ -848,7 +849,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// </summary>
     private void WarnIfOnePartition(string topic)
     {
-        if (!Options.CreateTopics && _partitionLookups.TryAdd(topic, 0))
+        if (!Options.CreateEntities && _partitionLookups.TryAdd(topic, 0))
         {
             _ = LookUpPartitionsAsync(topic);
             return;
@@ -881,7 +882,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
     private async Task EnsureTopicsAsync(IReadOnlyList<string> names)
     {
-        if (!Options.CreateTopics)
+        if (!Options.CreateEntities)
             return;
 
         await Task.WhenAll(names.Select(EnsureTopicAsync)).AnyContext();
@@ -1006,7 +1007,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
             BootstrapServers = Options.BootstrapServers,
             EnableIdempotence = true,
             Partitioner = Confluent.Kafka.Partitioner.Murmur2Random,
-            MessageMaxBytes = Options.MaxMessageBytes,
+            MessageMaxBytes = (int)Options.MaxMessageSize,
             // Topics are created explicitly; never let a send recreate a deleted topic with broker defaults.
             AllowAutoCreateTopics = false
         };

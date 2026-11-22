@@ -50,10 +50,12 @@ public class RabbitMQMessageTransportOptionsTests(ITestOutputHelper output) : Te
         await using var transport = new RabbitMQMessageTransport(new RabbitMQMessageTransportOptions { ConnectionString = ConnectionString, PublishTimeout = System.Threading.Timeout.InfiniteTimeSpan });
     }
 
-    [Fact]
-    public void Constructor_WithAMaxMessageBytesBelowTheEncodingReserve_Throws()
+    [Theory]
+    [InlineData(1024)]
+    [InlineData(512L * 1024 * 1024 + 1)]
+    public void Constructor_WithAMaxMessageSizeOutOfRange_Throws(long maxMessageSize)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new RabbitMQMessageTransport(new RabbitMQMessageTransportOptions { ConnectionString = ConnectionString, MaxMessageBytes = 1024 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RabbitMQMessageTransport(new RabbitMQMessageTransportOptions { ConnectionString = ConnectionString, MaxMessageSize = maxMessageSize }));
     }
 
     [Fact]

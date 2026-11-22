@@ -23,6 +23,14 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
     protected override IMessageTransport CreateTransport() => new KafkaMessageTransport(CreateOptions());
 
+    [Theory]
+    [InlineData(1024)]
+    [InlineData(1_000_000_001)]
+    public void Constructor_WithAMaxMessageSizeOutOfRange_Throws(long maxMessageSize)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new KafkaMessageTransport(CreateOptions() with { MaxMessageSize = maxMessageSize }));
+    }
+
     /// <summary>CONF-1: a send to a subscription writes its inbox but does not start the subscription's group on the topic.</summary>
     [Fact]
     public override Task SendToSubscription_CreatesTheSubscriptionForLaterPublishes()
@@ -1126,7 +1134,7 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Contains("busy group", warning.Message, StringComparison.Ordinal);
 
         // A transport that does not create its topics looks one up on the first grouped send to it.
-        var unmanaged = Track(new KafkaMessageTransport(CreateOptions() with { CreateTopics = false, DelayedDelivery = false }));
+        var unmanaged = Track(new KafkaMessageTransport(CreateOptions() with { CreateEntities = false, DelayedDelivery = false }));
         string provisioned = NewName("one-provisioned");
         using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build())
             await admin.CreateTopicsAsync([new TopicSpecification { Name = unmanaged.Names.Queue(provisioned), NumPartitions = 1, ReplicationFactor = 1 }]);

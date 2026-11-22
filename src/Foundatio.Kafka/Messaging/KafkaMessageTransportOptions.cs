@@ -39,7 +39,7 @@ public sealed record KafkaMessageTransportOptions
     /// When true (the default), topics are created with the admin client before they are used. Turn it off when
     /// topics are provisioned ahead of time; every topic the transport uses must then exist.
     /// </summary>
-    public bool CreateTopics { get; init; } = true;
+    public bool CreateEntities { get; init; } = true;
 
     /// <summary>librdkafka properties applied to every producer, consumer and admin client (security, SASL, client id).</summary>
     public IReadOnlyDictionary<string, string>? ClientConfig { get; init; }
@@ -80,9 +80,10 @@ public sealed record KafkaMessageTransportOptions
 
     /// <summary>
     /// The largest record the producer sends (librdkafka <c>message.max.bytes</c>). The broker's and topics'
-    /// <c>max.message.bytes</c> must allow it. The transport reserves part of it for its own headers.
+    /// <c>max.message.bytes</c> must allow it. The transport reserves part of it for its own headers and declares the
+    /// rest as <see cref="TransportCapabilities.MaxMessageSize"/>. At most 1,000,000,000, the librdkafka limit.
     /// </summary>
-    public int MaxMessageBytes { get; init; } = 1_000_000;
+    public long MaxMessageSize { get; init; } = 1_000_000;
 
     /// <summary>Used to compute delays. Kafka timestamps are wall-clock, so a fake clock only shifts due times.</summary>
     public TimeProvider? TimeProvider { get; init; }

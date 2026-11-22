@@ -58,14 +58,14 @@ public sealed record AzureServiceBusMessageTransportOptions
 
     /// <summary>
     /// Creates every queue and topic with duplicate detection, so a repeated <see cref="OutgoingMessage.DeduplicationId"/>
-    /// is dropped within <see cref="DuplicateDetectionWindow"/> (<see cref="TransportCapabilities.Deduplication"/>).
+    /// is dropped within <see cref="DeduplicationWindow"/> (<see cref="TransportCapabilities.Deduplication"/>).
     /// The deduplication id becomes the Service Bus message id, and the Foundatio message id travels in an application
     /// property.
     /// </summary>
     public bool RequiresDuplicateDetection { get; init; }
 
     /// <summary>How long Service Bus remembers message ids for <see cref="RequiresDuplicateDetection"/>: 20 seconds to 7 days.</summary>
-    public TimeSpan DuplicateDetectionWindow { get; init; } = TimeSpan.FromMinutes(10);
+    public TimeSpan DeduplicationWindow { get; init; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// The lock duration of queues and subscriptions the transport creates: 5 seconds to 5 minutes. The broker, not
@@ -93,7 +93,7 @@ public sealed record AzureServiceBusMessageTransportOptions
     /// How long an instance subscription survives without a receiver, so one left behind by a stopped process is
     /// removed by Service Bus (<c>AutoDeleteOnIdle</c>). At least 5 minutes, the Service Bus minimum.
     /// </summary>
-    public TimeSpan InstanceSubscriptionIdleTimeout { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan InstanceSubscriptionTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// With <see cref="RequiresSession"/>, how many sessions one receiver hands out messages from at a time. Sessions
@@ -128,11 +128,11 @@ public sealed record AzureServiceBusMessageTransportOptions
             .Append(", ").Append(nameof(Prefix)).Append(" = ").Append(Prefix)
             .Append(", ").Append(nameof(RequiresSession)).Append(" = ").Append(RequiresSession)
             .Append(", ").Append(nameof(RequiresDuplicateDetection)).Append(" = ").Append(RequiresDuplicateDetection)
-            .Append(", ").Append(nameof(DuplicateDetectionWindow)).Append(" = ").Append(DuplicateDetectionWindow)
+            .Append(", ").Append(nameof(DeduplicationWindow)).Append(" = ").Append(DeduplicationWindow)
             .Append(", ").Append(nameof(LockDuration)).Append(" = ").Append(LockDuration)
             .Append(", ").Append(nameof(MaxDeliveryCount)).Append(" = ").Append(MaxDeliveryCount)
             .Append(", ").Append(nameof(MaxMessageSize)).Append(" = ").Append(MaxMessageSize)
-            .Append(", ").Append(nameof(InstanceSubscriptionIdleTimeout)).Append(" = ").Append(InstanceSubscriptionIdleTimeout)
+            .Append(", ").Append(nameof(InstanceSubscriptionTimeout)).Append(" = ").Append(InstanceSubscriptionTimeout)
             .Append(", ").Append(nameof(MaxConcurrentSessions)).Append(" = ").Append(MaxConcurrentSessions)
             .Append(", ").Append(nameof(CreateEntities)).Append(" = ").Append(CreateEntities)
             .Append(", ").Append(nameof(ConfigureClient)).Append(" = ").Append(ConfigureClient is null ? null : "(set)")

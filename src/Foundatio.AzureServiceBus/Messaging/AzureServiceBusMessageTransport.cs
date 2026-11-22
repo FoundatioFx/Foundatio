@@ -16,7 +16,7 @@ namespace Foundatio.Messaging.Transport;
 /// <summary>
 /// A message transport on Azure Service Bus. A queue is a Service Bus queue; a topic is a topic; a durable subscription
 /// is a topic subscription; an instance subscription is a subscription created for its receiver, deleted when the
-/// receiver is disposed and removed by Service Bus once idle (<see cref="AzureServiceBusMessageTransportOptions.InstanceSubscriptionIdleTimeout"/>)
+/// receiver is disposed and removed by Service Bus once idle (<see cref="AzureServiceBusMessageTransportOptions.InstanceSubscriptionTimeout"/>)
 /// when its process stops. Dead letters go to each entity's own dead-letter queue, with the reason in
 /// <c>DeadLetterReason</c>. Leases are peek-lock locks, whose duration is set per entity, so each delivery reports
 /// <see cref="IncomingMessage.LeaseExpiresAt"/>. Entities are created on first use unless
@@ -581,10 +581,10 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
             throw new ArgumentOutOfRangeException(nameof(options), options.MaxDeliveryCount, "MaxDeliveryCount must be at least 1.");
         if (options.MaxMessageSize < MinMessageSize)
             throw new ArgumentOutOfRangeException(nameof(options), options.MaxMessageSize, $"MaxMessageSize must be at least {MinMessageSize} bytes.");
-        if (options.InstanceSubscriptionIdleTimeout < TimeSpan.FromMinutes(5))
-            throw new ArgumentOutOfRangeException(nameof(options), options.InstanceSubscriptionIdleTimeout, "InstanceSubscriptionIdleTimeout must be at least 5 minutes, the shortest AutoDeleteOnIdle Service Bus allows.");
-        if (options.DuplicateDetectionWindow < TimeSpan.FromSeconds(20) || options.DuplicateDetectionWindow > TimeSpan.FromDays(7))
-            throw new ArgumentOutOfRangeException(nameof(options), options.DuplicateDetectionWindow, "DuplicateDetectionWindow must be between 20 seconds and 7 days.");
+        if (options.InstanceSubscriptionTimeout < TimeSpan.FromMinutes(5))
+            throw new ArgumentOutOfRangeException(nameof(options), options.InstanceSubscriptionTimeout, "InstanceSubscriptionTimeout must be at least 5 minutes, the shortest AutoDeleteOnIdle Service Bus allows.");
+        if (options.DeduplicationWindow < TimeSpan.FromSeconds(20) || options.DeduplicationWindow > TimeSpan.FromDays(7))
+            throw new ArgumentOutOfRangeException(nameof(options), options.DeduplicationWindow, "DeduplicationWindow must be between 20 seconds and 7 days.");
         if (options.MaxConcurrentSessions < 1)
             throw new ArgumentOutOfRangeException(nameof(options), options.MaxConcurrentSessions, "MaxConcurrentSessions must be at least 1.");
     }

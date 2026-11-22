@@ -69,7 +69,7 @@ public class AzureServiceBusMessageTransportTests(ITestOutputHelper output) : Me
         Prefix = _prefix,
         RequiresSession = RequiresSession,
         RequiresDuplicateDetection = RequiresDuplicateDetection,
-        DuplicateDetectionWindow = TimeSpan.FromMinutes(1),
+        DeduplicationWindow = TimeSpan.FromMinutes(1),
         LockDuration = ShortLease,
         MaxDeliveryCount = EmulatorMaxDeliveryCount,
         LoggerFactory = Log
