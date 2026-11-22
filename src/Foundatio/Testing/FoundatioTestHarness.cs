@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -20,9 +21,12 @@ namespace Foundatio.Testing;
 /// resolve it from the service provider, act, then await an outcome and assert.
 /// </summary>
 /// <remarks>
-/// Waits use real time, whatever <see cref="TimeProvider"/> the app uses. Retries wait for their policy's delay, so
-/// give handlers and jobs short retry delays in tests (or register a FakeTimeProvider and advance it). CRON schedules
-/// do not fire on their own; call <see cref="TriggerCronJobAsync{TJobOrArgs}"/>.
+/// Messaging and jobs run on <see cref="FoundatioTestHarnessOptions.TimeProvider"/>, the system clock unless you set
+/// one; waits always use real time. Retries wait for their policy's delay, so give handlers and jobs short retry delays
+/// in tests, or set a fake clock and advance it. CRON schedules do not fire on their own; call
+/// <see cref="TriggerCronJobAsync{TJobOrArgs}"/>. To run work one step at a time, pause processing
+/// (<see cref="PauseProcessingAsync"/> or <see cref="FoundatioTestHarnessOptions.StartPaused"/>) and call
+/// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/>. Call <see cref="Reset"/> between tests that share a host.
 /// </remarks>
 /// <example>
 /// <code>
@@ -48,15 +52,30 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     private readonly List<RecordedMessage> _published = [];
     private readonly List<RecordedMessage> _handled = [];
     private readonly List<RecordedJob> _jobRuns = [];
-    private readonly HashSet<string> _sentQueues = new(StringComparer.Ordinal);
+    private readonly ConditionalWeakTable<MessageContext, List<MessageHandlerRegistration>> _completedHandlers = new();
+    private readonly SemaphoreSlim _processing = new(1, 1);
     private TaskCompletionSource _changed = NewSignal();
     private long _version;
     private IReadOnlyList<MessageSource>? _registeredSources;
+    private volatile bool _paused;
+    private volatile ProcessingScope? _allowed;
 
     internal FoundatioTestHarness(IServiceProvider services)
     {
         _services = services;
+        if (Registration?.Options.StartPaused == true)
+        {
+            _paused = true;
+            UpdateGates(signalJobs: false);
+        }
     }
+
+    /// <summary>
+    /// Whether handlers and the job worker are paused, by <see cref="PauseProcessingAsync"/> or
+    /// <see cref="FoundatioTestHarnessOptions.StartPaused"/>: messages and jobs then wait until
+    /// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> runs them.
+    /// </summary>
+    public bool IsPaused => _paused;
 
     /// <summary>Every message sent with <c>SendAsync</c> or <c>SendBatchAsync</c>, in order.</summary>
     public IReadOnlyList<RecordedMessage> SentMessages => Snapshot(_sent);
@@ -76,11 +95,116 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     /// <summary>The <typeparamref name="T"/> messages published so far, including derived types.</summary>
     public IReadOnlyList<T> Published<T>() where T : class => PublishedMessages.Select(m => m.Message).OfType<T>().ToList();
 
+    /// <summary>The deliveries <typeparamref name="THandler"/> ran to completion on, whatever the delivery's outcome.</summary>
+    public IReadOnlyList<RecordedMessage> HandledBy<THandler>() where THandler : class
+        => HandledMessages.Where(m => m.HandlerTypes.Contains(typeof(THandler))).ToList();
+
+    /// <summary>
+    /// Forgets everything recorded so far, so the recorded lists, counts and waits start again: call it at the start of
+    /// each test when tests share a host. Work still running is recorded when it finishes, so first call
+    /// <see cref="WaitForIdleAsync"/> to keep a previous test's work out of the next one.
+    /// </summary>
+    public void Reset()
+    {
+        lock (_lock)
+        {
+            _sent.Clear();
+            _published.Clear();
+            _handled.Clear();
+            _jobRuns.Clear();
+        }
+
+        NotifyChanged();
+    }
+
+    /// <summary>
+    /// Stops handlers and the job worker from starting new work, and waits for the work already running to finish.
+    /// Messages and jobs then wait, so a test can assert what is queued, until it runs them with
+    /// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> or calls <see cref="ResumeProcessing"/>.
+    /// Receivers stay open, so subscriptions keep receiving published events.
+    /// </summary>
+    /// <exception cref="TimeoutException">Running work did not finish within <paramref name="timeout"/> (default 30 seconds).</exception>
+    /// <exception cref="InvalidOperationException">The harness runs on a transport or job store shared with other hosts.</exception>
+    public async Task PauseProcessingAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    {
+        ThrowIfShared();
+        _paused = true;
+        UpdateGates(signalJobs: false);
+
+        var limit = timeout ?? DefaultTimeout;
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(limit);
+        string? running = null;
+        try
+        {
+            while ((running = FindRunning()) is not null)
+                await Task.WhenAny(Volatile.Read(ref _changed).Task, Task.Delay(IdlePollInterval, timeoutSource.Token)).AnyContext();
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Processing paused, but work was still running after {limit}: {running}.");
+        }
+    }
+
+    /// <summary>Lets handlers and the job worker run on their own again, starting with the work that waited while paused.</summary>
+    public void ResumeProcessing()
+    {
+        _paused = false;
+        UpdateGates(signalJobs: true);
+    }
+
+    /// <summary>
+    /// Runs the messages and jobs that are due now through the app's handlers and jobs, with the real dispatcher (retries,
+    /// dead letters and settlement), and waits until none is left: work they send or enqueue runs too, and so do
+    /// retries without a delay. Delayed messages and jobs, and retries waiting out their delay, stay pending; advance a
+    /// fake <see cref="FoundatioTestHarnessOptions.TimeProvider"/>, or set
+    /// <see cref="FoundatioTestHarnessOptions.RetryDelay"/>, to run them. While processing is paused it runs only this
+    /// work and pauses again afterwards; the replacement for a legacy job's <c>RunAsync()</c> and <c>RunUntilEmptyAsync()</c>.
+    /// </summary>
+    /// <returns>The deliveries handled and job runs finished during the call.</returns>
+    /// <exception cref="TimeoutException">Work was still due or running after <paramref name="timeout"/> (default 30 seconds).</exception>
+    public Task<ProcessedWork> ProcessPendingAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    {
+        return ProcessAsync(ProcessingScope.All, "pending messages and jobs", timeout, cancellationToken);
+    }
+
+    /// <summary>
+    /// Like <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/>, but runs only the queues and subscriptions
+    /// that deliver <typeparamref name="TMessageOrJob"/> messages to this app's registered handlers (everything due in
+    /// them), and the jobs that take <typeparamref name="TMessageOrJob"/> arguments or are that job class. Other work,
+    /// including what these handlers and jobs send or enqueue, stays pending while processing is paused.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Nothing in this app handles or runs <typeparamref name="TMessageOrJob"/>.</exception>
+    public Task<ProcessedWork> ProcessPendingAsync<TMessageOrJob>(TimeSpan? timeout = null, CancellationToken cancellationToken = default) where TMessageOrJob : class
+    {
+        return ProcessAsync(GetScope(typeof(TMessageOrJob)), JobNaming.GetDisplayName(typeof(TMessageOrJob)), timeout, cancellationToken);
+    }
+
     /// <summary>Waits until <paramref name="count"/> <typeparamref name="T"/> messages in total have been handled successfully, and returns them.</summary>
     /// <exception cref="TimeoutException">Not enough were handled within <paramref name="timeout"/> (default 30 seconds). The message says what happened instead.</exception>
     public Task<IReadOnlyList<RecordedMessage>> WaitForHandledAsync<T>(int count = 1, TimeSpan? timeout = null, CancellationToken cancellationToken = default) where T : class
     {
         return WaitForDeliveriesAsync<T>(MessageOutcome.Completed, count, timeout, cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits until <typeparamref name="THandler"/> has run to completion on <paramref name="count"/> deliveries in total,
+    /// and returns them. Unlike <see cref="WaitForHandledAsync{T}"/>, which counts deliveries of a message type, this
+    /// tells apart handlers that share a subscription, or that handle one event on subscriptions of their own.
+    /// </summary>
+    /// <exception cref="TimeoutException">It did not complete enough within <paramref name="timeout"/> (default 30 seconds).</exception>
+    public async Task<IReadOnlyList<RecordedMessage>> WaitForHandledByAsync<THandler>(int count = 1, TimeSpan? timeout = null, CancellationToken cancellationToken = default) where THandler : class
+    {
+        return await WaitForAsync(HandledBy<THandler>, count, timeout, (limit, found) =>
+        {
+            var registrations = _services.GetService<MessagingRegistrations>()?.Handlers.Where(h => h.HandlerType == typeof(THandler)).ToList() ?? [];
+            string seen = registrations.Count == 0
+                ? $"{typeof(THandler).Name} is not registered with AddConsumer or AddSubscriber."
+                : $"Deliveries of {String.Join(", ", registrations.Select(r => r.MessageType.Name).Distinct())}: "
+                    + String.Join(", ", HandledMessages.Where(m => registrations.Any(r => r.MessageType.IsInstanceOfType(m.Message))).GroupBy(m => m.Outcome).Select(g => $"{g.Count()} {g.Key}")) + ".";
+
+            return $"Timed out after {limit} waiting for {typeof(THandler).Name} to handle {count} message(s); it handled {found}. {seen}";
+        }, cancellationToken).AnyContext();
     }
 
     /// <summary>Waits until <paramref name="count"/> <typeparamref name="T"/> messages in total have been dead-lettered, and returns them.</summary>
@@ -175,6 +299,13 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     bool IJobsObserver.RunSchedules => false;
 
+    void IMessagingObserver.OnHandlerCompleted(MessageContext context, MessageHandlerRegistration handler)
+    {
+        var handlers = _completedHandlers.GetValue(context, static _ => new List<MessageHandlerRegistration>(1));
+        lock (handlers)
+            handlers.Add(handler);
+    }
+
     void IMessagingObserver.OnSent(MessageDestination destination, object message, OutgoingMessage outgoing)
     {
         var record = new RecordedMessage
@@ -191,14 +322,9 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         lock (_lock)
         {
             if (destination.Kind == MessageDestinationKind.Queue)
-            {
                 _sent.Add(record);
-                _sentQueues.Add(destination.Name);
-            }
             else
-            {
                 _published.Add(record);
-            }
         }
 
         NotifyChanged();
@@ -207,6 +333,15 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     void IMessagingObserver.OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error, MessageContext? context)
     {
         string messageType = message.Headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty;
+        MessageHandlerRegistration[] handlers = [];
+        if (context is not null && _completedHandlers.TryGetValue(context, out var completed))
+        {
+            lock (completed)
+                handlers = completed.ToArray();
+
+            _completedHandlers.Remove(context);
+        }
+
         var result = outcome switch
         {
             "success" => MessageOutcome.Completed,
@@ -230,7 +365,9 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             Error = DescribeError(result, outcome, reason, error),
             Exception = error,
             Progress = context?.Progress,
-            ProgressMessage = context?.ProgressMessage
+            ProgressMessage = context?.ProgressMessage,
+            Handlers = handlers.Select(h => h.HandlerName).ToArray(),
+            HandlerTypes = handlers.Where(h => h.HandlerType is not null).Select(h => h.HandlerType!).ToArray()
         };
 
         lock (_lock)
@@ -263,6 +400,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     private MessagingRuntime? Messaging => _services.GetService<MessagingRuntime>();
 
+    private TestHarnessRegistration? Registration => _services.GetService<TestHarnessRegistration>();
+
     private JobsRuntime? Jobs => _services.GetService<JobsRuntime>();
 
     private async Task<IReadOnlyList<RecordedMessage>> WaitForDeliveriesAsync<T>(MessageOutcome outcome, int count, TimeSpan? timeout, CancellationToken cancellationToken) where T : class
@@ -271,7 +410,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         {
             var deliveries = HandledMessages.Where(m => m.Message is T).ToList();
             string seen = deliveries.Count == 0
-                ? $"No {typeof(T).Name} was delivered to a handler ({Sent<T>().Count} sent, {Published<T>().Count} published). Is a handler registered, and has the host started?"
+                ? $"No {typeof(T).Name} was delivered to a handler ({Sent<T>().Count} sent, {Published<T>().Count} published). {DescribeMissingHandler(typeof(T))}"
                 : $"Deliveries of {typeof(T).Name}: {String.Join(", ", deliveries.GroupBy(m => m.Outcome).Select(g => $"{g.Count()} {g.Key}"))}."
                     + (deliveries.LastOrDefault(m => m.Error is not null) is { } failed ? $" Last error: {failed.Error}" : "");
 
@@ -330,8 +469,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
         if (Messaging is { } messaging)
         {
-            var transport = messaging.Transport as InMemoryMessageTransport
-                ?? throw new InvalidOperationException("WaitForIdleAsync needs the in-memory transport. Call AddFoundatioTestHarness after AddFoundatioMessaging, so it replaces the app's transport.");
+            var transport = RequireInMemoryTransport(messaging);
 
             var processors = messaging.GetProcessors();
             var sources = processors.Select(p => p.Source).Concat(GetRegisteredSources(messaging)).Distinct().ToList();
@@ -341,11 +479,11 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
                     busy.Add($"{source} has {count} message(s) waiting or in flight");
             }
 
-            // The transport cannot count an instance subscription's messages, only report whether every source is empty.
-            if (busy.Count == 0 && processors.Any(p => p.Source.Kind == MessageSourceKind.InstanceSubscription)
-                && !HasUnconsumedMessages(transport, sources) && !await transport.WaitUntilIdleAsync(TimeSpan.Zero, cancellationToken).AnyContext())
+            foreach (var source in sources.Where(s => s.Kind == MessageSourceKind.InstanceSubscription))
             {
-                busy.Add("an instance subscription has messages waiting");
+                var (due, delayed, inFlight) = transport.CountByState(source);
+                if (due + delayed + inFlight > 0)
+                    busy.Add($"{source} has {due + delayed + inFlight} message(s) waiting or in flight");
             }
 
             foreach (var processor in processors)
@@ -392,8 +530,196 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
                 busy.Add(DescribeNotRunning("the job worker", jobs.HostState));
         }
 
+        if (busy.Count > 0 && _paused)
+            busy.Add("processing is paused: call ProcessPendingAsync() or ResumeProcessing()");
+
         return busy.Count == 0 ? null : String.Join("; ", busy);
     }
+
+    private async Task<ProcessedWork> ProcessAsync(ProcessingScope scope, string what, TimeSpan? timeout, CancellationToken cancellationToken)
+    {
+        var limit = timeout ?? DefaultTimeout;
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(limit);
+        await _processing.WaitAsync(timeoutSource.Token).AnyContext();
+        try
+        {
+            int handledBefore, runsBefore;
+            lock (_lock)
+            {
+                handledBefore = _handled.Count;
+                runsBefore = _jobRuns.Count;
+            }
+
+            _allowed = scope;
+            UpdateGates(signalJobs: true);
+            string? pending = null;
+            try
+            {
+                while (true)
+                {
+                    long version = Interlocked.Read(ref _version);
+                    var changed = Volatile.Read(ref _changed).Task;
+                    pending = await FindPendingAsync(scope, timeoutSource.Token).AnyContext();
+                    if (pending is null && Interlocked.Read(ref _version) == version)
+                        break;
+
+                    await Task.WhenAny(changed, Task.Delay(IdlePollInterval, timeoutSource.Token)).AnyContext();
+                    timeoutSource.Token.ThrowIfCancellationRequested();
+                }
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Processing {what} did not finish within {limit}: {pending ?? "work was still being recorded"}.");
+            }
+            finally
+            {
+                _allowed = null;
+                UpdateGates(signalJobs: false);
+            }
+
+            lock (_lock)
+            {
+                return new ProcessedWork
+                {
+                    HandledMessages = _handled.Skip(Math.Min(handledBefore, _handled.Count)).ToArray(),
+                    JobRuns = _jobRuns.Skip(Math.Min(runsBefore, _jobRuns.Count)).ToArray()
+                };
+            }
+        }
+        finally
+        {
+            _processing.Release();
+        }
+    }
+
+    /// <summary>Describes the work in <paramref name="scope"/> that is due now or running, or returns null when there is none.</summary>
+    /// <remarks>Source counts are read before the processors' in-flight counts, and store counts before the worker's, as in <see cref="FindBusyAsync"/>.</remarks>
+    private async Task<string?> FindPendingAsync(ProcessingScope scope, CancellationToken cancellationToken)
+    {
+        var pending = new List<string>();
+        if (Messaging is { } messaging)
+        {
+            if (messaging.HostState != ProcessingState.Running && GetRegisteredSources(messaging).Count > 0)
+                throw new InvalidOperationException($"ProcessPendingAsync needs running handlers, but the {DescribeNotRunning("message handlers", messaging.HostState)}.");
+
+            var transport = RequireInMemoryTransport(messaging);
+            foreach (var processor in messaging.GetProcessors().Where(p => scope.Includes(p.Source)))
+            {
+                var (due, _, leased) = transport.CountByState(processor.Source);
+                int inFlight = Math.Max(leased, processor.InFlight);
+                if (due > 0)
+                    pending.Add($"{processor.Source} has {due} message(s) due");
+                if (inFlight > 0)
+                    pending.Add($"{processor.Source} is handling {inFlight} message(s)");
+            }
+        }
+
+        if (Jobs is { Store: InMemoryJobStore store } jobs)
+        {
+            if (jobs.HostState != ProcessingState.Running && jobs.Jobs.Count > 0)
+                throw new InvalidOperationException($"ProcessPendingAsync needs a running job worker, but {DescribeNotRunning("the job worker", jobs.HostState)}.");
+
+            foreach (string name in jobs.Jobs.Keys.Where(scope.Includes))
+            {
+                int due = store.CountDue(name);
+                long running = await store.CountAsync(JobState.Running, name, cancellationToken).AnyContext();
+                if (due + running > 0)
+                    pending.Add($"job {name} has {due} due and {running} running");
+            }
+
+            if (jobs.Worker is { Running: > 0 } worker)
+                pending.Add($"the job worker is running {worker.Running} job(s)");
+        }
+
+        return pending.Count == 0 ? null : String.Join("; ", pending);
+    }
+
+    /// <summary>Describes the deliveries and job runs in progress, or returns null when there are none.</summary>
+    private string? FindRunning()
+    {
+        var running = new List<string>();
+        if (Messaging is { } messaging)
+        {
+            foreach (var processor in messaging.GetProcessors().Where(p => p.InFlight > 0))
+                running.Add($"{processor.Source} is handling {processor.InFlight} message(s)");
+        }
+
+        if (Jobs?.Worker is { Running: > 0 } worker)
+            running.Add($"the job worker is running {worker.Running} job(s)");
+
+        return running.Count == 0 ? null : String.Join("; ", running);
+    }
+
+    /// <summary>The registered handlers' sources and the registered jobs that take or are <paramref name="type"/>.</summary>
+    private ProcessingScope GetScope(Type type)
+    {
+        var sources = new HashSet<MessageSource>();
+        if (Messaging is { } messaging && _services.GetService<MessagingRegistrations>() is { } registrations)
+        {
+            foreach (var handler in registrations.Handlers.Where(h => h.MessageType.IsAssignableFrom(type)))
+                sources.Add(messaging.GetSource(handler));
+        }
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        if (Jobs is { } jobs)
+        {
+            foreach (string name in GetJobNames(type).Where(jobs.Jobs.ContainsKey))
+                names.Add(name);
+        }
+
+        if (sources.Count == 0 && names.Count == 0)
+        {
+            throw new InvalidOperationException($"Nothing in this app handles or runs {JobNaming.GetDisplayName(type)}: no handler registered with AddConsumer or AddSubscriber "
+                + "takes it, and no job registered with AddJob takes it as arguments or is that job.");
+        }
+
+        return new ProcessingScope(sources, names);
+    }
+
+    /// <summary>Holds receives and claims while paused, except for the work <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> is running.</summary>
+    private void UpdateGates(bool signalJobs)
+    {
+        if (Registration is not { } registration)
+            return;
+
+        registration.Transport.SetReceiveFilter(_paused ? CanReceive : null);
+        registration.Store.ClaimFilter = _paused ? CanClaim : null;
+        if (signalJobs)
+            Jobs?.SignalWorkAvailable();
+    }
+
+    private bool CanReceive(MessageSource source) => !_paused || _allowed?.Includes(source) == true;
+
+    private bool CanClaim(string jobName) => !_paused || _allowed?.Includes(jobName) == true;
+
+    private void ThrowIfShared()
+    {
+        if (Registration?.IsShared == true)
+            throw new InvalidOperationException("Pausing is not supported on a transport or job store shared with other hosts: every host that shares it would be paused.");
+    }
+
+    private string DescribeMissingHandler(Type messageType)
+    {
+        var handlers = _services.GetService<MessagingRegistrations>()?.Handlers.Where(h => h.MessageType.IsAssignableFrom(messageType)).ToList() ?? [];
+        bool consumed = handlers.Any(h => h.Kind == MessageHandlerKind.Consumer);
+        bool subscribed = handlers.Any(h => h.Kind == MessageHandlerKind.Subscriber);
+        if (Sent(messageType) > 0 && subscribed && !consumed)
+            return $"It was sent with SendAsync, but this app only subscribes to {messageType.Name} with AddSubscriber, and subscribers receive published messages. Did you mean PublishAsync?";
+        if (Published(messageType) > 0 && consumed && !subscribed)
+            return $"It was published with PublishAsync, but this app only consumes {messageType.Name} with AddConsumer, and consumers receive sent messages. Did you mean SendAsync?";
+        if (_paused)
+            return "Processing is paused: call ProcessPendingAsync() or ResumeProcessing().";
+
+        return "Is a handler registered, and has the host started?";
+    }
+
+    private int Sent(Type messageType) => SentMessages.Count(m => messageType.IsInstanceOfType(m.Message));
+
+    private int Published(Type messageType) => PublishedMessages.Count(m => messageType.IsInstanceOfType(m.Message));
+
+    private static InMemoryMessageTransport RequireInMemoryTransport(MessagingRuntime messaging) => messaging.Transport as InMemoryMessageTransport
+        ?? throw new InvalidOperationException("The test harness needs its in-memory transport. Register it with AddFoundatioTestHarness().");
 
     /// <summary>Counts queued and running jobs by name, for names no job registered in this app runs.</summary>
     private static async Task<IReadOnlyList<(string Name, int Count)>> CountUnregisteredJobsAsync(JobsRuntime jobs, CancellationToken cancellationToken)
@@ -413,15 +739,6 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         }
 
         return counts.Select(c => (c.Key, c.Value)).ToList();
-    }
-
-    private bool HasUnconsumedMessages(InMemoryMessageTransport transport, IReadOnlyCollection<MessageSource> consumed)
-    {
-        string[] queues;
-        lock (_lock)
-            queues = _sentQueues.ToArray();
-
-        return queues.Select(MessageSource.Queue).Where(q => !consumed.Contains(q)).Any(q => transport.GetMessageCount(q) > 0);
     }
 
     private IReadOnlyList<MessageSource> GetRegisteredSources(MessagingRuntime messaging)
@@ -513,4 +830,14 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>The sources and job names a <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> call runs; null for all of them.</summary>
+    private sealed class ProcessingScope(IReadOnlySet<MessageSource>? sources, IReadOnlySet<string>? jobNames)
+    {
+        public static ProcessingScope All { get; } = new(null, null);
+
+        public bool Includes(MessageSource source) => sources is null || sources.Contains(source);
+
+        public bool Includes(string jobName) => jobNames is null || jobNames.Contains(jobName);
+    }
 }

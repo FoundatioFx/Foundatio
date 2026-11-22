@@ -32,6 +32,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     private readonly Dictionary<string, DateTimeOffset> _deduplication = new(StringComparer.Ordinal);
     private readonly Queue<(string Key, DateTimeOffset ExpiresAt)> _deduplicationOrder = new();
     private readonly TimeProvider _timeProvider;
+    private volatile Func<MessageSource, bool>? _receiveFilter;
+    private TaskCompletionSource _receiveFilterChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _disposed;
 
     /// <summary>Creates a transport that supports every capability, with no limits.</summary>
@@ -208,6 +210,41 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         }
     }
 
+    /// <summary>
+    /// Holds receives from the sources <paramref name="canReceive"/> rejects: they return nothing until it allows them,
+    /// and messages stay where they are. Null receives from every source. Used by <c>FoundatioTestHarness</c> to pause
+    /// handlers while keeping their receivers, and so their subscriptions, open.
+    /// </summary>
+    internal void SetReceiveFilter(Func<MessageSource, bool>? canReceive)
+    {
+        _receiveFilter = canReceive;
+        Interlocked.Exchange(ref _receiveFilterChanged, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+    }
+
+    /// <summary>
+    /// Counts a source's messages that are due now, delayed (including retries waiting out their delay) and in flight,
+    /// including every receiver's copy of an instance subscription.
+    /// </summary>
+    internal (int Due, int Delayed, int InFlight) CountByState(MessageSource source)
+    {
+        var now = _timeProvider.GetUtcNow();
+        string key = source.ToString();
+        string instancePrefix = key + "/";
+        int due = 0, delayed = 0, inFlight = 0;
+        foreach (var (name, state) in _sources)
+        {
+            if (name != key && !(source.Kind == MessageSourceKind.InstanceSubscription && name.StartsWith(instancePrefix, StringComparison.Ordinal)))
+                continue;
+
+            var (queued, waiting, leased) = state.CountByState(now);
+            due += queued;
+            delayed += waiting;
+            inFlight += leased;
+        }
+
+        return (due, delayed, inFlight);
+    }
+
     /// <summary>The number of pending and in-flight messages in a source.</summary>
     public int GetMessageCount(MessageSource source)
     {
@@ -342,6 +379,21 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                     throw new MessageReceiverFaultedException($"{Source} was deleted while this receiver was open.");
 
                 var now = _transport._timeProvider.GetUtcNow();
+                if (_transport._receiveFilter is { } filter && !filter(Source))
+                {
+                    var filterChanged = Volatile.Read(ref _transport._receiveFilterChanged).Task;
+                    if (_transport._receiveFilter is { } current && !current(Source))
+                    {
+                        if (deadline - now <= TimeSpan.Zero)
+                            return [];
+
+                        using var heldSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                        await Task.WhenAny(filterChanged, Task.Delay(deadline - now, _transport._timeProvider, heldSource.Token)).AnyContext();
+                        heldSource.Cancel();
+                        continue;
+                    }
+                }
+
                 var (messages, nextChange, changed) = _state.Take(this, maxMessages, now, _options.LeaseDuration);
                 if (messages.Count > 0)
                     return messages;

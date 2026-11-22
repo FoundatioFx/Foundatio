@@ -346,6 +346,159 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ProcessPendingAsync_WhenStartedPaused_RunsEachStepOnlyWhenAsked()
+    {
+        var host = await StartHarnessAsync(o => o.StartPaused = true);
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var messages = host.Services.GetRequiredService<IMessageClient>();
+
+        await messages.PublishAsync(new OrderPlaced(1, "a@b.com"), cancellationToken: TestCancellationToken);
+        Assert.True(harness.IsPaused);
+        Assert.Empty(harness.HandledMessages);
+        var idle = await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForIdleAsync(TimeSpan.FromMilliseconds(200), TestCancellationToken));
+        Assert.Contains("processing is paused", idle.Message);
+
+        var placed = await harness.ProcessPendingAsync<OrderPlaced>(cancellationToken: TestCancellationToken);
+        Assert.Equal(MessageOutcome.Completed, Assert.Single(placed.HandledMessages).Outcome);
+        Assert.Empty(placed.JobRuns);
+        Assert.Single(harness.Sent<SendReceipt>());
+        Assert.Empty(host.Services.GetRequiredService<EmailSender>().Sent);
+        Assert.Equal(1, await host.Services.GetRequiredService<IJobClient>().CountAsync(JobState.Queued, cancellationToken: TestCancellationToken));
+
+        var receipt = await harness.ProcessPendingAsync<SendReceipt>(cancellationToken: TestCancellationToken);
+        Assert.IsType<SendReceipt>(Assert.Single(receipt.HandledMessages).Message);
+        Assert.Equal(["a@b.com: Receipt for order 1"], host.Services.GetRequiredService<EmailSender>().Sent);
+        Assert.Empty(harness.JobRuns);
+
+        var rest = await harness.ProcessPendingAsync(cancellationToken: TestCancellationToken);
+        Assert.Empty(rest.HandledMessages);
+        Assert.Equal(JobState.Succeeded, Assert.Single(rest.JobRuns).State);
+        Assert.True(harness.IsPaused);
+    }
+
+    [Fact]
+    public async Task ProcessPendingAsync_WithARetryDelayOfZero_RunsRetriesAndTheDeadLetterInOneCall()
+    {
+        var host = await StartHarnessAsync(o =>
+        {
+            o.StartPaused = true;
+            o.RetryDelay = TimeSpan.Zero;
+        });
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new SendReceipt(2, "bounce@b.com"), cancellationToken: TestCancellationToken);
+        var processed = await harness.ProcessPendingAsync<SendReceipt>(cancellationToken: TestCancellationToken);
+
+        Assert.Equal([MessageOutcome.Retried, MessageOutcome.Retried, MessageOutcome.Retried, MessageOutcome.Retried, MessageOutcome.DeadLettered], processed.HandledMessages.Select(m => m.Outcome));
+        Assert.Equal([1, 2, 3, 4, 5], processed.HandledMessages.Select(m => m.Attempt));
+    }
+
+    [Fact]
+    public async Task PauseProcessingAsync_HoldsNewWorkUntilResumed_AndKeepsInstanceSubscriptionsReceiving()
+    {
+        var host = await StartAppAsync();
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var messages = host.Services.GetRequiredService<IMessageClient>();
+
+        await harness.PauseProcessingAsync(cancellationToken: TestCancellationToken);
+        await messages.SendAsync(new SendReceipt(3, "c@d.com"), cancellationToken: TestCancellationToken);
+        await messages.PublishAsync(new PriceChanged("sku-3"), cancellationToken: TestCancellationToken);
+        await host.Services.GetRequiredService<IJobClient>().EnqueueAsync(new GenerateInvoice(3), cancellationToken: TestCancellationToken);
+        await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForIdleAsync(TimeSpan.FromMilliseconds(200), TestCancellationToken));
+        Assert.Empty(harness.HandledMessages);
+        Assert.Empty(harness.JobRuns);
+
+        var price = await harness.ProcessPendingAsync<PriceChanged>(cancellationToken: TestCancellationToken);
+        Assert.Equal(["sku-3"], host.Services.GetRequiredService<PriceCache>().Invalidated);
+        Assert.StartsWith("instance:catalog.price-changed/", Assert.Single(price.HandledMessages).Address);
+
+        harness.ResumeProcessing();
+        await harness.WaitForIdleAsync(cancellationToken: TestCancellationToken);
+        Assert.False(harness.IsPaused);
+        Assert.Equal(["c@d.com: Receipt for order 3"], host.Services.GetRequiredService<EmailSender>().Sent);
+        Assert.Equal(JobState.Succeeded, Assert.Single(harness.JobRuns).State);
+    }
+
+    [Fact]
+    public async Task ProcessPendingAsync_OfATypeNothingHandles_Throws()
+    {
+        var host = await StartHarnessAsync(o => o.StartPaused = true);
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => harness.ProcessPendingAsync<ShipOrder>(cancellationToken: TestCancellationToken));
+
+        Assert.Contains("Nothing in this app handles or runs", error.Message);
+    }
+
+    [Fact]
+    public async Task ProcessPendingAsync_WithAFakeClock_LeavesDelayedWorkUntilTheClockReachesIt()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var host = await StartHarnessAsync(o =>
+        {
+            o.StartPaused = true;
+            o.TimeProvider = clock;
+        });
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new SendReceipt(4, "e@f.com"), new SendOptions { Delay = TimeSpan.FromHours(1) }, TestCancellationToken);
+        Assert.Empty((await harness.ProcessPendingAsync(cancellationToken: TestCancellationToken)).HandledMessages);
+
+        clock.Advance(TimeSpan.FromHours(1));
+        var processed = await harness.ProcessPendingAsync(cancellationToken: TestCancellationToken);
+
+        Assert.Equal(MessageOutcome.Completed, Assert.Single(processed.HandledMessages).Outcome);
+    }
+
+    [Fact]
+    public async Task Reset_ForgetsWhatWasRecorded_SoWaitsCountFromThere()
+    {
+        var host = await StartAppAsync();
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var messages = host.Services.GetRequiredService<IMessageClient>();
+        await messages.PublishAsync(new OrderPlaced(5, "a@b.com"), cancellationToken: TestCancellationToken);
+        await harness.WaitForIdleAsync(cancellationToken: TestCancellationToken);
+
+        harness.Reset();
+
+        Assert.Empty(harness.SentMessages);
+        Assert.Empty(harness.PublishedMessages);
+        Assert.Empty(harness.HandledMessages);
+        Assert.Empty(harness.JobRuns);
+        await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForJobAsync<GenerateInvoice>(timeout: TimeSpan.FromMilliseconds(100), cancellationToken: TestCancellationToken));
+        await messages.SendAsync(new SendReceipt(6, "c@d.com"), cancellationToken: TestCancellationToken);
+        Assert.Single(await harness.WaitForHandledAsync<SendReceipt>(cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task WaitForHandledByAsync_TellsApartHandlersThatShareASubscription()
+    {
+        var host = await StartAppAsync(services => services.AddSingleton<AuditLog>().AddFoundatioMessaging(m => m.AddSubscriber<OrderAuditor>()));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().PublishAsync(new OrderPlaced(7, "a@b.com"), cancellationToken: TestCancellationToken);
+        var audited = Assert.Single(await harness.WaitForHandledByAsync<OrderAuditor>(cancellationToken: TestCancellationToken));
+
+        Assert.Equal([nameof(OrderPlacedHandler), nameof(OrderAuditor)], audited.Handlers);
+        Assert.Same(audited, Assert.Single(harness.HandledBy<OrderPlacedHandler>()));
+        Assert.Empty(harness.HandledBy<PriceCacheInvalidator>());
+        var timeout = await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForHandledByAsync<OrderAuditor>(2, TimeSpan.FromMilliseconds(100), TestCancellationToken));
+        Assert.Contains("OrderAuditor to handle 2 message(s); it handled 1", timeout.Message);
+    }
+
+    [Fact]
+    public async Task WaitForHandledAsync_OfAnEventThatWasSent_SuggestsPublishing()
+    {
+        var host = await StartAppAsync();
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new OrderPlaced(8, "a@b.com"), cancellationToken: TestCancellationToken);
+        var timeout = await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForHandledAsync<OrderPlaced>(timeout: TimeSpan.FromMilliseconds(100), cancellationToken: TestCancellationToken));
+
+        Assert.Contains("Did you mean PublishAsync?", timeout.Message);
+    }
+
+    [Fact]
     public async Task AddConsumer_WithOptionsFromServices_AndAHarnessRetryDelay_RetriesWithoutTheHandlersOwnBackoff()
     {
         var host = await StartHarnessAsync(o => o.RetryDelay = TimeSpan.FromMilliseconds(10), services => services
@@ -360,6 +513,28 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         var deadLetter = Assert.Single(await harness.WaitForDeadLetteredAsync<Bounce>(timeout: TimeSpan.FromSeconds(10), cancellationToken: TestCancellationToken));
 
         Assert.Equal(2, deadLetter.Attempt);
+    }
+
+    [Fact]
+    public async Task AddFoundatioTestHarness_WithASharedTransportAndStore_RecordsEachHostsShareOfTheWork()
+    {
+        await using var transport = new InMemoryMessageTransport();
+        var store = new Foundatio.Jobs.Store.InMemoryJobStore();
+        var pods = new List<IHost>();
+        for (int i = 0; i < 3; i++)
+            pods.Add(await StartHarnessAsync(o => { o.Transport = transport; o.JobStore = store; }));
+        var harnesses = pods.Select(p => p.Services.GetRequiredService<FoundatioTestHarness>()).ToList();
+
+        await pods[0].Services.GetRequiredService<IMessageClient>().PublishAsync(new OrderPlaced(9, "a@b.com"), cancellationToken: TestCancellationToken);
+        await pods[1].Services.GetRequiredService<IMessageClient>().PublishAsync(new PriceChanged("sku-9"), cancellationToken: TestCancellationToken);
+        foreach (var harness in harnesses)
+            await harness.WaitForIdleAsync(cancellationToken: TestCancellationToken);
+
+        Assert.Equal(1, harnesses.Sum(h => h.HandledMessages.Count(m => m.Message is OrderPlaced)));
+        Assert.Equal(1, harnesses.Sum(h => h.JobRuns.Count));
+        Assert.All(harnesses, h => Assert.Single(h.HandledMessages, m => m.Message is PriceChanged));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harnesses[0].PauseProcessingAsync(cancellationToken: TestCancellationToken));
+        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddFoundatioTestHarness(o => { o.Transport = transport; o.StartPaused = true; }));
     }
 
     [Fact]
@@ -390,6 +565,20 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     public sealed class BouncingHandler : IMessageHandler<Bounce>
     {
         public Task HandleAsync(Bounce message, IMessageContext context, CancellationToken cancellationToken) => throw new InvalidOperationException("Bounced");
+    }
+
+    public sealed class AuditLog
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<int> Orders { get; } = new();
+    }
+
+    public sealed class OrderAuditor(AuditLog log) : IMessageHandler<OrderPlaced>
+    {
+        public Task HandleAsync(OrderPlaced message, IMessageContext context, CancellationToken cancellationToken)
+        {
+            log.Orders.Enqueue(message.OrderId);
+            return Task.CompletedTask;
+        }
     }
 
     public record ArchiveOrders(int OlderThanDays);

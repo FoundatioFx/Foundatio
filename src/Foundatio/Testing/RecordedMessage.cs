@@ -33,6 +33,16 @@ public sealed record RecordedMessage
     /// <summary>For sent and published messages, the requested delivery time of a delayed message.</summary>
     public DateTimeOffset? DeliverAt { get; init; }
 
+    /// <summary>
+    /// The handlers that ran to completion on this delivery, in order: their class names, or <c>"{Type} delegate"</c>
+    /// for delegate handlers. Handlers that share a queue or subscription share each delivery, so a delivery that was
+    /// retried lists the ones that returned before another threw. Empty for sent and published messages.
+    /// </summary>
+    public IReadOnlyList<string> Handlers { get; init; } = [];
+
+    /// <summary>The classes of <see cref="Handlers"/>, without the delegate handlers.</summary>
+    internal IReadOnlyList<Type> HandlerTypes { get; init; } = [];
+
     /// <summary>How the delivery ended. Null for sent and published messages.</summary>
     public MessageOutcome? Outcome { get; init; }
 

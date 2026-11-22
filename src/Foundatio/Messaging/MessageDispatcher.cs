@@ -136,6 +136,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
                 await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
                 context.Services = scope.ServiceProvider;
                 await match.Handler.Invoke(scope.ServiceProvider, FindPayload(payloads, payloadCount, match.PayloadType)!, context, handlerCancellation.Token).AnyContext();
+                _runtime.Observer?.OnHandlerCompleted(context, match.Handler);
             }
         }
         catch (Exception ex)

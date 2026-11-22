@@ -15,4 +15,9 @@ internal interface IMessagingObserver
     /// or null when no handler ran.
     /// </summary>
     void OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error, MessageContext? context = null);
+
+    /// <summary>Called when <paramref name="handler"/> returned without throwing for the delivery <paramref name="context"/> belongs to, before it is settled.</summary>
+    void OnHandlerCompleted(MessageContext context, MessageHandlerRegistration handler)
+    {
+    }
 }

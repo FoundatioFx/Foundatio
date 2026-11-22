@@ -1,4 +1,5 @@
 using System;
+using Foundatio.Jobs.Store;
 using Foundatio.Messaging.Transport;
 
 namespace Foundatio.Testing;
@@ -25,6 +26,24 @@ public sealed class FoundatioTestHarnessOptions
     public TransportCapabilities? TransportCapabilities { get; set; }
 
     /// <summary>
+    /// A transport to run on instead of a fresh one, shared with other hosts so a test can run several instances of an
+    /// app (or several services) against one broker. Each host's harness records what that host does. You create and
+    /// dispose it, and it keeps its own clock. Pausing is not supported on a shared transport, which every host would see.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// await using var transport = new InMemoryMessageTransport();
+    /// var store = new InMemoryJobStore();
+    /// // for each host:
+    /// builder.Services.AddFoundatioTestHarness(o => { o.Transport = transport; o.JobStore = store; });
+    /// </code>
+    /// </example>
+    public InMemoryMessageTransport? Transport { get; set; }
+
+    /// <summary>A job store to run on instead of a fresh one, shared with other hosts; see <see cref="Transport"/>.</summary>
+    public InMemoryJobStore? JobStore { get; set; }
+
+    /// <summary>
     /// The clock messaging, jobs, the in-memory transport and the job store run on. Defaults to the system clock,
     /// whatever <see cref="System.TimeProvider"/> the app registers, so a test that moves the app's clock does not strand
     /// leases or postpone retries. Set a fake clock (for example Microsoft.Extensions.Time.Testing's FakeTimeProvider)
@@ -34,10 +53,19 @@ public sealed class FoundatioTestHarnessOptions
     public System.TimeProvider? TimeProvider { get; set; }
 
     /// <summary>
+    /// When true, handlers and the job worker start paused: messages and jobs wait until the test runs them with
+    /// <see cref="FoundatioTestHarness.ProcessPendingAsync(System.TimeSpan?, System.Threading.CancellationToken)"/>, or
+    /// calls <see cref="FoundatioTestHarness.ResumeProcessing"/>. Use it to assert what is queued before it is handled,
+    /// and to run a pipeline one step at a time. Defaults to false.
+    /// </summary>
+    public bool StartPaused { get; set; }
+
+    /// <summary>
     /// Replaces the delay of every retry policy, messaging's and jobs' defaults and each handler's and job type's own,
     /// so a retried message or job runs again after this delay instead of its production backoff. Attempts and
     /// <see cref="Resilience.RetryPolicy.ShouldRetry"/> are kept, and handlers that share a subscription are still
-    /// checked with their own policies.
+    /// checked with their own policies. With <see cref="TimeSpan.Zero"/>, retries run within one
+    /// <see cref="FoundatioTestHarness.ProcessPendingAsync(System.TimeSpan?, System.Threading.CancellationToken)"/> call.
     /// Defaults to null, which keeps every policy's delay.
     /// </summary>
     public TimeSpan? RetryDelay { get; set; }

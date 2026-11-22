@@ -136,6 +136,22 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    /// <summary>
+    /// When set, only jobs whose names it accepts are claimed; the others stay queued. Used by <c>FoundatioTestHarness</c>
+    /// to pause the job worker.
+    /// </summary>
+    internal Func<string, bool>? ClaimFilter { get; set; }
+
+    /// <summary>Counts the queued jobs named <paramref name="name"/> that are due now.</summary>
+    internal int CountDue(string name)
+    {
+        lock (_lock)
+        {
+            long now = RemoveExpired().UtcTicks;
+            return _dueByName.TryGetValue(name, out var due) ? due.Count(e => e.Job.State == JobState.Queued && e.DueTicks <= now) : 0;
+        }
+    }
+
     /// <inheritdoc />
     public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
     {
@@ -171,8 +187,12 @@ public sealed class InMemoryJobStore : IJobStore
     private JobInfo? ClaimNextLocked(JobClaimRequest request, DateTimeOffset now)
     {
         Entry? next = null;
+        var claimFilter = ClaimFilter;
         foreach (string name in request.Names)
         {
+            if (claimFilter is not null && !claimFilter(name))
+                continue;
+
             if (_dueByName.TryGetValue(name, out var due) && due.Min is { } first && first.DueTicks <= now.UtcTicks
                 && (next is null || DueComparer.Instance.Compare(first, next) < 0))
             {

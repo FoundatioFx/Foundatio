@@ -38,7 +38,15 @@ public static class TestHarnessServiceCollectionExtensions
         configure?.Invoke(options);
         var capabilities = options.TransportCapabilities;
         if (capabilities is not null)
+        {
+            if (options.Transport is not null)
+                throw new ArgumentException("Set TransportCapabilities or a shared Transport, not both: create the shared transport with the capabilities instead.", nameof(configure));
+
             InMemoryMessageTransport.ValidateCapabilities(capabilities);
+        }
+
+        if (options.StartPaused && (options.Transport is not null || options.JobStore is not null))
+            throw new ArgumentException("StartPaused is not supported with a shared Transport or JobStore: pausing would pause every host that shares it.", nameof(configure));
 
         var timeProvider = options.TimeProvider ?? TimeProvider.System;
         services.RemoveAll<TestHarnessRegistration>();
@@ -60,10 +68,18 @@ public static class TestHarnessServiceCollectionExtensions
                 o.DefaultRetryPolicy = o.DefaultRetryPolicy with { Delay = delay };
             });
         }
+        // A shared transport or store is registered as an instance, so disposing this host does not dispose it.
         services.RemoveAll<IMessageTransport>();
-        services.AddSingleton<IMessageTransport>(sp => sp.GetRequiredService<TestHarnessRegistration>().Transport);
+        if (options.Transport is { } transport)
+            services.AddSingleton<IMessageTransport>(transport);
+        else
+            services.AddSingleton<IMessageTransport>(sp => sp.GetRequiredService<TestHarnessRegistration>().Transport);
+
         services.RemoveAll<IJobStore>();
-        services.AddSingleton<IJobStore>(sp => sp.GetRequiredService<TestHarnessRegistration>().Store);
+        if (options.JobStore is { } store)
+            services.AddSingleton<IJobStore>(store);
+        else
+            services.AddSingleton<IJobStore>(sp => sp.GetRequiredService<TestHarnessRegistration>().Store);
         services.TryAddSingleton(sp => new FoundatioTestHarness(sp));
         services.TryAddSingleton<IMessagingObserver>(sp => sp.GetRequiredService<FoundatioTestHarness>());
         services.TryAddSingleton<IJobsObserver>(sp => sp.GetRequiredService<FoundatioTestHarness>());

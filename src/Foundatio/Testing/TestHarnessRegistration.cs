@@ -34,9 +34,9 @@ internal sealed class TestHarnessRegistration
         {
             lock (_lock)
             {
-                return _transport ??= Options.TransportCapabilities is { } capabilities
+                return _transport ??= Options.Transport ?? (Options.TransportCapabilities is { } capabilities
                     ? new InMemoryMessageTransport(capabilities, TimeProvider)
-                    : new InMemoryMessageTransport(TimeProvider);
+                    : new InMemoryMessageTransport(TimeProvider));
             }
         }
     }
@@ -47,9 +47,12 @@ internal sealed class TestHarnessRegistration
         get
         {
             lock (_lock)
-                return _store ??= new InMemoryJobStore(TimeProvider);
+                return _store ??= Options.JobStore ?? new InMemoryJobStore(TimeProvider);
         }
     }
+
+    /// <summary>Whether the transport or job store is shared with other hosts.</summary>
+    public bool IsShared => Options.Transport is not null || Options.JobStore is not null;
 
     /// <summary>Whether <paramref name="services"/> has the test harness, which then owns the transport and job store.</summary>
     public static bool IsRegistered(IServiceCollection services) => services.Any(d => d.ServiceType == typeof(TestHarnessRegistration));
