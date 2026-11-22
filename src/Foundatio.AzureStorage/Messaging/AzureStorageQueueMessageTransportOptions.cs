@@ -42,7 +42,7 @@ public sealed record AzureStorageQueueMessageTransportOptions
     /// polls, and each empty poll doubles the wait before the next, up to <see cref="MaxPollInterval"/>; a message
     /// received resets it. Sends and retries this transport makes wake its own waiting receivers at once.
     /// </summary>
-    public TimeSpan MinPollInterval { get; init; } = TimeSpan.FromMilliseconds(100);
+    public TimeSpan MinPollInterval { get; init; } = TimeSpan.FromMilliseconds(50);
 
     /// <summary>
     /// The longest a receive waits between polls of an empty queue, and so about the longest a message sent from

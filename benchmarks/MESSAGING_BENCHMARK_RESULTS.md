@@ -49,3 +49,33 @@ legacy bus. The legacy queue never serializes: it deep-clones the payload, so it
 | job enqueue | 1,200 / 2,028 | **870 / 1,280** | 550 / 1,106 | |
 | job enqueue to run, c=8 | 5,537 / 7,690 | **3,761 / 5,356** | 1,063 / 4,649 | |
 | job enqueue to run, one at a time | 7,234 / 9,513 | **5,723 / 6,953** | 2,417 / 5,028 | |
+
+## Azure Storage Queues on Azurite (per-broker harness)
+
+`benchmarks/Foundatio.Messaging.Benchmarks --transport azurestorage`, client pinned to 8 cores (`taskset -c 0-7`), against
+Azurite 3.37.0 pinned to 6 others and shared with other test runs. 100-byte bodies, 2,000 messages per run, three
+interleaved runs per row. Azurite serves requests on one thread and was at 100% CPU in every consume run, so throughput
+is Azurite's ceiling (and drifts between 250 and 650 messages/s with its load), not the transport's: compare the rows
+of a run, not the absolute numbers. Real Azure targets about 2,000 messages/s per queue.
+
+| Drain a backlog (messages/s) | c=1 | c=16 | Client CPU per message | Allocated per message | Storage calls per message |
+|---|---|---|---|---|---|
+| v2 (`UseAzureStorageQueues`) | 478, 599, 553 | 623, 496, 408 | 0.9–1.4 ms | 24 KB | 1.03 (a delete each, a receive per ~30) |
+| Raw SDK (receives of 32, concurrent deletes) | 434, 600, 633 | 496, 586, 440 | 0.7–1.4 ms | 20 KB | 1.06 |
+| Legacy `AzureStorageQueue<T>` (`DequeueInterval` 100 ms) | 234, 243, 160 | 245, 231, 282 | 1.1–1.3 ms | 40 KB | 2.0 (a receive per message) |
+
+Most of the client CPU is the Azure SDK's HTTP pipeline (request signing, XML), which the raw target pays too.
+
+| Latency and idle cost (v2, c=16) | Result |
+|---|---|
+| Send → handled at 100 messages/s | p50 29 ms, p95 53 ms, p99 55 ms; 0.43 receives per message |
+| Send → handled at 10 messages/s | p50 56 ms, p95 104 ms |
+| First message right after start | 97 ms |
+| First message after 30 s idle, sent from another host | 2.06 s (`MaxPollInterval`) |
+| Idle receiver | 17 receives in 30 s (one poller, every 2 s) |
+| Publish to a queue, 16 publishers | 1,702 messages/s, one `Put Message` each |
+| Publish to a topic with one subscription, 16 publishers | 1,536 messages/s, plus one `List Queues` per publish |
+
+The raw SDK's latency floor is p50 4.5 ms at 100 messages/s, polling 530 times a second; v2 polls 43 times a second
+there. `MinPollInterval` trades the two: 25 ms gave p50 16 ms with 1,496 receives in 20 s, 50 ms (the default) p50 29 ms
+with 861, and 100 ms p50 53 ms with 458.
