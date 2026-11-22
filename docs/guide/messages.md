@@ -156,6 +156,8 @@ m.UseRabbitMQ(new RabbitMQMessageTransportOptions { Prefix = "myapp" });
 | Replicas of one service | Compete | Compete for the service's copy |
 | While no one is listening | Waits in the queue | Copies wait in each existing subscription; with no subscriptions it is dropped |
 
+Mixing them up delivers nothing, and only your app's own handlers are known to it: the first time a type is sent that your app only subscribes to, or published that it only consumes, a warning is logged suggesting the other call. A mix-up between services is not detected.
+
 For "every running instance" (local caches, pushing to WebSocket clients) use an instance-scoped subscriber:
 
 ```csharp
@@ -172,7 +174,7 @@ A service's subscription to a topic is named after the service, set with `m.UseS
 All subscribers of one topic in a service share that subscription, so they share each delivery:
 
 - If one handler throws, every handler of that event runs again on the retry, so keep them all idempotent.
-- They run with one `RetryPolicy`, `LeaseDuration` and `MaxConcurrency`. The host fails to start when handlers that share a subscription set different values. A value set on one handler and left unset on the other counts as different. Two `RetryPolicy` objects built separately differ when their delegates do, so share one instance.
+- They run with one `RetryPolicy`, `LeaseDuration` and `MaxConcurrency`. The host fails to start when handlers that share a subscription set different values. A value set on one handler and left unset on the other counts as different. Policies compare by value: two built the same way with `RetryPolicy.Exponential`, `Fixed` and `DoNotRetry` are equal, but two with `Delay` or `ShouldRetry` delegates you wrote yourself differ unless they share the instance.
 
 To retry a handler on its own, with its own settings, give it a subscription of its own:
 
@@ -203,6 +205,10 @@ A retry waits on the broker when it can delay it. When it can't (Kafka or Rabbit
 Settling doesn't keep a handler slot waiting on the broker: once a handler returns, the complete, abandon or dead-letter runs while the slot takes the next message. The message stays in flight until the settlement finishes, and only then is its outcome reported and shutdown done waiting for it. Up to 2 × `MaxConcurrency` settlements per handler run that way; past that a settlement keeps its slot until it finishes. In an ordered group, the group's next message still waits for the previous one to settle.
 
 On SQS, Redis and Service Bus without sessions, receiving doesn't wait for a free handler slot either: while the handlers are busy, Foundatio receives full batches ahead of them, and the messages wait, leased and renewed, until a slot frees. How far it reads ahead adapts to how long your handlers and the broker's receives take, so a buffered message normally waits less than a second (or a quarter of the lease, if that's shorter); it doesn't read ahead for handlers that take longer than that, and reads ahead only as many messages as keep the buffered bodies within 16 MiB at their recent size. While the source is drained, only one receive long-polls. Buffered messages count as unsettled on the broker (in flight on SQS and Redis, queued on Service Bus), show in `MessagingStatus` as `Buffered` rather than `Active`, and hold back their group's later messages. Stopping the host handles them within the shutdown drain; any still buffered when it times out, or when a failed receiver is replaced, are released without running their handlers and delivered again.
+
+To read handler options from configuration bound after your registrations, pass a factory: `m.AddConsumer<ImportHandler>(sp => new HandlerOptions { MaxConcurrency = sp.GetRequiredService<IOptions<ImportSettings>>().Value.Workers })`, or `AddSubscriber<THandler>(sp => new SubscriptionOptions { ... })`. It runs when the host starts. A consumer has no subscription, so passing `SubscriptionOptions` with a `Name` or `Scope` to `AddConsumer` throws.
+
+`MessagingOptions`, which `m.Configure(...)` changes, is a standard options class: `services.Configure<MessagingOptions>(...)` and binding it from configuration work too, applied in the order they were registered.
 
 Stopping the host doesn't cancel handlers at once. As soon as the host begins stopping, every handler stops receiving, and the job worker stops claiming, so nothing new starts during shutdown. Foundatio then waits up to `MessagingOptions.ShutdownTimeout` (20 seconds, set with `m.Configure(o => o.ShutdownTimeout = ...)`) for in-flight messages to finish, then fires their cancellation token and gives the handlers 5 more seconds; those messages are delivered again. Messaging and jobs drain at the same time, so keep each `ShutdownTimeout` plus 5 seconds under the host's `HostOptions.ShutdownTimeout` (30 seconds by default) and your orchestrator's grace period (30 seconds on Kubernetes).
 
@@ -300,12 +306,12 @@ Assert.Null(context.DeadLetterReason);
 Assert.Empty(context.ProgressReports);   // every report, in order; Progress and ProgressMessage hold the last values
 ```
 
-To test your real registrations end to end, add `AddFoundatioTestHarness()` (namespace `Foundatio.Testing`) after them. It swaps your transport and job store for in-memory ones and records what happens, so a test acts, waits for the outcome and asserts, with no sleeps:
+To test your real registrations end to end, add `AddFoundatioTestHarness()` (namespace `Foundatio.Testing`), before or after them. It runs your messaging and jobs on an in-memory transport and job store and records what happens, so a test acts, waits for the outcome and asserts, with no sleeps. It owns the transport and store whatever the order: a `UseRedis()`, `UseSqs()` or `UseTransport()` call, yours or a provider's, is ignored while the harness is registered, so a test never reaches a real broker. The app needs only the `Foundatio` package for this; the `Foundatio.TestHarness` package holds the conformance suites for transport authors.
 
 ```csharp
 var builder = Host.CreateApplicationBuilder();
 builder.Services.AddOrdersApp();               // your AddFoundatioMessaging and AddFoundatioJobs calls
-builder.Services.AddFoundatioTestHarness();    // last, so it replaces the transport and store
+builder.Services.AddFoundatioTestHarness(o => o.RetryDelay = TimeSpan.FromMilliseconds(10));
 using var host = builder.Build();
 await host.StartAsync();
 var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
@@ -319,13 +325,60 @@ Assert.All(harness.HandledMessages, m => Assert.Equal(MessageOutcome.Completed, 
 
 await messages.SendAsync(new SendReceipt(2, "bounce@b.com"));
 var deadLetter = Assert.Single(await harness.WaitForDeadLetteredAsync<SendReceipt>());
-Assert.Equal(3, deadLetter.Attempt);
+Assert.Equal(5, deadLetter.Attempt);           // the default policy's attempts, 10 ms apart
 ```
 
-- `SentMessages`, `PublishedMessages` and `HandledMessages` record each message with its id, correlation id, attempt and headers. Deliveries also record how they ended (`Completed`, `Retried`, `DeadLettered`, `Skipped`, `Expired` or `Released`), the error, and the last `Progress` and `ProgressMessage` the handler reported. `Sent<T>()` and `Published<T>()` return the messages themselves.
-- `WaitForHandledAsync<T>(count)` and `WaitForDeadLetteredAsync<T>(count)` return the deliveries once there are enough. On timeout (30 seconds by default) the exception says what happened instead.
+- `SentMessages`, `PublishedMessages` and `HandledMessages` record each message with its id, correlation id, attempt and headers. Deliveries also record how they ended (`Completed`, `Retried`, `DeadLettered`, `Skipped`, `Expired` or `Released`), the error, the handlers that ran to completion (`Handlers`), and the last `Progress` and `ProgressMessage` the handler reported. `Sent<T>()` and `Published<T>()` return the messages themselves.
+- `WaitForHandledAsync<T>(count)` and `WaitForDeadLetteredAsync<T>(count)` return the deliveries once there are enough. They count deliveries of `T` to each queue or subscription, so two handlers that share a subscription count once; `WaitForHandledByAsync<THandler>(count)` and `HandledBy<THandler>()` count one handler's. On timeout (30 seconds by default) the exception says what happened instead, including "did you mean `PublishAsync`?" when an event was sent to its subscribers.
 - `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored.
-- Waits use real time, and retries wait for their policy's delay, so give tests a short one: `m.Configure(o => o.DefaultRetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) })`.
+- `Reset()` forgets everything recorded, so counts and waits start again. When tests share a host, call `WaitForIdleAsync()` and then `Reset()` at the start of each test.
+
+### Clocks and retries
+
+The harness runs messaging, jobs, its transport and its store on the system clock, whatever `TimeProvider` your app registers, so a test that moves the app's clock doesn't leave messages leased or retries waiting for the time it moved. Waits always use real time.
+
+- `o.RetryDelay` replaces the delay of every retry policy: the defaults and each handler's and job's own, so a retried message or job runs again after that delay instead of its production backoff. Attempts and `ShouldRetry` are kept.
+- `o.TimeProvider = fakeTimeProvider` runs them on a clock the test moves instead: advance it to make delayed messages, delayed jobs and retries due.
+- Outside the harness, `MessagingOptions.TimeProvider` and `JobWorkerOptions.TimeProvider` (set with `m.Configure(...)` and `j.Configure(...)`) do the same for the app: they default to the registered `TimeProvider`.
+
+### Running work step by step
+
+With processing paused, messages and jobs wait until the test runs them, so it can check what is queued before it is handled, and run a pipeline one step at a time. The work runs through the real dispatcher and worker, so retries, dead letters and settlement behave as in production. This replaces calling a legacy job's `RunAsync()` or `RunUntilEmptyAsync()` in a test.
+
+```csharp
+builder.Services.AddFoundatioTestHarness(o =>
+{
+    o.StartPaused = true;                // or call harness.PauseProcessingAsync() later
+    o.RetryDelay = TimeSpan.Zero;        // retries and dead letters run within one ProcessPendingAsync call
+});
+
+await messages.PublishAsync(new OrderPlaced(1, "a@b.com"));
+Assert.Empty(harness.HandledMessages);   // queued, not handled yet
+
+var placed = await harness.ProcessPendingAsync<OrderPlaced>();        // only OrderPlaced's subscription
+Assert.Single(harness.Sent<SendReceipt>());                          // sent, still waiting
+
+await harness.ProcessPendingAsync<SendReceipt>();                     // the receipt queue
+var rest = await harness.ProcessPendingAsync();                       // everything else that is due, jobs included
+Assert.Equal(JobState.Succeeded, Assert.Single(rest.JobRuns).State);
+```
+
+- `ProcessPendingAsync()` runs what is due until nothing is left, including what the handlers send and enqueue, and returns the deliveries and job runs it saw. `ProcessPendingAsync<T>()` runs only the queues and subscriptions that deliver `T` to your handlers (everything due in them), and the jobs that take `T` as arguments or are the job class `T`; what they send elsewhere stays pending.
+- Delayed messages and jobs, and retries waiting out their delay, are not due: set `RetryDelay`, or advance a fake `TimeProvider`, then call it again.
+- While paused, receivers stay open, so subscriptions, instance subscriptions included, keep receiving what is published. `WaitForIdleAsync()` times out, saying processing is paused. `ResumeProcessing()` lets everything run on its own again.
+
+### Several hosts on one transport
+
+To test several instances of an app, or several services, against one broker, give each host's harness the same transport and store. Each harness records what its host does:
+
+```csharp
+await using var transport = new InMemoryMessageTransport();
+var store = new InMemoryJobStore();
+// for each host
+builder.Services.AddFoundatioTestHarness(o => { o.Transport = transport; o.JobStore = store; });
+```
+
+You create and dispose them, and the transport keeps its own clock. Pausing isn't supported on a shared transport, because it would pause every host.
 
 ### Test against your production transport's guarantees
 
@@ -343,6 +396,10 @@ builder.Services.AddFoundatioTestHarness(o => o.TransportCapabilities = new Tran
 ```
 
 A group's messages then run concurrently and out of order, a repeated `DeduplicationId` is delivered again, and an oversized message throws `MessageTooLargeException`. Outside the harness, `new InMemoryMessageTransport(capabilities)` does the same.
+
+### Catching mistakes at startup
+
+Handler and job classes are registered in DI as scoped services (unless you register them yourself), so with `ValidateOnBuild`, which `Host.CreateApplicationBuilder()` and `WebApplication` turn on in Development, building the host fails when a handler or job needs a service that isn't registered, naming both.
 
 Jobs are recorded too; see [testing jobs](./durable-jobs#testing).
 

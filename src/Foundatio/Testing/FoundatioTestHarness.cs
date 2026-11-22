@@ -30,7 +30,7 @@ namespace Foundatio.Testing;
 /// </remarks>
 /// <example>
 /// <code>
-/// services.AddFoundatioTestHarness();   // after the app's registrations
+/// services.AddFoundatioTestHarness();   // before or after the app's registrations
 /// await host.StartAsync();
 /// var harness = host.Services.GetRequiredService&lt;FoundatioTestHarness&gt;();
 ///

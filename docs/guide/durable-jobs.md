@@ -83,7 +83,12 @@ j.AddJob<GenerateReportJob>(new JobTypeOptions
     MaxConcurrency = 2,                                         // per instance
     RetryPolicy = new RetryPolicy { MaxAttempts = 3 }.DoNotRetry<InvalidReportException>()
 });
+
+// or from configuration bound after your registrations; the factory runs when the host starts
+j.AddJob<GenerateReportJob>(sp => new JobTypeOptions { MaxConcurrency = sp.GetRequiredService<IOptions<ReportSettings>>().Value.Workers });
 ```
+
+Set a job's options once. Registering a job again is fine, and options given later replace the defaults of a registration without them, such as the one `AddCronJob<TJob>` adds; two different sets of options for one job throw. `JobWorkerOptions`, which `j.Configure(...)` changes, is a standard options class, so `services.Configure<JobWorkerOptions>(...)` and configuration binding work too. Job classes are registered in DI as scoped services unless you register them yourself, so `ValidateOnBuild` (on in Development) fails host build when a job needs a service that isn't registered.
 
 ## Reporting progress
 
@@ -138,6 +143,8 @@ j.AddCronJob<SyncJob>("*/30 * * * * *", new CronJobOptions              // six f
     MisfireThreshold = TimeSpan.FromMinutes(10)    // run a missed occurrence if an instance starts within this
 });
 ```
+
+`AddCronJob<TJob>` also registers the job, with `CronJobOptions.JobTypeOptions` if you set them. A schedule of arguments, `AddCronJob(expression, arguments)`, doesn't register the job that takes them, so register it with `AddJob` in the process that runs it, and set its options there; setting `JobTypeOptions` on such a schedule throws. A process that runs jobs logs a warning at startup for a schedule whose job it doesn't run, and when it enqueues one (once per job name), since that is usually a forgotten `AddJob`.
 
 Every instance runs the scheduler, and each occurrence becomes exactly one job, so there is no leader to elect. Schedules live in code: change or remove a line and redeploy.
 
@@ -224,4 +231,15 @@ await harness.TriggerCronJobAsync<CleanupJob>();
 Assert.Equal(JobState.Succeeded, Assert.Single(await harness.WaitForJobAsync<CleanupJob>()).State);
 ```
 
-`WaitForJobAsync` returns runs that finished (succeeded, failed or cancelled), so check `State`. It takes the arguments type, the job class or, for a legacy job, `LegacyJob<T>` or `T`. `WaitForIdleAsync` also waits for queued jobs that nothing in the app runs, and its timeout names them, so a forgotten `AddJob` fails the test instead of passing it. `JobRuns` also lists runs that will be retried, with `State` `Queued`. Schedules do not fire on their own under the harness: at startup the scheduler runs the latest occurrence within the misfire threshold, which would make tests depend on the time of day.
+To check a job is queued before it runs, or to run a chain of jobs one step at a time, pause processing and run what is pending, as the [message testing guide](./messages#running-work-step-by-step) shows:
+
+```csharp
+builder.Services.AddFoundatioTestHarness(o => { o.StartPaused = true; o.RetryDelay = TimeSpan.Zero; });
+
+await jobs.EnqueueAsync(new GenerateReport("pdf", 2));
+Assert.Equal(1, await jobs.CountAsync(JobState.Queued));
+var processed = await harness.ProcessPendingAsync<GenerateReport>();   // runs it, and its retries, now
+Assert.Equal(JobState.Succeeded, processed.JobRuns.Last().State);
+```
+
+`WaitForJobAsync` returns runs that finished (succeeded, failed or cancelled), so check `State`. It takes the arguments type, the job class or, for a legacy job, `LegacyJob<T>` or `T`. `WaitForIdleAsync` also waits for queued jobs that nothing in the app runs, and its timeout names them, so a forgotten `AddJob` fails the test instead of passing it. `JobRuns` also lists runs that will be retried, with `State` `Queued`. Schedules do not fire on their own under the harness: at startup the scheduler runs the latest occurrence within the misfire threshold, which would make tests depend on the time of day. `Reset()` clears `JobRuns` along with the messages, so a wait in one test doesn't return a run from the test before.

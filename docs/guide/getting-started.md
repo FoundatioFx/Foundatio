@@ -139,6 +139,8 @@ builder.Services.AddFoundatioJobs(j => j
 
 See [Messages and Events](./messages) and [Durable Jobs](./durable-jobs). The `IQueue<T>` and `IMessageBus` APIs below remain supported; see [Migrating](./migrating-to-messaging) to move existing code.
 
+To test them, add `services.AddFoundatioTestHarness()` in your test host, before or after these registrations. It runs messaging and jobs in memory, whatever transport and store the app configures, and lets a test wait for outcomes or run pending work step by step; see [Testing](./messages#testing).
+
 ## Switching to Production Implementations
 
 When moving to production, swap in-memory implementations for distributed ones:

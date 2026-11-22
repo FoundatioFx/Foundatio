@@ -17,6 +17,7 @@ The original queue, message bus and job APIs keep working alongside the new ones
 | `IJob` / `JobBase` run continuously with `services.AddJob<T>()` | Unchanged: keep `services.AddJob<T>()`. Durable jobs only run when enqueued or scheduled |
 | Queue behaviors, duplicate detection | `SendOptions.DeduplicationId` where the transport supports it (elsewhere a warning is logged); otherwise idempotent handlers |
 | `QueueEntryOptions.GroupId` | `SendOptions.GroupKey` |
+| Tests that call `job.RunAsync()` / `RunUntilEmptyAsync()` and assert queue stats between steps | `AddFoundatioTestHarness(o => o.StartPaused = true)`, then `harness.ProcessPendingAsync<T>()`; see [running work step by step](./messages#running-work-step-by-step) |
 
 ## Step by step
 
