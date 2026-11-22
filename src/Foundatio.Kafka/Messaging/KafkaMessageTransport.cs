@@ -70,6 +70,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
     /// <summary>The topics the transport does not create whose partitions a grouped send looked up, or is looking up.</summary>
     private readonly ConcurrentDictionary<string, byte> _partitionLookups = new(StringComparer.Ordinal);
+
+    /// <summary>The inboxes of subscriptions a send created, so later sends to them skip the group lookups.</summary>
+    private readonly ConcurrentDictionary<string, byte> _sentSubscriptions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<KafkaMessageReceiver, byte> _receivers = new();
     private readonly object _forwarderLock = new();
     private Task<KafkaDelayForwarder>? _forwarder;
@@ -210,7 +213,11 @@ public sealed class KafkaMessageTransport : IMessageTransport
             records.Add((topic, record));
         }
 
-        await EnsureTopicsAsync([topic]).AnyContext();
+        if (destination.Kind == MessageDestinationKind.Subscription)
+            await EnsureSubscriptionAsync(destination.Name, topic, cancellationToken).AnyContext();
+        else
+            await EnsureTopicsAsync([topic]).AnyContext();
+
         if (grouped)
             WarnIfOnePartition(topic);
 
@@ -333,6 +340,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
             _topics.TryRemove(topic, out _);
             _onePartitionTopics.TryRemove(topic, out _);
             _partitionLookups.TryRemove(topic, out _);
+            _sentSubscriptions.TryRemove(topic, out _);
         }
 
         try
@@ -632,6 +640,21 @@ public sealed class KafkaMessageTransport : IMessageTransport
             default:
                 throw new ArgumentOutOfRangeException(nameof(source), source.Kind, "Unknown source kind.");
         }
+    }
+
+    /// <summary>
+    /// Creates the subscription a send goes to, as a receiver would, so it also gets what is published to its topic
+    /// from now on, before its first receiver opens.
+    /// </summary>
+    private async Task EnsureSubscriptionAsync(string topicName, string inbox, CancellationToken cancellationToken)
+    {
+        if (_sentSubscriptions.ContainsKey(inbox))
+            return;
+
+        string topic = Names.Topic(topicName);
+        await EnsureTopicsAsync([topic, inbox]).AnyContext();
+        await InitializeSubscriptionAsync(inbox, topic, cancellationToken).AnyContext();
+        _sentSubscriptions.TryAdd(inbox, 0);
     }
 
     /// <summary>
