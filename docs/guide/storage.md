@@ -83,7 +83,7 @@ await tenantStorage.SaveFileAsync("documents/report.pdf", pdfStream);
 
 Azure Blob Storage (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs)
 
 ```csharp
 // dotnet add package Foundatio.AzureStorage

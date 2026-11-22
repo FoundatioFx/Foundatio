@@ -1,6 +1,6 @@
 # Foundatio.AzureStorage / Foundatio.AzureServiceBus
 
-Foundatio provides Azure implementations for storage, queuing, and messaging using Azure Blob Storage, Azure Storage Queues, and Azure Service Bus. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.AzureStorage) | [AzureServiceBus](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus)
+Foundatio provides Azure implementations for storage, queuing, and messaging using Azure Blob Storage, Azure Storage Queues, and Azure Service Bus. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureStorage) | [AzureServiceBus](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus)
 
 ## Overview
 
@@ -44,7 +44,7 @@ await storage.SaveFileAsync("documents/report.pdf", pdfStream);
 | `ConnectionString` | `string` | ✅ | | Azure Storage connection string |
 | `ContainerName` | `string` | | `"storage"` | Blob container name |
 
-For additional options, see [AzureFileStorageOptions source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Storage/AzureFileStorageOptions.cs).
+For additional options, see [AzureFileStorageOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureStorage/Storage/AzureFileStorageOptions.cs).
 
 ## AzureStorageQueue
 
@@ -69,7 +69,7 @@ await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 | `ConnectionString` | `string` | ✅ | | Azure Storage connection string |
 | `DequeueInterval` | `TimeSpan` | | 2s | Polling interval |
 
-For additional options, see [AzureStorageQueueOptions source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Queues/AzureStorageQueueOptions.cs).
+For additional options, see [AzureStorageQueueOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureStorage/Queues/AzureStorageQueueOptions.cs).
 
 ## AzureServiceBusQueue
 
@@ -139,7 +139,16 @@ docker compose up -d servicebus-emulator
 dotnet test --project tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj
 ```
 
-The tests read their connection string from `ConnectionStrings:AzureServiceBusConnectionString` (environment variable `ConnectionStrings__AzureServiceBusConnectionString`). Azure Storage and its tests live in the [Foundatio.AzureStorage](https://github.com/FoundatioFx/Foundatio.AzureStorage) repository.
+The tests read their connection string from `ConnectionStrings:AzureServiceBusConnectionString` (environment variable `ConnectionStrings__AzureServiceBusConnectionString`).
+
+Azure Storage lives in the same repository under `src/Foundatio.AzureStorage`, with its tests in `tests/Foundatio.AzureStorage.Tests`. They run against [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) at `localhost:10000` (blobs) and `localhost:10001` (queues):
+
+```bash
+docker compose up -d azurite
+dotnet test --project tests/Foundatio.AzureStorage.Tests/Foundatio.AzureStorage.Tests.csproj
+```
+
+The tests read their connection string from `ConnectionStrings:AzureStorageConnectionString` (environment variable `ConnectionStrings__AzureStorageConnectionString`).
 
 ## Next Steps
 

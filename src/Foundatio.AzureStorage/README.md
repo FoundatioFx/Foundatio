@@ -1,6 +1,6 @@
 ![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio-dark-bg.svg#gh-dark-mode-only "Foundatio")![Foundatio](https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.svg#gh-light-mode-only "Foundatio")
 
-[![Build status](https://github.com/FoundatioFx/Foundatio.AzureStorage/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio.AzureStorage/actions)
+[![Build status](https://github.com/FoundatioFx/Foundatio/workflows/Build/badge.svg)](https://github.com/FoundatioFx/Foundatio/actions)
 [![NuGet Version](http://img.shields.io/nuget/v/Foundatio.AzureStorage.svg?style=flat)](https://www.nuget.org/packages/Foundatio.AzureStorage/)
 [![feedz.io](https://img.shields.io/badge/endpoint.svg?url=https%3A%2F%2Ff.feedz.io%2Ffoundatio%2Ffoundatio%2Fshield%2FFoundatio.AzureStorage%2Flatest)](https://f.feedz.io/foundatio/foundatio/packages/Foundatio.AzureStorage/latest/download)
 [![Discord](https://img.shields.io/discord/715744504891703319)](https://discord.gg/6HxgFCx)
@@ -54,7 +54,7 @@ await storage.SaveFileAsync("docs/readme.txt", "Hello World");
 |----------|---------|--------|-----------|---------|-------|
 | [In-Memory](https://foundatio.dev/guide/implementations/in-memory) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Redis](https://github.com/FoundatioFx/Foundatio.Redis) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) | | ✅ | | ✅ | |
+| [Azure Storage](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureStorage) | | ✅ | | ✅ | |
 | [Azure Service Bus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) | | ✅ | ✅ | | |
 | [AWS (S3/SQS/SNS)](https://github.com/FoundatioFx/Foundatio.AWS) | | ✅ | ✅ | ✅ | |
 | [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) | | | ✅ | | |
@@ -113,8 +113,8 @@ Contributions are welcome! Please feel free to submit a Pull Request. See our [d
 
 **Development Setup:**
 
-1. Clone the repository
-2. Open `Foundatio.AzureStorage.slnx` in Visual Studio or VS Code
+1. Clone the [Foundatio repository](https://github.com/FoundatioFx/Foundatio)
+2. Open `Foundatio.slnx` in Visual Studio or VS Code
 3. Run `dotnet build` to build
 4. Run `dotnet test` to run tests
 

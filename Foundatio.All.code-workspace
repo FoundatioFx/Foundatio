@@ -10,9 +10,6 @@
 			"path": "../Foundatio.Parsers"
 		},
 		{
-			"path": "../Foundatio.AzureStorage"
-		},
-		{
 			"path": "../Foundatio.Aliyun"
 		},
 		{
