@@ -100,6 +100,10 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         {
             return await ReceiveUntilAnyAsync(maxMessages, maxWait, cancellationToken).AnyContext();
         }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw new MessageBusException($"Could not receive from {Source}: {ex.Message}", ex);
+        }
         finally
         {
             Interlocked.Decrement(ref _receiving);
@@ -340,7 +344,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
                 _transport.Logger.LogWarning("{Source} was missing from the subscriptions of topic {Topic} in Redis and is registered again: it was deleted, or Redis lost the topic's keys " +
                     "(a restart without persistence, a failover before replication, or a flush). Messages published to the topic meanwhile were not delivered to it", Source, Source.Topic);
         }
-        catch (Exception ex) when (ex is RedisException)
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
         {
             // Retried on the next receive.
             _subscriptionRegisteredAt = 0;
@@ -403,12 +407,20 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     {
         var delivery = GetDelivery(message);
         bool ordered = _keys.OrderedGroups && delivery.GroupKey is not null;
-        long result = (long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.SettleScript,
-            [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData, _keys.Retries, _keys.Idle, _keys.DeadLetterIdle],
-            [operation, RedisMessageTransport.GroupName, _consumer, delivery.EntryId, delivery.Deliveries, value, RedisMessageTransport.ReleasedConsumer,
-                RedisMessageTransport.DeadLetterReasonField, ordered ? 1 : 0, ordered ? delivery.GroupKey : String.Empty,
-                _transport.DeadLetterMaxLength, _transport.DeadLetterRetentionMilliseconds,
-                _keys.WakeChannelPrefix, _keys.DeadLetterWakeChannelPrefix, _transport.PublishCommand]).AnyContext();
+        long result;
+        try
+        {
+            result = (long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.SettleScript,
+                [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData, _keys.Retries, _keys.Idle, _keys.DeadLetterIdle],
+                [operation, RedisMessageTransport.GroupName, _consumer, delivery.EntryId, delivery.Deliveries, value, RedisMessageTransport.ReleasedConsumer,
+                    RedisMessageTransport.DeadLetterReasonField, ordered ? 1 : 0, ordered ? delivery.GroupKey : String.Empty,
+                    _transport.DeadLetterMaxLength, _transport.DeadLetterRetentionMilliseconds,
+                    _keys.WakeChannelPrefix, _keys.DeadLetterWakeChannelPrefix, _transport.PublishCommand]).AnyContext();
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw new MessageBusException($"Could not {(operation == "deadletter" ? "dead-letter" : operation)} message {delivery.MessageId} from {Source}: {ex.Message}", ex);
+        }
 
         if (result == 0)
             throw new MessageLeaseLostException($"The lease for message {message.MessageId} was lost.");
@@ -484,7 +496,11 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         catch (Exception ex)
         {
             foreach (var completion in batch)
-                completion.TrySetException(ex);
+            {
+                completion.TrySetException(RedisMessageTransport.IsRedisFailure(ex)
+                    ? new MessageBusException($"Could not complete message {completion.Delivery.MessageId} from {Source}: {ex.Message}", ex)
+                    : ex);
+            }
         }
     }
 

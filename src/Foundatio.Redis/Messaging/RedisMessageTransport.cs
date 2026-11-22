@@ -167,42 +167,49 @@ public sealed class RedisMessageTransport : IMessageTransport
         if (messages.Count == 0)
             return;
 
-        CheckEvictionPolicy();
-        var now = TimeProvider.GetUtcNow();
-        var encoded = messages.Select(m => new EncodedMessage(m, now, Options.MaxMessageSize)).ToList();
-
-        if (destination.Kind == MessageDestinationKind.Queue)
-        {
-            await EnqueueAsync(RedisSourceKeys.Queue(Options.Prefix, destination.Name), encoded, deduplicate: true, create: true, count: false).AnyContext();
-            return;
-        }
-
-        var topic = new RedisTopicKeys(Options.Prefix, destination.Name);
-        if (destination.Kind == MessageDestinationKind.Subscription)
-        {
-            string subscription = destination.SubscriptionName!;
-            var keys = RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, subscription);
-            long backlog = await EnqueueAsync(keys, encoded, deduplicate: true, create: true, count: true).AnyContext();
-            await Database.SetAddAsync(topic.Subscriptions, subscription).AnyContext();
-            await WarnIfOrphanedAsync(keys, backlog).AnyContext();
-            return;
-        }
-
-        var accepted = new List<EncodedMessage>(encoded.Count);
         try
         {
-            var subscriptions = await PublishAsync(topic, encoded, accepted).AnyContext();
-            WarnIfSubscriptionsVanished(topic.Topic, subscriptions.Count);
-            if (accepted.Count > 0 && subscriptions.Count > 0)
-                await Task.WhenAll(subscriptions.Select(s => CopyToSubscriptionAsync(RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, s), accepted))).AnyContext();
-        }
-        catch
-        {
-            var deduplicationKeys = accepted.Where(m => m.DeduplicationId is not null).Select(m => topic.DeduplicationKey(m.DeduplicationId!)).ToArray();
-            if (deduplicationKeys.Length > 0)
-                await Database.KeyDeleteAsync(deduplicationKeys, CommandFlags.FireAndForget).AnyContext();
+            CheckEvictionPolicy();
+            var now = TimeProvider.GetUtcNow();
+            var encoded = messages.Select(m => new EncodedMessage(m, now, Options.MaxMessageSize)).ToList();
 
-            throw;
+            if (destination.Kind == MessageDestinationKind.Queue)
+            {
+                await EnqueueAsync(RedisSourceKeys.Queue(Options.Prefix, destination.Name), encoded, deduplicate: true, create: true, count: false).AnyContext();
+                return;
+            }
+
+            var topic = new RedisTopicKeys(Options.Prefix, destination.Name);
+            if (destination.Kind == MessageDestinationKind.Subscription)
+            {
+                string subscription = destination.SubscriptionName!;
+                var keys = RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, subscription);
+                long backlog = await EnqueueAsync(keys, encoded, deduplicate: true, create: true, count: true).AnyContext();
+                await Database.SetAddAsync(topic.Subscriptions, subscription).AnyContext();
+                await WarnIfOrphanedAsync(keys, backlog).AnyContext();
+                return;
+            }
+
+            var accepted = new List<EncodedMessage>(encoded.Count);
+            try
+            {
+                var subscriptions = await PublishAsync(topic, encoded, accepted).AnyContext();
+                WarnIfSubscriptionsVanished(topic.Topic, subscriptions.Count);
+                if (accepted.Count > 0 && subscriptions.Count > 0)
+                    await Task.WhenAll(subscriptions.Select(s => CopyToSubscriptionAsync(RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, s), accepted))).AnyContext();
+            }
+            catch
+            {
+                var deduplicationKeys = accepted.Where(m => m.DeduplicationId is not null).Select(m => topic.DeduplicationKey(m.DeduplicationId!)).ToArray();
+                if (deduplicationKeys.Length > 0)
+                    await Database.KeyDeleteAsync(deduplicationKeys, CommandFlags.FireAndForget).AnyContext();
+
+                throw;
+            }
+        }
+        catch (Exception ex) when (IsRedisFailure(ex))
+        {
+            throw new MessageBusException($"Could not send to {destination}: {ex.Message}", ex);
         }
     }
 
@@ -216,30 +223,37 @@ public sealed class RedisMessageTransport : IMessageTransport
         cancellationToken.ThrowIfCancellationRequested();
         CheckEvictionPolicy();
 
-        RedisMessageReceiver receiver;
-        if (source.Kind == MessageSourceKind.InstanceSubscription)
+        try
         {
-            var topic = new RedisTopicKeys(Options.Prefix, source.Topic!);
-            string instance = RedisTransportNames.NewInstanceName(source.Name);
-            var keys = RedisSourceKeys.Instance(Options.Prefix, topic.Topic, instance);
-            await HeartbeatAsync(topic, instance, keys).AnyContext();
-            await SweepInstancesAsync(topic).AnyContext();
-            receiver = new RedisMessageReceiver(this, source, keys, options, new RedisInstanceSubscription(topic, instance));
+            RedisMessageReceiver receiver;
+            if (source.Kind == MessageSourceKind.InstanceSubscription)
+            {
+                var topic = new RedisTopicKeys(Options.Prefix, source.Topic!);
+                string instance = RedisTransportNames.NewInstanceName(source.Name);
+                var keys = RedisSourceKeys.Instance(Options.Prefix, topic.Topic, instance);
+                await HeartbeatAsync(topic, instance, keys).AnyContext();
+                await SweepInstancesAsync(topic).AnyContext();
+                receiver = new RedisMessageReceiver(this, source, keys, options, new RedisInstanceSubscription(topic, instance));
+            }
+            else
+            {
+                var keys = GetKeys(source);
+                await CreateGroupAsync(keys).AnyContext();
+                if (source.Kind == MessageSourceKind.Subscription)
+                    await Database.SetAddAsync(new RedisTopicKeys(Options.Prefix, source.Topic!).Subscriptions, source.Name).AnyContext();
+
+                await Database.ScriptEvaluateAsync(PruneScript, [keys.Stream, keys.Idle], [GroupName, ReleasedConsumer, (long)ConsumerPruneIdleTime.TotalMilliseconds]).AnyContext();
+                receiver = new RedisMessageReceiver(this, source, keys, options, null);
+            }
+
+            _receivers.TryAdd(receiver, 0);
+            await receiver.StartAsync().AnyContext();
+            return receiver;
         }
-        else
+        catch (Exception ex) when (IsRedisFailure(ex))
         {
-            var keys = GetKeys(source);
-            await CreateGroupAsync(keys).AnyContext();
-            if (source.Kind == MessageSourceKind.Subscription)
-                await Database.SetAddAsync(new RedisTopicKeys(Options.Prefix, source.Topic!).Subscriptions, source.Name).AnyContext();
-
-            await Database.ScriptEvaluateAsync(PruneScript, [keys.Stream, keys.Idle], [GroupName, ReleasedConsumer, (long)ConsumerPruneIdleTime.TotalMilliseconds]).AnyContext();
-            receiver = new RedisMessageReceiver(this, source, keys, options, null);
+            throw new MessageBusException($"Could not open a receiver for {source}: {ex.Message}", ex);
         }
-
-        _receivers.TryAdd(receiver, 0);
-        await receiver.StartAsync().AnyContext();
-        return receiver;
     }
 
     /// <summary>
@@ -262,11 +276,18 @@ public sealed class RedisMessageTransport : IMessageTransport
         if (source.Kind == MessageSourceKind.InstanceSubscription)
             return null;
 
-        var keys = GetKeys(source);
-        var counts = (long[])(await Database.ScriptEvaluateAsync(StatsScript, [keys.Stream, keys.Leases, keys.Retries, keys.Delayed, keys.Held, keys.DeadLetterStream],
-            [GroupName, DeadLetterMaxLength, DeadLetterRetentionMilliseconds]).AnyContext())!;
+        try
+        {
+            var keys = GetKeys(source);
+            var counts = (long[])(await Database.ScriptEvaluateAsync(StatsScript, [keys.Stream, keys.Leases, keys.Retries, keys.Delayed, keys.Held, keys.DeadLetterStream],
+                [GroupName, DeadLetterMaxLength, DeadLetterRetentionMilliseconds]).AnyContext())!;
 
-        return new MessageSourceStats { Source = source, Queued = counts[0], Delayed = counts[1], InFlight = counts[2], DeadLettered = counts[3] };
+            return new MessageSourceStats { Source = source, Queued = counts[0], Delayed = counts[1], InFlight = counts[2], DeadLettered = counts[3] };
+        }
+        catch (Exception ex) when (IsRedisFailure(ex))
+        {
+            throw new MessageBusException($"Could not read the counts of {source}: {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -286,15 +307,22 @@ public sealed class RedisMessageTransport : IMessageTransport
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
-        var keys = GetKeys(source);
-        if (source.Kind == MessageSourceKind.Subscription)
+        try
         {
-            await Database.SetRemoveAsync(new RedisTopicKeys(Options.Prefix, source.Topic!).Subscriptions, source.Name).AnyContext();
-            _topicsWithSubscriptions.TryRemove(source.Topic!, out _);
-        }
+            var keys = GetKeys(source);
+            if (source.Kind == MessageSourceKind.Subscription)
+            {
+                await Database.SetRemoveAsync(new RedisTopicKeys(Options.Prefix, source.Topic!).Subscriptions, source.Name).AnyContext();
+                _topicsWithSubscriptions.TryRemove(source.Topic!, out _);
+            }
 
-        RedisKey[] deleted = source.Kind == MessageSourceKind.DeadLetter ? keys.All : [.. keys.All, .. keys.DeadLetter.All];
-        await Database.ScriptEvaluateAsync(DeleteScript, deleted).AnyContext();
+            RedisKey[] deleted = source.Kind == MessageSourceKind.DeadLetter ? keys.All : [.. keys.All, .. keys.DeadLetter.All];
+            await Database.ScriptEvaluateAsync(DeleteScript, deleted).AnyContext();
+        }
+        catch (Exception ex) when (IsRedisFailure(ex))
+        {
+            throw new MessageBusException($"Could not delete {source}: {ex.Message}", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -306,6 +334,9 @@ public sealed class RedisMessageTransport : IMessageTransport
         foreach (var receiver in _receivers.Keys)
             await receiver.DisposeAsync().AnyContext();
     }
+
+    /// <summary>The errors StackExchange.Redis reports a failed command with, which the transport throws as <see cref="MessageBusException"/>.</summary>
+    internal static bool IsRedisFailure(Exception ex) => ex is RedisException or RedisTimeoutException or RedisCommandException;
 
     internal void Untrack(RedisMessageReceiver receiver) => _receivers.TryRemove(receiver, out _);
 

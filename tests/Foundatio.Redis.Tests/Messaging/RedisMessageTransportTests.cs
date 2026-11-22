@@ -46,6 +46,54 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Operations_WhenRedisIsUnreachable_ThrowMessageBusException()
+    {
+        var configuration = ConfigurationOptions.Parse("127.0.0.1:1,abortConnect=false,connectTimeout=200,connectRetry=0");
+        configuration.BacklogPolicy = BacklogPolicy.FailFast;
+        await using var unreachable = await ConnectionMultiplexer.ConnectAsync(configuration);
+        await using var transport = new RedisMessageTransport(unreachable, new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log });
+        string name = NewName("unreachable");
+
+        var send = await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(() => transport.SendAsync(MessageDestination.Queue(name), [Message("lost")], TestCancellationToken));
+        Assert.IsAssignableFrom<RedisException>(send.InnerException);
+        Assert.Contains(name, send.Message);
+        await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(() => transport.SendAsync(MessageDestination.Topic(name), [Message("lost")], TestCancellationToken));
+        await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(() => transport.CreateReceiverAsync(MessageSource.Queue(name), new ReceiverOptions(), TestCancellationToken));
+        await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(() => transport.CreateReceiverAsync(MessageSource.InstanceSubscription(name, "live"), new ReceiverOptions(), TestCancellationToken));
+        await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(() => transport.GetStatsAsync(MessageSource.Queue(name), TestCancellationToken));
+        await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(() => transport.DeleteAsync(MessageSource.Subscription(name, "billing"), TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task ReceiverOperations_WhenRedisFails_ThrowMessageBusException()
+    {
+        var source = MessageSource.Queue(NewName("receiver-faults"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("a"), Message("b"), Message("c"), Message("d")], TestCancellationToken);
+        var messages = await ReceiveAsync(receiver, 4);
+
+        // The source's leases turned into another type of key: every script on the source fails with a Redis server error.
+        var database = GetMuxer().GetDatabase();
+        string leases = $"{KeyPrefix}:{{q:{source.Name}}}:leases";
+        await database.KeyDeleteAsync(leases);
+        await database.StringSetAsync(leases, "not a sorted set");
+
+        await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(() => receiver.ReceiveAsync(1, TimeSpan.Zero, TestCancellationToken));
+        await AssertRedisFailureAsync(() => receiver.CompleteAsync(messages[0], TestCancellationToken));
+        await AssertRedisFailureAsync(() => receiver.AbandonAsync(messages[1], TimeSpan.Zero, TestCancellationToken));
+        await AssertRedisFailureAsync(() => receiver.DeadLetterAsync(messages[2], "poison", TestCancellationToken));
+        await AssertRedisFailureAsync(() => receiver.RenewAsync(messages[3], TestCancellationToken));
+        await database.KeyDeleteAsync(leases);
+
+        static async Task AssertRedisFailureAsync(Func<Task> settle)
+        {
+            var exception = await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(settle);
+            Assert.IsNotType<MessageLeaseLostException>(exception);
+            Assert.IsAssignableFrom<RedisException>(exception.InnerException);
+        }
+    }
+
+    [Fact]
     public async Task InstanceSubscription_SweptWhileItsReceiverRuns_IsRestoredWithAWarning()
     {
         string topic = NewName("swept");
