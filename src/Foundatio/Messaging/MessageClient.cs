@@ -44,14 +44,8 @@ internal sealed class MessageClient : IMessageClient
         return SendCoreAsync(MessageDestinationKind.Queue, [message], [id], null, options, options?.Queue, isBatch: false, id, cancellationToken);
     }
 
-    public Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
-        => SendBatchCoreAsync(MessageDestinationKind.Queue, messages, null, options, options?.Queue, cancellationToken);
-
-    public Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, Func<T, MessageKeys> keys, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
-    {
-        ArgumentNullException.ThrowIfNull(keys);
-        return SendBatchCoreAsync(MessageDestinationKind.Queue, messages, keys, options, options?.Queue, cancellationToken);
-    }
+    public Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, Func<T, MessageKeys>? keys, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
+        => SendBatchCoreAsync(MessageDestinationKind.Queue, messages, keys, options, options?.Queue, cancellationToken);
 
     public Task<string> PublishAsync<T>(T message, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
@@ -60,14 +54,8 @@ internal sealed class MessageClient : IMessageClient
         return SendCoreAsync(MessageDestinationKind.Topic, [message], [id], null, options, options?.Topic, isBatch: false, id, cancellationToken);
     }
 
-    public Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
-        => SendBatchCoreAsync(MessageDestinationKind.Topic, messages, null, options, options?.Topic, cancellationToken);
-
-    public Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, Func<T, MessageKeys> keys, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
-    {
-        ArgumentNullException.ThrowIfNull(keys);
-        return SendBatchCoreAsync(MessageDestinationKind.Topic, messages, keys, options, options?.Topic, cancellationToken);
-    }
+    public Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, Func<T, MessageKeys>? keys, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
+        => SendBatchCoreAsync(MessageDestinationKind.Topic, messages, keys, options, options?.Topic, cancellationToken);
 
     public async Task<IAsyncDisposable> SubscribeAsync<T>(Func<T, IMessageContext, CancellationToken, Task> handler, SubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
