@@ -960,6 +960,76 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.True(transport.ReceiveCalls < count / 4, $"{transport.ReceiveCalls} receives for {count} messages.");
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public async Task Receive_WithOneOutstandingMessagePerGroup_ReadsAheadInFullBatchesAndKeepsGroupOrder(int maxConcurrency)
+    {
+        const int groups = 40, perGroup = 10;
+        var capabilities = ReceiveAheadCapabilities() with { OneOutstandingPerGroup = true };
+        await using var inner = new InMemoryMessageTransport(capabilities);
+        var asks = new ConcurrentQueue<int>();
+        var transport = new InterceptingMessageTransport(inner)
+        {
+            ReceiveDelay = TimeSpan.FromMilliseconds(2),
+            OnReceive = (_, maxMessages, _) => asks.Enqueue(maxMessages)
+        };
+
+        await using (var producer = await StartAsync(inner, _ => { }))
+        {
+            for (int i = 0; i < perGroup; i++)
+            {
+                foreach (int group in Enumerable.Range(0, groups))
+                    await producer.Client.SendAsync(new GroupedCommand(group * 100 + i), new SendOptions { GroupKey = $"g{group}" }, TestCancellationToken);
+            }
+        }
+
+        int running = 0, maxRunning = 0;
+        var handled = new ConcurrentDictionary<int, ConcurrentQueue<int>>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<GroupedCommand>(async (message, _, _) =>
+        {
+            InterlockedMax(ref maxRunning, Interlocked.Increment(ref running));
+            await Task.Yield();
+            Interlocked.Decrement(ref running);
+            handled.GetOrAdd(message.Id / 100, _ => new()).Enqueue(message.Id % 100);
+        }, new HandlerOptions { MaxConcurrency = maxConcurrency }));
+
+        Assert.True(await inner.WaitUntilIdleAsync(TimeSpan.FromSeconds(30), TestCancellationToken));
+        Assert.Equal(groups, handled.Count);
+        Assert.All(handled.Values, order => Assert.Equal(Enumerable.Range(0, perGroup), order));
+        Assert.True(Volatile.Read(ref maxRunning) <= maxConcurrency);
+
+        // No receive can return two messages of a group, so batches need not fit in the handler slots.
+        Assert.Contains(10, asks);
+    }
+
+    [Fact]
+    public async Task Receive_WhenATransportBreaksOneOutstandingPerGroup_ReleasesWhatDoesNotFitAndKeepsGroupOrder()
+    {
+        // The in-memory transport returns a group's next messages in the same batch, which the declared capability rules out.
+        var transport = new InterceptingMessageTransport(_transport, ReceiveAheadCapabilities() with { OneOutstandingPerGroup = true })
+        {
+            ReceiveDelay = TimeSpan.FromMilliseconds(2)
+        };
+
+        // Ungrouped messages first, so the processor has measured what it needs to read ahead when it reaches the group.
+        await PrefillAsync(Enumerable.Range(1, 30).Select(i => new GroupedCommand(-i)));
+        await PrefillAsync(Enumerable.Range(1, 5).Select(i => new GroupedCommand(i)), new SendOptions { GroupKey = "g" });
+
+        var handled = new ConcurrentQueue<int>();
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<GroupedCommand>((message, _, _) =>
+        {
+            if (message.Id > 0)
+                handled.Enqueue(message.Id);
+
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 1 }));
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(30), TestCancellationToken));
+        Assert.Equal([1, 2, 3, 4, 5], handled);
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Error && e.Message.Contains("OneOutstandingPerGroup", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Receive_WhenAReceiveReturnsLessThanItAsked_ParksTheOtherReceives()
     {

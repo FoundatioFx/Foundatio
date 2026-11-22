@@ -273,6 +273,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     {
         IsDeadLetter = isDeadLetter,
         OrderedGroups = Capabilities.OrderedGroups,
+        OneOutstandingPerGroup = Capabilities.OneOutstandingPerGroup,
         LeaseExpiration = Capabilities.LeaseExpiration
     };
 
@@ -542,6 +543,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         public string Key { get; }
         public bool IsDeadLetter { get; init; }
         public bool OrderedGroups { get; init; }
+        public bool OneOutstandingPerGroup { get; init; }
         public bool LeaseExpiration { get; init; }
         public bool IsDeleted => _deleted;
 
@@ -657,8 +659,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                         DeliveryCount = entry.DeliveryCount
                     });
 
-                    // Once a group's message is handed out, its next one may follow in the same batch.
-                    if (entry.GroupNode?.Next?.Value is { Index: EntryIndex.None } next && IsAvailable(next, now))
+                    // Once a group's message is handed out, its next one may follow in the same batch, unless a group
+                    // has one message out at a time.
+                    if (!OneOutstandingPerGroup && entry.GroupNode?.Next?.Value is { Index: EntryIndex.None } next && IsAvailable(next, now))
                     {
                         next.Seen = true;
                         AddTo(_ready, next, EntryIndex.Ready);

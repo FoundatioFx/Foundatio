@@ -167,6 +167,19 @@ public sealed record TransportCapabilities
     public bool OrderedGroups { get; init; }
 
     /// <summary>
+    /// True, with <see cref="OrderedGroups"/>, when the broker hands out at most one message of a group at a time: a
+    /// group's next message is received only once the one before it is settled, so no receive returns two messages of
+    /// one group (Redis). With <see cref="ReceiveAhead"/>, Foundatio then reads ahead in full batches even with fewer
+    /// handlers than a batch; otherwise it keeps a batch within the handler slots, so that every message of a group a
+    /// batch may hold has one. Defaults to false.
+    /// </summary>
+    /// <remarks>
+    /// Foundatio handles a message of a group that a receive returns after another of that group, beyond what the
+    /// handler slots can hold, as a broken promise: it logs an error and abandons it, to be delivered again in order.
+    /// </remarks>
+    public bool OneOutstandingPerGroup { get; init; }
+
+    /// <summary>
     /// True when the broker drops messages whose <see cref="OutgoingMessage.DeduplicationId"/> was already sent to the
     /// same destination, from any process, within its deduplication window.
     /// </summary>

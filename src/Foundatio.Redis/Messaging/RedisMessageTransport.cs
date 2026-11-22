@@ -110,6 +110,7 @@ public sealed class RedisMessageTransport : IMessageTransport
             MaxLeaseDuration = null,
             LeaseExpiration = true,
             OrderedGroups = true,
+            OneOutstandingPerGroup = true,
             Deduplication = true
         };
     }

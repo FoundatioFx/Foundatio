@@ -109,9 +109,9 @@ internal sealed class MessageProcessor : IAsyncDisposable
         else if (capabilities.ReceiveAhead)
         {
             // With ordered groups, batches no larger than the slots, so a batch's group always fits in them; without
-            // them every message is its own sequence, so full batches. And one receive more than it takes to fill the
-            // slots, to read ahead.
-            _aheadBatch = capabilities.OrderedGroups ? Math.Min(_maxBatch, settings.MaxConcurrency) : _maxBatch;
+            // them, or with one message of a group out at a time, every message is its own sequence, so full batches.
+            // And one receive more than it takes to fill the slots, to read ahead.
+            _aheadBatch = capabilities.OrderedGroups && !capabilities.OneOutstandingPerGroup ? Math.Min(_maxBatch, settings.MaxConcurrency) : _maxBatch;
             _aheadReceives = (int)Math.Max(1, Math.Min(capabilities.MaxConcurrentReceives, receivesToFill + 1L));
             _ahead = new ReceiveAhead(settings.MaxConcurrency, _aheadBatch, _aheadReceives, lease, timeProvider.TimestampFrequency);
         }
@@ -600,12 +600,16 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private void Buffer(MessageDelivery[] deliveries, long bytes, int requested, bool partial)
     {
         var sequences = SplitIntoSequences(deliveries);
+        int count = deliveries.Length;
+        if (_aheadBatch > _settings.MaxConcurrency)
+            count -= ReleaseBeyondSlots(sequences, ref bytes);
+
         lock (_bufferLock)
         {
             foreach (var sequence in sequences)
                 _buffer.Enqueue(sequence);
 
-            _buffered += deliveries.Length;
+            _buffered += count;
             _bufferedBytes += bytes;
             _requested -= requested;
             if (partial)
@@ -693,10 +697,37 @@ internal sealed class MessageProcessor : IAsyncDisposable
     }
 
     /// <summary>
+    /// A sequence must fit in the handler slots to start. With batches larger than the slots, which a transport that
+    /// hands out one message of a group at a time allows, a longer sequence means it broke that promise: its messages
+    /// beyond the slots are abandoned, without running their handlers, to be delivered again in order. Returns how many.
+    /// </summary>
+    private int ReleaseBeyondSlots(List<List<MessageDelivery>> sequences, ref long bytes)
+    {
+        int slots = _settings.MaxConcurrency, released = 0;
+        foreach (var sequence in sequences)
+        {
+            if (sequence.Count <= slots)
+                continue;
+
+            var beyond = sequence.GetRange(slots, sequence.Count - slots);
+            sequence.RemoveRange(slots, beyond.Count);
+            foreach (var delivery in beyond)
+                bytes -= delivery.Message.Body.Length;
+
+            _logger.LogError("A receive from {Source} returned {Count} messages of group {GroupKey}, though the transport declares OneOutstandingPerGroup; " +
+                "releasing those beyond the {Slots} handler slots to be delivered again", Source, sequence.Count + beyond.Count, sequence[0].Message.GroupKey, slots);
+            released += beyond.Count;
+            _ = ReleaseUnstartedAsync(beyond, BufferReleasing, "held");
+        }
+
+        return released;
+    }
+
+    /// <summary>
     /// Releases a buffered sequence whose handlers never ran. At shutdown it is abandoned, which delivers it again; when
     /// its receiver is being replaced it is marked lost instead, and disposing the receiver releases it.
     /// </summary>
-    private async Task ReleaseUnstartedAsync(List<MessageDelivery> sequence, int mode)
+    private async Task ReleaseUnstartedAsync(List<MessageDelivery> sequence, int mode, string outcome = "cancelled")
     {
         foreach (var delivery in sequence)
         {
@@ -711,7 +742,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 else
                 {
                     await delivery.SettleAsync(static (receiver, message, ct) => receiver.AbandonAsync(message, TimeSpan.Zero, ct), "abandon", _logger).AnyContext();
-                    _handler.OnReleased(delivery, "cancelled");
+                    _handler.OnReleased(delivery, outcome);
                 }
             }
             catch (Exception ex)
