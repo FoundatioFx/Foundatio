@@ -48,10 +48,14 @@ internal static class HandlerRegistrationValidator
         => handler is { Kind: MessageHandlerKind.Subscriber, Scope: SubscriptionScope.Service, SubscriptionName: null };
 
     /// <summary>The first setting the two option sets give different values, compared as written: unset differs from any value.</summary>
-    private static (string Setting, string First, string Other)? FindDifference(HandlerOptions first, HandlerOptions other)
+    private static (string Setting, string First, string? Other)? FindDifference(HandlerOptions first, HandlerOptions other)
     {
         if (!Equals(first.RetryPolicy, other.RetryPolicy))
-            return (nameof(HandlerOptions.RetryPolicy), Describe(first.RetryPolicy, other.RetryPolicy), Describe(other.RetryPolicy, first.RetryPolicy));
+        {
+            return first.RetryPolicy is { } a && other.RetryPolicy is { } b && a.MaxAttempts == b.MaxAttempts
+                ? (nameof(HandlerOptions.RetryPolicy), $"two policies with MaxAttempts {a.MaxAttempts} but different {(Equals(a.Delay, b.Delay) ? "ShouldRetry" : "Delay")} delegates; share one RetryPolicy instance, or build both with RetryPolicy.Exponential, Fixed and DoNotRetry, which return the same delegate for the same arguments", null)
+                : (nameof(HandlerOptions.RetryPolicy), Describe(first.RetryPolicy), Describe(other.RetryPolicy));
+        }
         if (first.LeaseDuration != other.LeaseDuration)
             return (nameof(HandlerOptions.LeaseDuration), Describe(first.LeaseDuration), Describe(other.LeaseDuration));
         if (first.MaxConcurrency != other.MaxConcurrency)
@@ -60,7 +64,7 @@ internal static class HandlerRegistrationValidator
         return null;
     }
 
-    private static string DescribeConflict(MessageSource source, MessageHandlerRegistration first, MessageHandlerRegistration other, (string Setting, string First, string Other) difference)
+    private static string DescribeConflict(MessageSource source, MessageHandlerRegistration first, MessageHandlerRegistration other, (string Setting, string First, string? Other) difference)
     {
         string handlers = first.HandlerName == other.HandlerName ? $"Two {first.HandlerName} handlers" : $"{first.HandlerName} and {other.HandlerName}";
         string kind = source.Kind == MessageSourceKind.Queue ? "a queue" : "a subscription";
@@ -71,7 +75,8 @@ internal static class HandlerRegistrationValidator
             _ => "Give them the same settings, or give one its own SubscriptionOptions.Name so it gets a subscription of its own."
         };
 
-        return $"{handlers} share {source} but set different {difference.Setting} values ({difference.First} and {difference.Other}). " +
+        string values = difference.Other is null ? difference.First : $"{difference.First} and {difference.Other}";
+        return $"{handlers} share {source} but set different {difference.Setting} values ({values}). " +
             $"Handlers that share {kind} share each delivery: one RetryPolicy, LeaseDuration and MaxConcurrency apply to all of them, " +
             $"and when one throws, all of them run again. {fix}";
     }
@@ -80,13 +85,5 @@ internal static class HandlerRegistrationValidator
 
     private static string Describe(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "not set";
 
-    private static string Describe(RetryPolicy? policy, RetryPolicy? other)
-    {
-        if (policy is null)
-            return "not set";
-
-        return other is not null && other.MaxAttempts == policy.MaxAttempts
-            ? $"a separate policy with MaxAttempts {policy.MaxAttempts}; share one instance"
-            : $"MaxAttempts {policy.MaxAttempts}";
-    }
+    private static string Describe(RetryPolicy? policy) => policy is null ? "not set" : $"MaxAttempts {policy.MaxAttempts}";
 }

@@ -756,6 +756,62 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task EnqueueAsync_WithEnqueueOptionsInsteadOfArguments_ThrowsNamingTheCallToMake()
+    {
+        await using var host = await StartAsync(j => j.AddJob<TickJob>());
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new EnqueueOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken: TestCancellationToken));
+
+        Assert.Contains("EnqueueOptions is options, not job arguments", error.Message);
+        Assert.Contains("EnqueueAsync<TJob>()", error.Message);
+        Assert.Equal(0, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfAJobThisWorkerDoesNotRun_WarnsOncePerJob()
+    {
+        await using var host = await StartAsync(j => j.AddJob<TickJob>().AddCronJob("0 * * * *", new ResizeImage("nightly.png", 1)));
+
+        await host.Jobs.EnqueueAsync(new ResizeImage("a.png", 1), cancellationToken: TestCancellationToken);
+        await host.Jobs.EnqueueAsync(new ResizeImage("b.png", 1), cancellationToken: TestCancellationToken);
+        await host.Jobs.EnqueueAsync<TickJob>(cancellationToken: TestCancellationToken);
+
+        var warnings = Log.LogEntries.Where(e => e.LogLevel == LogLevel.Warning).Select(e => e.Message).ToList();
+        Assert.Single(warnings, w => w.StartsWith($"Enqueued job {JobNaming.GetName(typeof(ResizeImage))}, which no job registered in this process runs"));
+        Assert.Single(warnings, w => w.StartsWith($"CRON schedule {JobNaming.GetName(typeof(ResizeImage))} enqueues job"));
+        Assert.Equal(2, warnings.Count);
+    }
+
+    [Fact]
+    public async Task AddJob_AfterAddCronJobRegisteredTheJob_AppliesItsOptions()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<SlowTickJob>("0 0 1 1 *").AddJob<SlowTickJob>(new JobTypeOptions { MaxConcurrency = 1 }));
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 3; i++)
+            handles.Add(await host.Jobs.EnqueueAsync<SlowTickJob>(cancellationToken: TestCancellationToken));
+        foreach (var handle in handles)
+            await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(1, _probe.PeakConcurrency);
+    }
+
+    [Fact]
+    public void AddJob_WithDifferentOptionsForOneJob_ThrowsNamingBoth()
+    {
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j
+            .AddCronJob<TickJob>("0 * * * *", new CronJobOptions { JobTypeOptions = new JobTypeOptions { MaxConcurrency = 2 } })
+            .AddJob<TickJob>(new JobTypeOptions { MaxConcurrency = 1 })));
+        services.AddFoundatioJobs(j => j.AddJob<SlowJob>(new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 2 } }).AddJob<SlowJob>(new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 2 } }).AddJob<SlowJob>());
+        var arguments = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob("0 * * * *", new Slow(), new CronJobOptions { JobTypeOptions = new JobTypeOptions { MaxConcurrency = 1 } })));
+
+        Assert.Contains("TickJob is already registered with different JobTypeOptions (MaxConcurrency 2, RetryPolicy not set, then MaxConcurrency 1, RetryPolicy not set)", error.Message);
+        Assert.Contains("AddJob<TJob>(options) in the process that runs it", arguments.Message);
+    }
+
+    [Fact]
     public async Task ServicesConfigure_OfJobWorkerOptions_IsApplied()
     {
         await using var host = await StartAsync(j => j.AddJob<FlakyJob>(), s => s.Configure<JobWorkerOptions>(o => o.DefaultRetryPolicy = RetryPolicy.None));
@@ -1123,6 +1179,16 @@ public class DurableJobsTests : TestWithLoggingBase
     public sealed class SlowJob(JobProbe probe) : IJobHandler<Slow>
     {
         public async Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            await Task.Delay(100, cancellationToken);
+        }
+    }
+
+    [Job(Name = "slow-tick")]
+    public sealed class SlowTickJob(JobProbe probe) : IJobHandler
+    {
+        public async Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
         {
             using var _ = probe.Enter();
             await Task.Delay(100, cancellationToken);

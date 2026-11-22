@@ -888,6 +888,45 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddSubscriber_HandlersSharingPoliciesBuiltTheSameWay_Start()
+    {
+        await using var host = await StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>(new SubscriptionOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3 } })
+            .AddSubscriber<CrmSyncHandler>(new SubscriptionOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3 } })
+            .AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { RetryPolicy = new RetryPolicy { Delay = RetryPolicy.Fixed(TimeSpan.FromSeconds(1)) }.DoNotRetry<ArgumentException>() })
+            .AddSubscriber<OrderCancelled>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { RetryPolicy = new RetryPolicy { Delay = RetryPolicy.Fixed(TimeSpan.FromSeconds(1)) }.DoNotRetry<ArgumentException>() }),
+            s => s.AddSingleton(new HandlerCalls()));
+
+        Assert.Equal(3, host.Services.GetRequiredService<MessagingStatus>().GetProcessors().Count);
+        Assert.Equal(RetryPolicy.Default, new RetryPolicy());
+        Assert.Equal(RetryPolicy.Exponential(TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(1)), RetryPolicy.Exponential(TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
+    public async Task AddSubscriber_HandlersSharingPoliciesWithDifferentDelegates_FailsAtStartupSayingSoOnce()
+    {
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>(new SubscriptionOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = _ => TimeSpan.FromSeconds(1) } })
+            .AddSubscriber<CrmSyncHandler>(new SubscriptionOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = _ => TimeSpan.FromSeconds(2) } }),
+            s => s.AddSingleton(new HandlerCalls())));
+
+        Assert.Contains("two policies with MaxAttempts 3 but different Delay delegates; share one RetryPolicy instance", error.Message);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(error.Message, "MaxAttempts 3"));
+    }
+
+    [Fact]
+    public void AddConsumer_WithSubscriptionOptionsThatNameASubscription_Throws()
+    {
+        var services = new ServiceCollection();
+
+        var named = Assert.Throws<ArgumentException>(() => services.AddFoundatioMessaging(m => m.AddConsumer<PlaceOrderHandler>(new SubscriptionOptions { Name = "orders-own" })));
+        Assert.Throws<ArgumentException>(() => services.AddFoundatioMessaging(m => m.AddConsumer<PlaceOrder>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Scope = SubscriptionScope.Instance })));
+        services.AddFoundatioMessaging(m => m.AddConsumer<ShipOrder>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { MaxConcurrency = 2 }));
+
+        Assert.Contains("[Message(Queue = ...)] or MapMessage", named.Message);
+    }
+
+    [Fact]
     public async Task ServicesConfigure_OfMessagingOptions_IsAppliedInOrderWithTheBuilder()
     {
         await using var host = await StartAsync(m => m.AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask).Services.Configure<MessagingOptions>(o => o.ServiceName = "billing"),

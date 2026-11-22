@@ -20,6 +20,10 @@ public sealed record CronJobOptions
     /// <summary>When false (the default), an occurrence is skipped while the previous one is still queued or running.</summary>
     public bool AllowConcurrent { get; init; }
 
-    /// <summary>Settings for the job type, applied when this registers it.</summary>
+    /// <summary>
+    /// Settings for the job type, applied by <c>AddCronJob&lt;TJob&gt;(cronExpression, options)</c>, which registers the
+    /// job, as if passed to <c>AddJob&lt;TJob&gt;(options)</c>. A schedule of job arguments does not register the job, so it
+    /// throws when this is set.
+    /// </summary>
     public JobTypeOptions? JobTypeOptions { get; init; }
 }

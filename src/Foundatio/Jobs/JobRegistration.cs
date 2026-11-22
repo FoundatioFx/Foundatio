@@ -15,10 +15,13 @@ internal sealed class JobRegistration
     public Type? ArgumentsType { get; init; }
     public required JobTypeOptions Options { get; init; }
 
+    /// <summary>Whether <see cref="Options"/> were given when the job was registered, rather than defaulted.</summary>
+    public bool HasOptions { get; init; }
+
     /// <summary>Runs the job with its deserialized arguments (null for a job without arguments). Throws when the run fails.</summary>
     public required Func<IServiceProvider, object?, IJobContext, CancellationToken, Task> Invoke { get; init; }
 
-    public static IReadOnlyList<JobRegistration> For(Type jobType, JobTypeOptions options)
+    public static IReadOnlyList<JobRegistration> For(Type jobType, JobTypeOptions options, bool hasOptions = false)
     {
         if (jobType.IsAbstract || jobType.IsInterface)
             throw new ArgumentException($"{jobType.FullName} must be a concrete class.", nameof(jobType));
@@ -30,6 +33,7 @@ internal sealed class JobRegistration
                 JobType = jobType,
                 ArgumentsType = argumentsType,
                 Options = options,
+                HasOptions = hasOptions,
                 Invoke = (Func<IServiceProvider, object?, IJobContext, CancellationToken, Task>)typeof(JobRegistration)
                     .GetMethod(nameof(CreateInvoker), BindingFlags.NonPublic | BindingFlags.Static)!
                     .MakeGenericMethod(jobType, argumentsType)
@@ -52,6 +56,7 @@ internal sealed class JobRegistration
                 Name = JobNaming.GetName(jobType),
                 JobType = jobType,
                 Options = options,
+                HasOptions = hasOptions,
                 Invoke = (services, _, context, cancellationToken) =>
                     ((IJobHandler)ActivatorUtilities.GetServiceOrCreateInstance(services, jobType)).HandleAsync(context, cancellationToken)
             });
@@ -70,6 +75,14 @@ internal sealed class JobRegistration
         return registrations;
     }
 
+    /// <summary>Describes job type options for an error message.</summary>
+    public static string Describe(JobTypeOptions options)
+    {
+        string concurrency = options.MaxConcurrency is { } max ? $"MaxConcurrency {max}" : "MaxConcurrency not set";
+        string retries = options.RetryPolicy is { } policy ? $"RetryPolicy with MaxAttempts {policy.MaxAttempts}" : "RetryPolicy not set";
+        return $"{concurrency}, {retries}";
+    }
+
     /// <summary>The arguments types of the <see cref="IJobHandler{TArgs}"/> interfaces <paramref name="jobType"/> implements.</summary>
     public static IEnumerable<Type> GetArgumentsTypes(Type jobType)
     {
@@ -85,6 +98,12 @@ internal sealed class JobRegistration
     public static void ThrowIfJob(object arguments, Func<string, string> argumentFreeCall, string paramName)
     {
         var type = arguments.GetType();
+        if (arguments is EnqueueOptions or JobTypeOptions or CronJobOptions)
+        {
+            throw new ArgumentException($"{type.Name} is options, not job arguments. For a job without arguments, call {argumentFreeCall("TJob")} with the job class as TJob, "
+                + "passing the options; for a job with arguments, pass the arguments first.", paramName);
+        }
+
         if (arguments is IJobHandler)
             throw new ArgumentException($"{type.Name} is a job, not job arguments. Call {argumentFreeCall(type.Name)} instead.", paramName);
 

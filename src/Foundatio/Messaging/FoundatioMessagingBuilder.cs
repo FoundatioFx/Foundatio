@@ -120,15 +120,17 @@ public sealed class FoundatioMessagingBuilder
     /// Consumers of message types routed to the same queue share its deliveries, so they must set the same
     /// <see cref="HandlerOptions"/>, or the host fails to start.
     /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
     public FoundatioMessagingBuilder AddConsumer<THandler>(HandlerOptions? options = null) where THandler : class
     {
-        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, Validate(options ?? new HandlerOptions())).ToList());
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, ValidateConsumer(options)).ToList());
     }
 
     /// <summary>Handles messages sent with <see cref="IMessageClient.SendAsync{T}"/> using a delegate.</summary>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
     public FoundatioMessagingBuilder AddConsumer<T>(Func<T, IMessageContext, CancellationToken, Task> handler, HandlerOptions? options = null) where T : class
     {
-        return AddHandlers([MessageHandlerRegistration.ForDelegate(handler, MessageHandlerKind.Consumer, Validate(options ?? new HandlerOptions()))]);
+        return AddHandlers([MessageHandlerRegistration.ForDelegate(handler, MessageHandlerKind.Consumer, ValidateConsumer(options))]);
     }
 
     /// <summary>
@@ -164,6 +166,17 @@ public sealed class FoundatioMessagingBuilder
         }
 
         return this;
+    }
+
+    private static HandlerOptions ValidateConsumer(HandlerOptions? options)
+    {
+        if (options is SubscriptionOptions { Name: not null } or SubscriptionOptions { Scope: not null })
+        {
+            throw new ArgumentException("A consumer has no subscription, so SubscriptionOptions.Name and Scope do not apply to it: it receives from the queue its message type is "
+                + "routed to, which you set with [Message(Queue = ...)] or MapMessage. Pass HandlerOptions, or register an event handler with AddSubscriber.", nameof(options));
+        }
+
+        return Validate(options ?? new HandlerOptions());
     }
 
     private static T Validate<T>(T options) where T : HandlerOptions

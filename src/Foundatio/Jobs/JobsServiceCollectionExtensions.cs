@@ -66,10 +66,21 @@ public static class JobsServiceCollectionExtensions
             ?? services.GetService<IJobStore>()
             ?? throw new InvalidOperationException("No job store is configured. Inside AddFoundatioJobs, call UseInMemory(), UseRedis() from Foundatio.Redis, or UseStore().");
 
+        var loggerFactory = services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
+        if (registrations.Jobs.Count > 0)
+        {
+            var logger = loggerFactory.CreateLogger<JobsRuntime>();
+            foreach (var schedule in registrations.Schedules.Values.Where(s => !registrations.Jobs.ContainsKey(s.JobName)))
+            {
+                logger.LogWarning("CRON schedule {Schedule} enqueues job {JobName}, which no job registered in this process runs. Its occurrences wait until a process "
+                    + "that registers it with AddJob runs them; if this process should, register the job here", schedule.Name, schedule.JobName);
+            }
+        }
+
         return new JobsRuntime(store, options, registrations,
             options.Serializer ?? services.GetService<ISerializer>() ?? DefaultSerializer.Instance,
             services.GetRequiredService<IServiceScopeFactory>(),
-            services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,
+            loggerFactory,
             options.TimeProvider ?? services.GetService<TimeProvider>() ?? TimeProvider.System)
         {
             Observer = services.GetService<IJobsObserver>(),

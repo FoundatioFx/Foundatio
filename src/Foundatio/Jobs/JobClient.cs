@@ -10,6 +10,7 @@ using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
@@ -21,10 +22,13 @@ internal sealed class JobClient : IJobClient
 
     // Job names of argument types already checked not to be jobs, so an enqueue does not reflect over the type again.
     private readonly ConcurrentDictionary<Type, string> _argumentNames = new();
+    private readonly ConcurrentDictionary<string, byte> _reportedNotRunHere = new(StringComparer.Ordinal);
+    private readonly ILogger _logger;
 
     public JobClient(JobsRuntime runtime)
     {
         _runtime = runtime;
+        _logger = runtime.LoggerFactory.CreateLogger<JobClient>();
     }
 
     public Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class
@@ -42,6 +46,7 @@ internal sealed class JobClient : IJobClient
 
         JobRegistration.ThrowIfJob(arguments, job => $"EnqueueAsync<{job}>()", nameof(arguments));
         name = JobNaming.GetName(type);
+        WarnIfNotRunHere(name);
         if (_argumentNames.Count < MaxCachedTypes)
             _argumentNames.TryAdd(type, name);
 
@@ -50,7 +55,22 @@ internal sealed class JobClient : IJobClient
 
     public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IJobHandler
     {
-        return CreateAsync(JobNaming.GetName(typeof(TJob)), ReadOnlyMemory<byte>.Empty, options, cancellationToken);
+        string name = JobNaming.GetName(typeof(TJob));
+        WarnIfNotRunHere(name);
+        return CreateAsync(name, ReadOnlyMemory<byte>.Empty, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Warns once per job name when this process runs jobs but not this one: usually a forgotten <c>AddJob</c>. A
+    /// process that runs no jobs is a producer, and its jobs are run elsewhere.
+    /// </summary>
+    private void WarnIfNotRunHere(string name)
+    {
+        if (_runtime.Jobs.Count == 0 || _runtime.Jobs.ContainsKey(name) || _reportedNotRunHere.Count >= MaxCachedTypes || !_reportedNotRunHere.TryAdd(name, 0))
+            return;
+
+        _logger.LogWarning("Enqueued job {JobName}, which no job registered in this process runs. It waits until a process that "
+            + "registers it with AddJob runs it; if this process should, register the job here", name);
     }
 
     public async Task<JobDetails?> GetAsync(string jobId, CancellationToken cancellationToken = default)

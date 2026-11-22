@@ -73,22 +73,35 @@ public sealed class FoundatioJobsBuilder
     /// <typeparamref name="TJob"/> implements neither. Register a legacy <see cref="IJob"/> with <see cref="AddLegacyJob{TJob}"/>,
     /// or run it continuously with <c>services.AddJob&lt;TJob&gt;()</c> from Foundatio.Extensions.Hosting.
     /// </exception>
+    /// <remarks>
+    /// Registering a job again is allowed: options given later replace the defaults of a registration without options,
+    /// such as the one <see cref="AddCronJob{TJob}(string, CronJobOptions?)"/> adds, but two different sets of options
+    /// for one job throw.
+    /// </remarks>
     public FoundatioJobsBuilder AddJob<TJob>(JobTypeOptions? options = null) where TJob : class
     {
+        bool hasOptions = options is not null;
         options ??= new JobTypeOptions();
         options.Validate();
 
-        foreach (var registration in JobRegistration.For(typeof(TJob), options))
+        foreach (var registration in JobRegistration.For(typeof(TJob), options, hasOptions))
         {
             if (_registrations.Jobs.TryGetValue(registration.Name, out var existing))
             {
-                if (existing.JobType == registration.JobType)
+                if (existing.JobType != registration.JobType)
+                    throw new ArgumentException($"Job name \"{registration.Name}\" is used by both {JobNaming.GetDisplayName(existing.JobType)} and {JobNaming.GetDisplayName(registration.JobType)}. Give one a unique name with [Job(Name = \"...\")].");
+
+                if (!hasOptions || existing.Options == options)
                     continue;
 
-                throw new ArgumentException($"Job name \"{registration.Name}\" is used by both {JobNaming.GetDisplayName(existing.JobType)} and {JobNaming.GetDisplayName(registration.JobType)}. Give one a unique name with [Job(Name = \"...\")].");
+                if (existing.HasOptions)
+                {
+                    throw new ArgumentException($"{JobNaming.GetDisplayName(registration.JobType)} is already registered with different JobTypeOptions ({JobRegistration.Describe(existing.Options)}, "
+                        + $"then {JobRegistration.Describe(options)}). Set its options once, on AddJob or on AddCronJob's CronJobOptions.JobTypeOptions.");
+                }
             }
 
-            _registrations.Jobs.Add(registration.Name, registration);
+            _registrations.Jobs[registration.Name] = registration;
         }
 
         return this;
@@ -121,10 +134,20 @@ public sealed class FoundatioJobsBuilder
     /// Enqueues the job that takes <paramref name="arguments"/> on a CRON schedule, once per occurrence across all
     /// instances. Register the job itself with <see cref="AddJob{TJob}"/> in the process that should run it.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="options"/> sets <see cref="CronJobOptions.JobTypeOptions"/>. This overload does not register the
+    /// job, so set its options with <see cref="AddJob{TJob}"/> in the process that runs it.
+    /// </exception>
     public FoundatioJobsBuilder AddCronJob<TArgs>(string cronExpression, TArgs arguments, CronJobOptions? options = null) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
         JobRegistration.ThrowIfJob(arguments, job => $"AddCronJob<{job}>(cronExpression)", nameof(arguments));
+        if (options?.JobTypeOptions is not null)
+        {
+            throw new ArgumentException($"CronJobOptions.JobTypeOptions has no effect on a schedule of {arguments.GetType().Name} arguments, which does not register the job that runs them. "
+                + "Set the options with AddJob<TJob>(options) in the process that runs it.", nameof(options));
+        }
+
         return AddSchedule(JobNaming.GetName(arguments.GetType()), cronExpression, arguments, options ?? new CronJobOptions());
     }
 
