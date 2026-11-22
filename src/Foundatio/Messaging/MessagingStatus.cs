@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Foundatio.Messaging.Transport;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging;

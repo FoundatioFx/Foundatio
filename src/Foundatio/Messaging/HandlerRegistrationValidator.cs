@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using Foundatio.Messaging.Transport;
 using Foundatio.Resilience;
 
 namespace Foundatio.Messaging;
