@@ -822,6 +822,26 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>
+    /// A send to one subscription creates it, as opening a receiver does: messages published to its topic afterwards
+    /// reach it too, before any receiver of it exists.
+    /// </summary>
+    [Fact]
+    public async Task SendToSubscription_CreatesTheSubscriptionForLaterPublishes()
+    {
+        string topic = NewName("direct-creates");
+        var source = MessageSource.Subscription(topic, "replayed");
+        DeleteAfterTest(source);
+        await Transport.SendAsync(MessageDestination.For(source), [Message("sent", "id-sent")], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("published", "id-published")], TestCancellationToken);
+
+        await using var receiver = await CreateReceiverAsync(source);
+        var messages = await ReceiveAsync(receiver, 2);
+        Assert.Equal(["id-published", "id-sent"], messages.Select(m => m.MessageId).Order());
+        foreach (var message in messages)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
     /// <summary>Deleting a queue removes its pending messages and its dead letters.</summary>
     [Fact]
     public async Task Delete_Queue_RemovesItsMessagesAndDeadLetters()
