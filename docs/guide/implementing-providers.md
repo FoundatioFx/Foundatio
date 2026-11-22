@@ -144,7 +144,7 @@ Implement `IJobStore` (10 methods). [View source](https://github.com/FoundatioFx
 - `RequestCancellationAsync`: queued jobs become cancelled; running jobs are flagged and `RenewAsync` reports it.
 - Terminal jobs expire after `JobCompletion.RetainFor`. A job that succeeds drops its `Payload` and keeps the rest of its record; failed and cancelled jobs keep theirs.
 
-Use the database's clock for "now" so workers with skewed clocks agree. Prove it with `JobStoreTestsBase`, exactly like the transport suite.
+Use the database's clock for "now" so workers with skewed clocks agree. Throw database and connection errors as `JobStoreException` (in `Foundatio.Jobs`), with the client's exception as its inner exception, so apps calling `IJobClient` catch one type on every store, as transports throw `MessageBusException`; keep `ArgumentException` for invalid arguments and let `OperationCanceledException` through. Prove it with `JobStoreTestsBase`, exactly like the transport suite.
 
 ## Registration helpers
 

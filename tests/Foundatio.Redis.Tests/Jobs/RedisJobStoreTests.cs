@@ -24,6 +24,33 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         return new RedisJobStore(muxer, new RedisJobStoreOptions { Prefix = "foundatio-tests:jobs" });
     }
 
+    [Fact]
+    public async Task Operations_WhenRedisIsUnreachable_ThrowJobStoreException()
+    {
+        var configuration = ConfigurationOptions.Parse("127.0.0.1:1,abortConnect=false,connectTimeout=200,connectRetry=0");
+        configuration.BacklogPolicy = BacklogPolicy.FailFast;
+        await using var unreachable = await ConnectionMultiplexer.ConnectAsync(configuration);
+        IJobStore store = new RedisJobStore(unreachable, new RedisJobStoreOptions { Prefix = "foundatio-tests:unreachable" });
+        var job = new JobInfo { Id = "unreachable-1", Name = "reports", CreatedAt = DateTimeOffset.UtcNow, AvailableAt = DateTimeOffset.UtcNow };
+        var claim = new JobClaimRequest { Names = ["reports"], WorkerId = "w", LeaseDuration = TimeSpan.FromSeconds(30) };
+
+        var create = await Assert.ThrowsAsync<JobStoreException>(() => store.CreateAsync(job, TestCancellationToken));
+        Assert.IsAssignableFrom<RedisException>(create.InnerException);
+        Assert.Contains("unreachable-1", create.Message);
+        await Assert.ThrowsAsync<JobStoreException>(() => store.CreateAsync(job, TimeSpan.FromSeconds(1), TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.GetAsync("unreachable-1", TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.QueryAsync(new JobQuery(), TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.CountAsync(JobState.Queued, "reports", TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.CountAsync(null, null, TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.ClaimAsync(claim, TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.ClaimBatchAsync(claim, 10, TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.RenewAsync("unreachable-1", "token", TimeSpan.FromSeconds(30), TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.ReportProgressAsync("unreachable-1", "token", 50, null, TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.CompleteAsync("unreachable-1", "token", JobCompletion.Succeeded(TimeSpan.FromMinutes(1)), TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.RequestCancellationAsync("unreachable-1", TimeSpan.FromMinutes(1), TestCancellationToken));
+        await Assert.ThrowsAsync<JobStoreException>(() => store.DeleteAsync("unreachable-1", TestCancellationToken));
+    }
+
     /// <summary>
     /// Servers such as Dragonfly reject a script that touches a key it was not given, so every key must come from
     /// KEYS (directly or through a local), never be built from the prefix, a function or ARGV.

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Messaging.Transport;
 using Foundatio.Redis.Utility;
 using StackExchange.Redis;
 
@@ -117,14 +118,21 @@ public sealed class RedisJobStore : IJobStore
             IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, job.Name)
         ];
 
-        for (int attempt = 1; ; attempt++)
+        try
         {
-            long created = await EvaluateAsync(CreateScript, keys, values.ToArray()).AnyContext();
-            if (created != -1 || attempt == MaxRetries)
-                return created == 1;
+            for (int attempt = 1; ; attempt++)
+            {
+                long created = await EvaluateAsync(CreateScript, keys, values.ToArray()).AnyContext();
+                if (created != -1 || attempt == MaxRetries)
+                    return created == 1;
 
-            // A finished job whose retention ran out still holds the id; remove it, then create the new one.
-            await RemoveAsync(job.Id, onlyIfExpired: true).AnyContext();
+                // A finished job whose retention ran out still holds the id; remove it, then create the new one.
+                await RemoveAsync(job.Id, onlyIfExpired: true).AnyContext();
+            }
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure($"create job {job.Id}", ex);
         }
     }
 
@@ -133,7 +141,14 @@ public sealed class RedisJobStore : IJobStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         cancellationToken.ThrowIfCancellationRequested();
-        return await ReadJobAsync(jobId).AnyContext();
+        try
+        {
+            return await ReadJobAsync(jobId).AnyContext();
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure($"read job {jobId}", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -148,11 +163,18 @@ public sealed class RedisJobStore : IJobStore
         if (continuation.Length > 0 && (continuation.Length < 18 || continuation[16] != '|' || !Int64.TryParse(continuation.AsSpan(0, 16), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out _)))
             throw new ArgumentException("The continuation token is not valid.", nameof(query));
 
-        SweepIfDue();
-        var members = (string[])(await Database.ScriptEvaluateAsync(QueryScript, [IndexKey(query.State, query.Name)], [continuation, query.Limit]).AnyContext())!;
-        var page = members.Take(query.Limit).ToArray();
-        var jobs = await Task.WhenAll(page.Select(member => ReadJobAsync(member[(member.IndexOf('|') + 1)..]))).AnyContext();
-        return new JobPage<JobInfo>(jobs.Where(j => j is not null).Select(j => j!).ToList(), members.Length > query.Limit ? page[^1] : null);
+        try
+        {
+            SweepIfDue();
+            var members = (string[])(await Database.ScriptEvaluateAsync(QueryScript, [IndexKey(query.State, query.Name)], [continuation, query.Limit]).AnyContext())!;
+            var page = members.Take(query.Limit).ToArray();
+            var jobs = await Task.WhenAll(page.Select(member => ReadJobAsync(member[(member.IndexOf('|') + 1)..]))).AnyContext();
+            return new JobPage<JobInfo>(jobs.Where(j => j is not null).Select(j => j!).ToList(), members.Length > query.Limit ? page[^1] : null);
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure("query jobs", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -160,11 +182,18 @@ public sealed class RedisJobStore : IJobStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Only finished jobs expire, so queued and running counts never include one.
-        if (state is not (JobState.Queued or JobState.Running))
-            await SweepExpiredAsync(cancellationToken).AnyContext();
+        try
+        {
+            // Only finished jobs expire, so queued and running counts never include one.
+            if (state is not (JobState.Queued or JobState.Running))
+                await SweepExpiredAsync(cancellationToken).AnyContext();
 
-        return await Database.SortedSetLengthAsync(IndexKey(state, name)).AnyContext();
+            return await Database.SortedSetLengthAsync(IndexKey(state, name)).AnyContext();
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure("count jobs", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -186,41 +215,48 @@ public sealed class RedisJobStore : IJobStore
         if (request.Names.Count == 0)
             return [];
 
-        SweepIfDue();
-        string[] names = request.Names.Distinct(StringComparer.Ordinal).ToArray();
-        var setKeys = names.SelectMany(n => new RedisKey[] { QueuedKey(n), RunningKey(n) }).ToArray();
-        int candidateCount = ClaimCandidates + Math.Min(maxCount, MaxClaimBatch);
-
-        // Find the jobs due longest, then claim those of them that no other worker has taken in the meantime.
-        // Two scripts, because a script can only touch the jobs whose keys it is given.
-        for (int round = 0; round < MaxClaimRounds; round++)
+        try
         {
-            var candidates = (RedisResult[])(await Database.ScriptEvaluateAsync(CandidatesScript, setKeys, [candidateCount]).AnyContext())!;
-            if (candidates.Length == 0)
-                return [];
+            SweepIfDue();
+            string[] names = request.Names.Distinct(StringComparer.Ordinal).ToArray();
+            var setKeys = names.SelectMany(n => new RedisKey[] { QueuedKey(n), RunningKey(n) }).ToArray();
+            int candidateCount = ClaimCandidates + Math.Min(maxCount, MaxClaimBatch);
 
-            var keys = new List<RedisKey>(2 + 4 * names.Length + candidates.Length / 3) { IndexKey(JobState.Queued, null), IndexKey(JobState.Running, null) };
-            foreach (string name in names)
-                keys.AddRange([QueuedKey(name), RunningKey(name), IndexKey(JobState.Queued, name), IndexKey(JobState.Running, name)]);
+            // Find the jobs due longest, then claim those of them that no other worker has taken in the meantime.
+            // Two scripts, because a script can only touch the jobs whose keys it is given.
+            for (int round = 0; round < MaxClaimRounds; round++)
+            {
+                var candidates = (RedisResult[])(await Database.ScriptEvaluateAsync(CandidatesScript, setKeys, [candidateCount]).AnyContext())!;
+                if (candidates.Length == 0)
+                    return [];
 
-            var values = new List<RedisValue>(5 + names.Length + candidates.Length)
-            {
-                request.WorkerId, ToMicroseconds(request.LeaseDuration), Guid.NewGuid().ToString("N")[..ClaimTokenPrefixLength], names.Length, Math.Min(maxCount, MaxClaimBatch)
-            };
-            values.AddRange(names.Select(n => (RedisValue)n));
-            for (int i = 0; i + 2 < candidates.Length; i += 3)
-            {
-                string id = (string)candidates[i]!;
-                keys.Add(JobKey(id));
-                values.AddRange([id, (long)candidates[i + 1], (string)candidates[i + 2]!]);
+                var keys = new List<RedisKey>(2 + 4 * names.Length + candidates.Length / 3) { IndexKey(JobState.Queued, null), IndexKey(JobState.Running, null) };
+                foreach (string name in names)
+                    keys.AddRange([QueuedKey(name), RunningKey(name), IndexKey(JobState.Queued, name), IndexKey(JobState.Running, name)]);
+
+                var values = new List<RedisValue>(5 + names.Length + candidates.Length)
+                {
+                    request.WorkerId, ToMicroseconds(request.LeaseDuration), Guid.NewGuid().ToString("N")[..ClaimTokenPrefixLength], names.Length, Math.Min(maxCount, MaxClaimBatch)
+                };
+                values.AddRange(names.Select(n => (RedisValue)n));
+                for (int i = 0; i + 2 < candidates.Length; i += 3)
+                {
+                    string id = (string)candidates[i]!;
+                    keys.Add(JobKey(id));
+                    values.AddRange([id, (long)candidates[i + 1], (string)candidates[i + 2]!]);
+                }
+
+                var claimed = (RedisResult[])(await Database.ScriptEvaluateAsync(ClaimScript, keys.ToArray(), values.ToArray()).AnyContext())!;
+                if (claimed.Length > 0)
+                    return claimed.Select(job => ToJob((RedisValue[])job!)).ToList();
             }
 
-            var claimed = (RedisResult[])(await Database.ScriptEvaluateAsync(ClaimScript, keys.ToArray(), values.ToArray()).AnyContext())!;
-            if (claimed.Length > 0)
-                return claimed.Select(job => ToJob((RedisValue[])job!)).ToList();
+            return [];
         }
-
-        return [];
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure("claim jobs", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -230,15 +266,22 @@ public sealed class RedisJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (await GetClaimedNameAsync(jobId, claimToken).AnyContext() is not { } name)
-            return JobLeaseStatus.Lost;
-
-        return await EvaluateAsync(RenewScript, [JobKey(jobId), RunningKey(name)], [jobId, claimToken, ToMicroseconds(leaseDuration), name]).AnyContext() switch
+        try
         {
-            1 => JobLeaseStatus.Renewed,
-            2 => JobLeaseStatus.CancellationRequested,
-            _ => JobLeaseStatus.Lost
-        };
+            if (await GetClaimedNameAsync(jobId, claimToken).AnyContext() is not { } name)
+                return JobLeaseStatus.Lost;
+
+            return await EvaluateAsync(RenewScript, [JobKey(jobId), RunningKey(name)], [jobId, claimToken, ToMicroseconds(leaseDuration), name]).AnyContext() switch
+            {
+                1 => JobLeaseStatus.Renewed,
+                2 => JobLeaseStatus.CancellationRequested,
+                _ => JobLeaseStatus.Lost
+            };
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure($"renew job {jobId}", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -248,8 +291,15 @@ public sealed class RedisJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await EvaluateAsync(ProgressScript, [JobKey(jobId)],
-            [claimToken, percent.HasValue ? 1 : 0, percent ?? 0, message is not null ? 1 : 0, message ?? String.Empty]).AnyContext() == 1;
+        try
+        {
+            return await EvaluateAsync(ProgressScript, [JobKey(jobId)],
+                [claimToken, percent.HasValue ? 1 : 0, percent ?? 0, message is not null ? 1 : 0, message ?? String.Empty]).AnyContext() == 1;
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure($"report progress of job {jobId}", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -262,20 +312,27 @@ public sealed class RedisJobStore : IJobStore
         if (completion.State == JobState.Running)
             throw new ArgumentException("A run cannot complete as Running.", nameof(completion));
 
-        if (await GetClaimedNameAsync(jobId, claimToken).AnyContext() is not { } name)
-            return false;
+        try
+        {
+            if (await GetClaimedNameAsync(jobId, claimToken).AnyContext() is not { } name)
+                return false;
 
-        RedisKey[] keys =
-        [
-            JobKey(jobId), RunningKey(name), QueuedKey(name), ExpiringKey, IndexKey(JobState.Running, null), IndexKey(JobState.Running, name),
-            IndexKey(completion.State, null), IndexKey(completion.State, name)
-        ];
+            RedisKey[] keys =
+            [
+                JobKey(jobId), RunningKey(name), QueuedKey(name), ExpiringKey, IndexKey(JobState.Running, null), IndexKey(JobState.Running, name),
+                IndexKey(completion.State, null), IndexKey(completion.State, name)
+            ];
 
-        return await EvaluateAsync(CompleteScript, keys, [
-            jobId, claimToken, Status(completion.State), ToMicroseconds(completion.RetryDelay), completion.RefundAttempt ? 1 : 0,
-            ToMicroseconds(completion.RetainFor), completion.Message is not null ? 1 : 0, completion.Message ?? String.Empty,
-            completion.Error is not null ? 1 : 0, completion.Error ?? String.Empty, name
-        ]).AnyContext() == 1;
+            return await EvaluateAsync(CompleteScript, keys, [
+                jobId, claimToken, Status(completion.State), ToMicroseconds(completion.RetryDelay), completion.RefundAttempt ? 1 : 0,
+                ToMicroseconds(completion.RetainFor), completion.Message is not null ? 1 : 0, completion.Message ?? String.Empty,
+                completion.Error is not null ? 1 : 0, completion.Error ?? String.Empty, name
+            ]).AnyContext() == 1;
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure($"complete job {jobId}", ex);
+        }
     }
 
     /// <inheritdoc />
@@ -284,21 +341,28 @@ public sealed class RedisJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        for (int attempt = 1; ; attempt++)
+        try
         {
-            string? name = await Database.HashGetAsync(JobKey(jobId), "name").AnyContext();
-            if (name is null)
-                return false;
+            for (int attempt = 1; ; attempt++)
+            {
+                string? name = await Database.HashGetAsync(JobKey(jobId), "name").AnyContext();
+                if (name is null)
+                    return false;
 
-            RedisKey[] keys =
-            [
-                JobKey(jobId), QueuedKey(name), ExpiringKey, IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, name),
-                IndexKey(JobState.Cancelled, null), IndexKey(JobState.Cancelled, name)
-            ];
+                RedisKey[] keys =
+                [
+                    JobKey(jobId), QueuedKey(name), ExpiringKey, IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, name),
+                    IndexKey(JobState.Cancelled, null), IndexKey(JobState.Cancelled, name)
+                ];
 
-            long cancelled = await EvaluateAsync(CancelScript, keys, [jobId, ToMicroseconds(retainFor), name]).AnyContext();
-            if (cancelled != -1 || attempt == MaxRetries)
-                return cancelled == 1;
+                long cancelled = await EvaluateAsync(CancelScript, keys, [jobId, ToMicroseconds(retainFor), name]).AnyContext();
+                if (cancelled != -1 || attempt == MaxRetries)
+                    return cancelled == 1;
+            }
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure($"cancel job {jobId}", ex);
         }
     }
 
@@ -307,7 +371,14 @@ public sealed class RedisJobStore : IJobStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         cancellationToken.ThrowIfCancellationRequested();
-        return await RemoveAsync(jobId, onlyIfExpired: false).AnyContext() == 1;
+        try
+        {
+            return await RemoveAsync(jobId, onlyIfExpired: false).AnyContext() == 1;
+        }
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
+        {
+            throw Failure($"delete job {jobId}", ex);
+        }
     }
 
     /// <summary>
@@ -449,6 +520,8 @@ public sealed class RedisJobStore : IJobStore
 
         return await Database.HashGetAsync(JobKey(jobId), "name").AnyContext();
     }
+
+    private static JobStoreException Failure(string operation, Exception exception) => new($"Could not {operation}: {exception.Message}", exception);
 
     private async Task<long> EvaluateAsync(string script, RedisKey[] keys, RedisValue[] values)
     {
