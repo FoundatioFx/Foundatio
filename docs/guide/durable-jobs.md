@@ -154,7 +154,7 @@ j.AddCronJob<LegacyJob<NightlyReportJob>>("0 2 * * *");   // runs on a schedule
 await jobs.EnqueueAsync<LegacyJob<QueueStatsJob>>();
 ```
 
-`LegacyJob<T>` keeps the job's name (its `[Job(Name = "...")]` or type name), so stored jobs and schedules keep theirs. A successful `JobResult`'s message becomes the job's message; a failed result fails the attempt, which the retry policy may retry; a cancelled result ends the job as cancelled when it was cancelled. A legacy job can't reach `IJobContext`, so [convert it](./migrating-to-messaging#converting-an-ijob-or-jobbase) when you can. A job that should run continuously rather than when enqueued stays on `services.AddJob<T>()` from Foundatio.Extensions.Hosting.
+`LegacyJob<T>` keeps the job's name (its `[Job(Name = "...")]` or type name), so stored jobs and schedules keep theirs. A successful `JobResult`'s message becomes the job's message; a failed result fails the attempt, which the retry policy may retry; a cancelled result ends the job as cancelled when it was cancelled, and otherwise (a `JobWithLockBase` whose lock is held elsewhere returns one) succeeds with its message without a retry, as the hosted job runner treats it. A legacy job can't reach `IJobContext`, so [convert it](./migrating-to-messaging#converting-an-ijob-or-jobbase) when you can. A job that should run continuously rather than when enqueued stays on `services.AddJob<T>()` from Foundatio.Extensions.Hosting.
 
 ## Retention and memory
 

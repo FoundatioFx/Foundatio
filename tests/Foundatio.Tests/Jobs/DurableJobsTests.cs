@@ -127,7 +127,6 @@ public class DurableJobsTests : TestWithLoggingBase
     [Theory]
     [InlineData("failed", "JobFailedException: disk full")]
     [InlineData("exception", "InvalidOperationException: boom")]
-    [InlineData("cancelled", "JobFailedException: stopped")]
     public async Task LegacyJob_WithAFailedResult_FailsWithItsErrorOrMessage(string result, string error)
     {
         _probe.LegacyResult = result;
@@ -138,6 +137,20 @@ public class DurableJobsTests : TestWithLoggingBase
 
         Assert.Equal(JobState.Failed, job.State);
         Assert.Equal(error, job.Error);
+    }
+
+    [Fact]
+    public async Task LegacyJob_WhenItsLockIsHeld_SucceedsWithTheLockMessageWithoutRetrying()
+    {
+        await using var host = await StartAsync(j => j.AddLegacyJob<LockedLegacyJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<LockedLegacyJob>>(cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal("Unable to acquire job lock", job.Message);
+        Assert.Equal(1, job.Attempt);
+        Assert.Null(job.Error);
     }
 
     [Fact]
@@ -1032,6 +1045,15 @@ public class DurableJobsTests : TestWithLoggingBase
 
             return JobResult.Success;
         }
+    }
+
+    /// <summary>A <see cref="JobWithLockBase"/> whose lock is always held elsewhere, as with a lock provider that does not wait.</summary>
+    [Job(Name = "legacy-locked")]
+    public sealed class LockedLegacyJob(ILoggerFactory loggerFactory) : JobWithLockBase(loggerFactory)
+    {
+        protected override Task<JobResult> RunInternalAsync(JobContext context) => Task.FromResult(JobResult.Success);
+
+        protected override Task<Foundatio.Lock.ILock?> GetLockAsync(CancellationToken cancellationToken = default) => Task.FromResult<Foundatio.Lock.ILock?>(null);
     }
 
     [Job(Name = "legacy-cleanup")]

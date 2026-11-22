@@ -16,7 +16,9 @@ namespace Foundatio.Jobs;
 /// The job is named after <typeparamref name="TJob"/>, so stored jobs and schedules keep their names. A successful
 /// <see cref="JobResult"/>'s message becomes the job's message. A failed result fails the attempt with its error, or
 /// with its message when it has none, and the job's retry policy decides whether it runs again. A cancelled result ends
-/// the job as cancelled when its cancellation token fired, and fails the attempt otherwise. Implement
+/// the job as cancelled when its cancellation token fired. Otherwise the job chose not to run, as a
+/// <see cref="JobWithLockBase"/> does when its lock is held elsewhere: like the hosted job runner, that is not a
+/// failure, so the job succeeds with the result's message and is not retried. Implement
 /// <see cref="IJobHandler"/> instead to reach the job's context: its attempt, scheduled occurrence and progress.
 /// </remarks>
 /// <typeparam name="TJob">The legacy job, resolved from the run's service scope or created with its constructor's services.</typeparam>
@@ -39,7 +41,7 @@ public sealed class LegacyJob<TJob> : IJobHandler where TJob : class, IJob
 
         var job = ActivatorUtilities.GetServiceOrCreateInstance<TJob>(_services);
         var result = await job.RunAsync(cancellationToken).AnyContext();
-        if (result is null || result.IsSuccess)
+        if (result is null || result.IsSuccess || result.IsCancelled && !cancellationToken.IsCancellationRequested)
         {
             if (result?.Message is { Length: > 0 } message)
                 await context.ReportProgressAsync(message: message, cancellationToken: CancellationToken.None).AnyContext();
@@ -47,7 +49,7 @@ public sealed class LegacyJob<TJob> : IJobHandler where TJob : class, IJob
             return;
         }
 
-        if (result.IsCancelled && cancellationToken.IsCancellationRequested)
+        if (result.IsCancelled)
         {
             if (result.Message is { Length: > 0 } message)
                 await context.ReportProgressAsync(message: message, cancellationToken: CancellationToken.None).AnyContext();
