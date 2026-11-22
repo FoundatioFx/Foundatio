@@ -152,6 +152,12 @@ public sealed class InMemoryJobStore : IJobStore
     /// </summary>
     internal Func<string, bool>? ClaimFilter { get; set; }
 
+    /// <summary>
+    /// When set, called before each claim; returning false claims nothing. Used by <c>FoundatioTestHarness</c> to run a
+    /// given number of jobs.
+    /// </summary>
+    internal Func<bool>? ClaimGate { get; set; }
+
     /// <summary>Counts the queued jobs named <paramref name="name"/> that are due now, those waiting for their concurrency key included.</summary>
     internal int CountDue(string name)
     {
@@ -214,7 +220,7 @@ public sealed class InMemoryJobStore : IJobStore
                 next = first;
         }
 
-        if (next is null)
+        if (next is null || ClaimGate?.Invoke() == false)
             return null;
 
         if (next.Job.ConcurrencyKey is { } concurrencyKey)

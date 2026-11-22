@@ -54,6 +54,7 @@ public sealed class FoundatioTestHarnessOptions
 
     /// <summary>
     /// When true, handlers and the job worker start paused: messages and jobs wait until the test runs them with
+    /// <see cref="FoundatioTestHarness.ProcessNextAsync(int, System.TimeSpan?, System.Threading.CancellationToken)"/> or
     /// <see cref="FoundatioTestHarness.ProcessPendingAsync(System.TimeSpan?, System.Threading.CancellationToken)"/>, or
     /// calls <see cref="FoundatioTestHarness.ResumeProcessing"/>. Use it to assert what is queued before it is handled,
     /// and to run a pipeline one step at a time. Defaults to false.
@@ -65,7 +66,8 @@ public sealed class FoundatioTestHarnessOptions
     /// so a retried message or job runs again after this delay instead of its production backoff. Attempts and
     /// <see cref="Resilience.RetryPolicy.ShouldRetry"/> are kept, and handlers that share a subscription are still
     /// checked with their own policies. With <see cref="TimeSpan.Zero"/>, retries run within one
-    /// <see cref="FoundatioTestHarness.ProcessPendingAsync(System.TimeSpan?, System.Threading.CancellationToken)"/> call.
+    /// <see cref="FoundatioTestHarness.ProcessPendingAsync(System.TimeSpan?, System.Threading.CancellationToken)"/> call,
+    /// or one per <see cref="FoundatioTestHarness.ProcessNextAsync(int, System.TimeSpan?, System.Threading.CancellationToken)"/> call.
     /// Defaults to null, which keeps every policy's delay.
     /// </summary>
     public TimeSpan? RetryDelay { get; set; }

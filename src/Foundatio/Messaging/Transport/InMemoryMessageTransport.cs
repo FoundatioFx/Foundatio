@@ -32,8 +32,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     private readonly Dictionary<string, DateTimeOffset> _deduplication = new(StringComparer.Ordinal);
     private readonly Queue<(string Key, DateTimeOffset ExpiresAt)> _deduplicationOrder = new();
     private readonly TimeProvider _timeProvider;
-    private volatile Func<MessageSource, bool>? _receiveFilter;
-    private TaskCompletionSource _receiveFilterChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private volatile IReceiveGate? _receiveGate;
+    private TaskCompletionSource _receiveGateChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _disposed;
 
     /// <summary>Creates a transport that supports every capability, with no limits.</summary>
@@ -211,14 +211,20 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     }
 
     /// <summary>
-    /// Holds receives from the sources <paramref name="canReceive"/> rejects: they return nothing until it allows them,
-    /// and messages stay where they are. Null receives from every source. Used by <c>FoundatioTestHarness</c> to pause
-    /// handlers while keeping their receivers, and so their subscriptions, open.
+    /// Limits receives to what <paramref name="gate"/> allows: a receive it allows nothing waits until it allows some,
+    /// and messages stay where they are. Null receives freely. Used by <c>FoundatioTestHarness</c> to pause handlers
+    /// while keeping their receivers, and so their subscriptions, open, and to run a given number of deliveries.
     /// </summary>
-    internal void SetReceiveFilter(Func<MessageSource, bool>? canReceive)
+    internal void SetReceiveGate(IReceiveGate? gate)
     {
-        _receiveFilter = canReceive;
-        Interlocked.Exchange(ref _receiveFilterChanged, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+        _receiveGate = gate;
+        NotifyReceiveGateChanged();
+    }
+
+    /// <summary>Wakes the receives the gate held, to ask it again.</summary>
+    internal void NotifyReceiveGateChanged()
+    {
+        Interlocked.Exchange(ref _receiveGateChanged, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
     }
 
     /// <summary>
@@ -342,6 +348,19 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
+    /// <summary>Decides how many messages each receive may take; see <see cref="SetReceiveGate"/>.</summary>
+    internal interface IReceiveGate
+    {
+        /// <summary>Reserves up to <paramref name="maxMessages"/> receives from <paramref name="source"/>, and returns how many; 0 holds the receive.</summary>
+        int Reserve(MessageSource source, int maxMessages);
+
+        /// <summary>
+        /// Ends a reservation: <paramref name="taken"/> of the <paramref name="reserved"/> receives got a message, and the
+        /// rest are given back. Returns whether a held receive may now get some.
+        /// </summary>
+        bool Release(MessageSource source, int reserved, int taken);
+    }
+
     private void RemoveInstanceSubscription(MessageSource source, InMemorySource state)
     {
         _sources.TryRemove(state.Key, out _);
@@ -380,22 +399,28 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                     throw new MessageReceiverFaultedException($"{Source} was deleted while this receiver was open.");
 
                 var now = _transport._timeProvider.GetUtcNow();
-                if (_transport._receiveFilter is { } filter && !filter(Source))
+                int allowed = maxMessages;
+                var gate = _transport._receiveGate;
+                if (gate is not null)
                 {
-                    var filterChanged = Volatile.Read(ref _transport._receiveFilterChanged).Task;
-                    if (_transport._receiveFilter is { } current && !current(Source))
+                    var gateChanged = Volatile.Read(ref _transport._receiveGateChanged).Task;
+                    allowed = gate.Reserve(Source, maxMessages);
+                    if (allowed <= 0)
                     {
                         if (deadline - now <= TimeSpan.Zero)
                             return [];
 
                         using var heldSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                        await Task.WhenAny(filterChanged, Task.Delay(deadline - now, _transport._timeProvider, heldSource.Token)).AnyContext();
+                        await Task.WhenAny(gateChanged, Task.Delay(deadline - now, _transport._timeProvider, heldSource.Token)).AnyContext();
                         heldSource.Cancel();
                         continue;
                     }
                 }
 
-                var (messages, nextChange, changed) = _state.Take(this, maxMessages, now, _options.LeaseDuration);
+                var (messages, nextChange, changed) = _state.Take(this, allowed, now, _options.LeaseDuration);
+                if (gate is not null && gate.Release(Source, allowed, messages.Count))
+                    _transport.NotifyReceiveGateChanged();
+
                 if (messages.Count > 0)
                     return messages;
 

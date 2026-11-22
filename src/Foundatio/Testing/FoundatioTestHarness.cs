@@ -26,7 +26,8 @@ namespace Foundatio.Testing;
 /// in tests, or set a fake clock and advance it. CRON schedules do not fire on their own; call
 /// <see cref="TriggerCronJobAsync{TJobOrArgs}"/>. To run work one step at a time, pause processing
 /// (<see cref="PauseProcessingAsync"/> or <see cref="FoundatioTestHarnessOptions.StartPaused"/>) and call
-/// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/>. Call <see cref="Reset"/> between tests that share a host.
+/// <see cref="ProcessNextAsync(int, TimeSpan?, CancellationToken)"/> or <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/>.
+/// Call <see cref="Reset"/> between tests that share a host.
 /// </remarks>
 /// <example>
 /// <code>
@@ -41,7 +42,7 @@ namespace Foundatio.Testing;
 /// Assert.Empty(harness.HandledMessages.Where(m => m.Outcome == MessageOutcome.DeadLettered));
 /// </code>
 /// </example>
-public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
+public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, InMemoryMessageTransport.IReceiveGate
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan IdlePollInterval = TimeSpan.FromMilliseconds(20);
@@ -73,7 +74,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     /// <summary>
     /// Whether handlers and the job worker are paused, by <see cref="PauseProcessingAsync"/> or
     /// <see cref="FoundatioTestHarnessOptions.StartPaused"/>: messages and jobs then wait until
-    /// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> runs them.
+    /// <see cref="ProcessNextAsync(int, TimeSpan?, CancellationToken)"/>, <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/>
+    /// or <see cref="WaitForIdleAsync"/> runs them.
     /// </summary>
     public bool IsPaused => _paused;
 
@@ -159,7 +161,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     /// retries without a delay. Delayed messages and jobs, and retries waiting out their delay, stay pending; advance a
     /// fake <see cref="FoundatioTestHarnessOptions.TimeProvider"/>, or set
     /// <see cref="FoundatioTestHarnessOptions.RetryDelay"/>, to run them. While processing is paused it runs only this
-    /// work and pauses again afterwards; the replacement for a legacy job's <c>RunAsync()</c> and <c>RunUntilEmptyAsync()</c>.
+    /// work and pauses again afterwards; the replacement for a legacy job's <c>RunUntilEmptyAsync()</c>. To run one step,
+    /// like a legacy job's <c>RunAsync()</c>, call <see cref="ProcessNextAsync(int, TimeSpan?, CancellationToken)"/>.
     /// </summary>
     /// <returns>The deliveries handled and job runs finished during the call.</returns>
     /// <exception cref="TimeoutException">Work was still due or running after <paramref name="timeout"/> (default 30 seconds).</exception>
@@ -178,6 +181,41 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     public Task<ProcessedWork> ProcessPendingAsync<TMessageOrJob>(TimeSpan? timeout = null, CancellationToken cancellationToken = default) where TMessageOrJob : class
     {
         return ProcessAsync(GetScope(typeof(TMessageOrJob)), JobNaming.GetDisplayName(typeof(TMessageOrJob)), timeout, cancellationToken);
+    }
+
+    /// <summary>
+    /// While processing is paused, runs the next <paramref name="count"/> deliveries and job runs that are due (fewer
+    /// when fewer are due), through the real dispatcher, waits for them to finish, and stays paused. What they send,
+    /// enqueue or retry waits for the next call, so a test can assert after each step: one call is a legacy job's
+    /// <c>RunAsync()</c>, and a retry with a zero <see cref="FoundatioTestHarnessOptions.RetryDelay"/> is the next step.
+    /// Deliveries from different queues and subscriptions run in no particular order.
+    /// </summary>
+    /// <returns>The deliveries handled and job runs finished during the call.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is less than 1.</exception>
+    /// <exception cref="InvalidOperationException">Processing is not paused.</exception>
+    /// <exception cref="TimeoutException">The work did not finish within <paramref name="timeout"/> (default 30 seconds).</exception>
+    public Task<ProcessedWork> ProcessNextAsync(int count = 1, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        ThrowIfNotPaused();
+
+        // Only the app's handlers take steps, not the legacy message bus, which receives on the same transport.
+        var sources = Messaging?.GetProcessors().Select(p => p.Source).ToHashSet() ?? [];
+        return ProcessAsync(new ProcessingScope(sources, null, count), "the next messages and jobs", timeout, cancellationToken);
+    }
+
+    /// <summary>
+    /// Like <see cref="ProcessNextAsync(int, TimeSpan?, CancellationToken)"/>, for only the queues and subscriptions that
+    /// deliver <typeparamref name="TMessageOrJob"/> messages to this app's registered handlers, and the jobs that take
+    /// <typeparamref name="TMessageOrJob"/> arguments or are that job class, as in <see cref="ProcessPendingAsync{TMessageOrJob}"/>.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is less than 1.</exception>
+    /// <exception cref="InvalidOperationException">Processing is not paused, or nothing in this app handles or runs <typeparamref name="TMessageOrJob"/>.</exception>
+    public Task<ProcessedWork> ProcessNextAsync<TMessageOrJob>(int count = 1, TimeSpan? timeout = null, CancellationToken cancellationToken = default) where TMessageOrJob : class
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        ThrowIfNotPaused();
+        return ProcessAsync(GetScope(typeof(TMessageOrJob)).WithBudget(count), JobNaming.GetDisplayName(typeof(TMessageOrJob)), timeout, cancellationToken);
     }
 
     /// <summary>Waits until <paramref name="count"/> <typeparamref name="T"/> messages in total have been handled successfully, and returns them.</summary>
@@ -219,6 +257,11 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     /// Delayed messages and retries count as waiting. Messages sent to queues that nothing in this app consumes are ignored,
     /// but a queued job that nothing in this app runs is not: it keeps the app busy, and the timeout names it.
     /// </summary>
+    /// <remarks>
+    /// While processing is paused, it lets all work run until the app is idle, then pauses again, so a base class shared
+    /// by paused and running tests can call it either way. To run only what is due now, call
+    /// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/>.
+    /// </remarks>
     /// <exception cref="TimeoutException">Still busy after <paramref name="timeout"/> (default 30 seconds). The message says what is busy.</exception>
     public async Task WaitForIdleAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
@@ -226,9 +269,18 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(limit);
         string? busy = null;
+        bool processing = false;
 
         try
         {
+            if (_paused)
+            {
+                await _processing.WaitAsync(timeoutSource.Token).AnyContext();
+                processing = true;
+                _allowed = ProcessingScope.All;
+                UpdateGates(signalJobs: true);
+            }
+
             while (true)
             {
                 long version = Interlocked.Read(ref _version);
@@ -243,7 +295,16 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TimeoutException($"Messaging and jobs were still busy after {limit}: {busy ?? "work was still being recorded"}.");
+            throw new TimeoutException($"Messaging and jobs were still busy after {limit}: {busy ?? (processing || !_paused ? "work was still being recorded" : "ProcessPendingAsync was still running")}.");
+        }
+        finally
+        {
+            if (processing)
+            {
+                _allowed = null;
+                UpdateGates(signalJobs: false);
+                _processing.Release();
+            }
         }
     }
 
@@ -530,7 +591,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
                 busy.Add(DescribeNotRunning("the job worker", jobs.HostState));
         }
 
-        if (busy.Count > 0 && _paused)
+        if (busy.Count > 0 && _paused && _allowed is null)
             busy.Add("processing is paused: call ProcessPendingAsync() or ResumeProcessing()");
 
         return busy.Count == 0 ? null : String.Join("; ", busy);
@@ -597,7 +658,13 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     /// <remarks>Source counts are read before the processors' in-flight counts, and store counts before the worker's, as in <see cref="FindBusyAsync"/>.</remarks>
     private async Task<string?> FindPendingAsync(ProcessingScope scope, CancellationToken cancellationToken)
     {
+        // Read before the counts: a receive reserves before it leases, and releases its reservation after.
+        bool hasBudget = scope.HasBudget;
+        int reserved = scope.Reserved;
         var pending = new List<string>();
+        if (reserved > 0)
+            pending.Add($"{reserved} message(s) are being received");
+
         if (Messaging is { } messaging)
         {
             if (messaging.HostState != ProcessingState.Running && GetRegisteredSources(messaging).Count > 0)
@@ -608,7 +675,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             {
                 var (due, _, leased) = transport.CountByState(processor.Source);
                 int inFlight = Math.Max(leased, processor.InFlight);
-                if (due > 0)
+                if (due > 0 && hasBudget)
                     pending.Add($"{processor.Source} has {due} message(s) due");
                 if (inFlight > 0)
                     pending.Add($"{processor.Source} is handling {inFlight} message(s)");
@@ -622,7 +689,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
             foreach (string name in jobs.Jobs.Keys.Where(scope.Includes))
             {
-                int due = store.CountDue(name);
+                int due = hasBudget ? store.CountDue(name) : 0;
                 long running = await jobs.Store.CountAsync(JobState.Running, name, cancellationToken).AnyContext();
                 if (due + running > 0)
                     pending.Add($"job {name} has {due} due and {running} running");
@@ -683,15 +750,45 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         if (Registration is not { } registration)
             return;
 
-        registration.Transport.SetReceiveFilter(_paused ? CanReceive : null);
+        registration.Transport.SetReceiveGate(_paused ? this : null);
         registration.Store.ClaimFilter = _paused ? CanClaim : null;
+        registration.Store.ClaimGate = _paused ? ReserveClaim : null;
         if (signalJobs)
             Jobs?.SignalWorkAvailable();
     }
 
-    private bool CanReceive(MessageSource source) => !_paused || _allowed?.Includes(source) == true;
+    int InMemoryMessageTransport.IReceiveGate.Reserve(MessageSource source, int maxMessages)
+    {
+        if (!_paused)
+            return maxMessages;
+
+        return _allowed is { } allowed && allowed.Includes(source) ? allowed.Reserve(maxMessages) : 0;
+    }
+
+    bool InMemoryMessageTransport.IReceiveGate.Release(MessageSource source, int reserved, int taken)
+    {
+        return _paused && _allowed is { } allowed && allowed.Includes(source) && allowed.Release(reserved, taken);
+    }
 
     private bool CanClaim(string jobName) => !_paused || _allowed?.Includes(jobName) == true;
+
+    private bool ReserveClaim()
+    {
+        if (!_paused || _allowed is not { } allowed)
+            return !_paused;
+
+        if (allowed.Reserve(1) == 0)
+            return false;
+
+        allowed.Release(1, 1);
+        return true;
+    }
+
+    private void ThrowIfNotPaused()
+    {
+        if (!_paused)
+            throw new InvalidOperationException("ProcessNextAsync runs work one step at a time, so processing must be paused: set FoundatioTestHarnessOptions.StartPaused, or call PauseProcessingAsync() first.");
+    }
 
     private void ThrowIfShared()
     {
@@ -831,13 +928,62 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    /// <summary>The sources and job names a <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> call runs; null for all of them.</summary>
-    private sealed class ProcessingScope(IReadOnlySet<MessageSource>? sources, IReadOnlySet<string>? jobNames)
+    /// <summary>
+    /// The sources and job names a <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> call runs (null for
+    /// all of them), and for <see cref="ProcessNextAsync(int, TimeSpan?, CancellationToken)"/>, how many deliveries and
+    /// job runs it may start.
+    /// </summary>
+    private sealed class ProcessingScope(IReadOnlySet<MessageSource>? sources, IReadOnlySet<string>? jobNames, int? budget = null)
     {
+        private int _remaining = budget ?? 0;
+        private int _reserved;
+
         public static ProcessingScope All { get; } = new(null, null);
+
+        /// <summary>Whether it may start more work: always, without a budget.</summary>
+        public bool HasBudget => budget is null || Volatile.Read(ref _remaining) > 0;
+
+        /// <summary>Receives reserved and not yet released, whose messages may not show as leased yet.</summary>
+        public int Reserved => Volatile.Read(ref _reserved);
+
+        public ProcessingScope WithBudget(int count) => new(sources, jobNames, count);
 
         public bool Includes(MessageSource source) => sources is null || sources.Contains(source);
 
         public bool Includes(string jobName) => jobNames is null || jobNames.Contains(jobName);
+
+        /// <summary>Takes up to <paramref name="max"/> from the budget, and returns how many.</summary>
+        public int Reserve(int max)
+        {
+            if (budget is null)
+                return max;
+
+            while (true)
+            {
+                int remaining = Volatile.Read(ref _remaining);
+                if (remaining <= 0)
+                    return 0;
+
+                int take = Math.Min(max, remaining);
+                Interlocked.Add(ref _reserved, take);
+                if (Interlocked.CompareExchange(ref _remaining, remaining - take, remaining) == remaining)
+                    return take;
+
+                Interlocked.Add(ref _reserved, -take);
+            }
+        }
+
+        /// <summary>Gives back what a reservation did not use. Returns whether that made more available.</summary>
+        public bool Release(int reserved, int taken)
+        {
+            if (budget is null)
+                return false;
+
+            if (reserved > taken)
+                Interlocked.Add(ref _remaining, reserved - taken);
+
+            Interlocked.Add(ref _reserved, -reserved);
+            return reserved > taken;
+        }
     }
 }

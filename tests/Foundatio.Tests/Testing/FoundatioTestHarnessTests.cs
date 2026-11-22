@@ -355,8 +355,6 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         await messages.PublishAsync(new OrderPlaced(1, "a@b.com"), cancellationToken: TestCancellationToken);
         Assert.True(harness.IsPaused);
         Assert.Empty(harness.HandledMessages);
-        var idle = await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForIdleAsync(TimeSpan.FromMilliseconds(200), TestCancellationToken));
-        Assert.Contains("processing is paused", idle.Message);
 
         var placed = await harness.ProcessPendingAsync<OrderPlaced>(cancellationToken: TestCancellationToken);
         Assert.Equal(MessageOutcome.Completed, Assert.Single(placed.HandledMessages).Outcome);
@@ -404,7 +402,7 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         await messages.SendAsync(new SendReceipt(3, "c@d.com"), cancellationToken: TestCancellationToken);
         await messages.PublishAsync(new PriceChanged("sku-3"), cancellationToken: TestCancellationToken);
         await host.Services.GetRequiredService<IJobClient>().EnqueueAsync(new GenerateInvoice(3), cancellationToken: TestCancellationToken);
-        await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForIdleAsync(TimeSpan.FromMilliseconds(200), TestCancellationToken));
+        await Task.Delay(200, TestCancellationToken);
         Assert.Empty(harness.HandledMessages);
         Assert.Empty(harness.JobRuns);
 
@@ -417,6 +415,136 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         Assert.False(harness.IsPaused);
         Assert.Equal(["c@d.com: Receipt for order 3"], host.Services.GetRequiredService<EmailSender>().Sent);
         Assert.Equal(JobState.Succeeded, Assert.Single(harness.JobRuns).State);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_OfAHandlerThatSendsBackToItsOwnQueue_RunsOneDeliveryPerCall()
+    {
+        var host = await StartHarnessAsync(o => o.StartPaused = true, s => s.AddFoundatioMessaging(m => m.AddConsumer<ImportBatch>(async (batch, context, ct) =>
+        {
+            if (batch.Items.Length > 1)
+            {
+                foreach (int item in batch.Items)
+                    await context.Services.GetRequiredService<IMessageClient>().SendAsync(new ImportBatch([item]), cancellationToken: ct);
+            }
+        })));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new ImportBatch([1, 2]), cancellationToken: TestCancellationToken);
+
+        var split = await harness.ProcessNextAsync<ImportBatch>(cancellationToken: TestCancellationToken);
+        Assert.Equal([1, 2], Assert.IsType<ImportBatch>(Assert.Single(split.HandledMessages).Message).Items);
+        Assert.Equal(3, harness.Sent<ImportBatch>().Count);
+        Assert.Single(harness.HandledMessages);
+
+        var first = await harness.ProcessNextAsync<ImportBatch>(cancellationToken: TestCancellationToken);
+        var second = await harness.ProcessNextAsync<ImportBatch>(cancellationToken: TestCancellationToken);
+        var none = await harness.ProcessNextAsync<ImportBatch>(cancellationToken: TestCancellationToken);
+
+        Assert.Equal([1], Assert.IsType<ImportBatch>(Assert.Single(first.HandledMessages).Message).Items);
+        Assert.Equal([2], Assert.IsType<ImportBatch>(Assert.Single(second.HandledMessages).Message).Items);
+        Assert.Empty(none.HandledMessages);
+        Assert.All(harness.HandledMessages, m => Assert.Equal(MessageOutcome.Completed, m.Outcome));
+        Assert.True(harness.IsPaused);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_WithARetryDelayOfZero_RunsEachRetryAsItsOwnStep()
+    {
+        var host = await StartHarnessAsync(o =>
+        {
+            o.StartPaused = true;
+            o.RetryDelay = TimeSpan.Zero;
+        });
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new SendReceipt(2, "bounce@b.com"), cancellationToken: TestCancellationToken);
+
+        for (int attempt = 1; attempt <= 4; attempt++)
+        {
+            var step = Assert.Single((await harness.ProcessNextAsync<SendReceipt>(cancellationToken: TestCancellationToken)).HandledMessages);
+            Assert.Equal(MessageOutcome.Retried, step.Outcome);
+            Assert.Equal(attempt, step.Attempt);
+        }
+
+        var last = Assert.Single((await harness.ProcessNextAsync<SendReceipt>(cancellationToken: TestCancellationToken)).HandledMessages);
+        Assert.Equal(MessageOutcome.DeadLettered, last.Outcome);
+        Assert.Equal(5, last.Attempt);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_WithACount_RunsThatManyAndLeavesTheRest()
+    {
+        var host = await StartHarnessAsync(o => o.StartPaused = true);
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var messages = host.Services.GetRequiredService<IMessageClient>();
+        var jobs = host.Services.GetRequiredService<IJobClient>();
+        for (int i = 1; i <= 3; i++)
+        {
+            await messages.SendAsync(new SendReceipt(i, "a@b.com"), cancellationToken: TestCancellationToken);
+            await jobs.EnqueueAsync(new GenerateInvoice(i), cancellationToken: TestCancellationToken);
+        }
+
+        var receipts = await harness.ProcessNextAsync<SendReceipt>(2, cancellationToken: TestCancellationToken);
+        var invoice = await harness.ProcessNextAsync<GenerateInvoice>(cancellationToken: TestCancellationToken);
+        var anyTwo = await harness.ProcessNextAsync(2, cancellationToken: TestCancellationToken);
+        var rest = await harness.ProcessPendingAsync(cancellationToken: TestCancellationToken);
+
+        Assert.Equal(2, receipts.HandledMessages.Count);
+        Assert.Empty(receipts.JobRuns);
+        Assert.Equal(JobState.Succeeded, Assert.Single(invoice.JobRuns).State);
+        Assert.Empty(invoice.HandledMessages);
+        Assert.Equal(2, anyTwo.HandledMessages.Count + anyTwo.JobRuns.Count);
+        Assert.Equal(1, rest.HandledMessages.Count + rest.JobRuns.Count);
+        Assert.Equal(3, harness.HandledMessages.Count);
+        Assert.Equal(3, harness.JobRuns.Count);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_WithTheLegacyMessageBus_SpendsItsStepsOnlyOnTheAppsHandlers()
+    {
+        var host = await StartHarnessAsync(o => o.StartPaused = true, s => s.AddFoundatioMessaging(m => m.AddLegacyMessageBus()));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var bus = host.Services.GetRequiredService<Foundatio.Messaging.IMessageBus>();
+        int legacy = 0;
+        await bus.SubscribeAsync<Bounce>(_ => Interlocked.Increment(ref legacy), TestCancellationToken);
+
+        await bus.PublishAsync(new Bounce(1), cancellationToken: TestCancellationToken);
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new SendReceipt(1, "a@b.com"), cancellationToken: TestCancellationToken);
+        var step = await harness.ProcessNextAsync(cancellationToken: TestCancellationToken);
+
+        Assert.IsType<SendReceipt>(Assert.Single(step.HandledMessages).Message);
+        Assert.Equal(["a@b.com: Receipt for order 1"], host.Services.GetRequiredService<EmailSender>().Sent);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_WhenNotPaused_Throws()
+    {
+        var host = await StartHarnessAsync();
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => harness.ProcessNextAsync<SendReceipt>(cancellationToken: TestCancellationToken));
+
+        Assert.Contains("PauseProcessingAsync", error.Message);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => harness.ProcessNextAsync(0, cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task WaitForIdleAsync_WhilePaused_RunsAllTheWorkThenStaysPaused()
+    {
+        var host = await StartHarnessAsync(o => o.StartPaused = true);
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var messages = host.Services.GetRequiredService<IMessageClient>();
+
+        await messages.PublishAsync(new OrderPlaced(1, "a@b.com"), cancellationToken: TestCancellationToken);
+        await harness.WaitForIdleAsync(cancellationToken: TestCancellationToken);
+
+        Assert.True(harness.IsPaused);
+        Assert.Equal(["a@b.com: Receipt for order 1"], host.Services.GetRequiredService<EmailSender>().Sent);
+        Assert.Equal(JobState.Succeeded, Assert.Single(harness.JobRuns).State);
+
+        await messages.SendAsync(new SendReceipt(2, "c@d.com"), cancellationToken: TestCancellationToken);
+        await Task.Delay(200, TestCancellationToken);
+        Assert.Single(host.Services.GetRequiredService<EmailSender>().Sent);
+        Assert.Single((await harness.ProcessNextAsync<SendReceipt>(cancellationToken: TestCancellationToken)).HandledMessages);
     }
 
     [Fact]
@@ -559,6 +687,9 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     public record ReceiptSettings(int Attempts);
+
+    [Message("tests.import-batch")]
+    public record ImportBatch(int[] Items);
 
     public record Bounce(int Id);
 
