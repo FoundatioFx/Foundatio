@@ -145,9 +145,12 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
             long leaseStarted = Stopwatch.GetTimestamp();
 
             ReceiveMessageResponse response;
+            Task<ReceiveMessageResponse>? poll = null;
             try
             {
-                response = await _transport.Sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+                // Not cancelled with the receive: SQS can hand messages to a request the client gave up on, which would
+                // then stay hidden for the lease, so a poll the receive stops waiting for runs out and its messages are released.
+                poll = _transport.Sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
                     QueueUrl = _queueUrl,
                     MaxNumberOfMessages = count,
@@ -159,7 +162,16 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
                     MessageAttributeNames = [SqsMessageTransportCodec.AttributeName],
                     // Lets the SDK's retry of a failed FIFO receive return the same messages instead of leaving them locked.
                     ReceiveRequestAttemptId = _fifo ? Guid.NewGuid().ToString("N") : null
-                }, receiveCancellation.Token).AnyContext();
+                }, CancellationToken.None);
+                response = await poll.WaitAsync(receiveCancellation.Token).AnyContext();
+            }
+            catch (OperationCanceledException) when (receiveCancellation.IsCancellationRequested && poll is not null)
+            {
+                _ = ReleaseAbandonedPollAsync(poll, leaseStarted);
+                if (_disposing.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    return [];
+
+                throw;
             }
             catch (OperationCanceledException) when (_disposing.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
@@ -860,6 +872,47 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     {
         var unsettled = _inFlight.Values.Where(m => Stopwatch.GetTimestamp() < m.LeaseDeadline).ToList();
         _inFlight.Clear();
+        await ReleaseAsync(unsettled).AnyContext();
+    }
+
+    /// <summary>
+    /// Waits for a long poll whose receive was cancelled, and makes the messages it got visible again at once, so the
+    /// next receive, here or in another process, gets them. Each counts one more receive.
+    /// </summary>
+    private async Task ReleaseAbandonedPollAsync(Task<ReceiveMessageResponse> poll, long leaseStarted)
+    {
+        ReceiveMessageResponse response;
+        try
+        {
+            response = await poll.AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _transport.Logger.LogDebug(ex, "A long poll of {Source} whose receive was cancelled failed", Source);
+            return;
+        }
+
+        if (response.Messages is not { Count: > 0 })
+            return;
+
+        try
+        {
+            var messages = (await ToIncomingMessagesAsync(response.Messages, leaseStarted).AnyContext()).Cast<SqsIncomingMessage>().ToList();
+            foreach (var message in messages)
+                _inFlight.TryRemove(message.ReceiptHandle, out _);
+
+            await ReleaseAsync(messages).AnyContext();
+            if (messages.Count > 0)
+                _transport.Logger.LogDebug("Released {Count} messages from {Source} that a long poll got after its receive was cancelled", messages.Count, Source);
+        }
+        catch (Exception ex)
+        {
+            _transport.Logger.LogWarning(ex, "Could not release the messages a cancelled long poll of {Source} got; they will be delivered again when their leases expire", Source);
+        }
+    }
+
+    private async Task ReleaseAsync(IReadOnlyCollection<SqsIncomingMessage> unsettled)
+    {
         if (unsettled.Count == 0)
             return;
 

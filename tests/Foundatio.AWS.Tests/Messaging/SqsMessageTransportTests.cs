@@ -441,6 +441,27 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     }
 
     [Fact]
+    public async Task ReceiveAsync_CancelledDuringALongPoll_ReleasesWhatThePollGetsAfterward()
+    {
+        // Arrange: a ReceiveMessage request the client gave up on can still be handed messages (Floci does it), which
+        // would then stay hidden for the lease. Stopping a host cancels its receivers' long polls this way.
+        var source = MessageSource.Queue(NewName("cancelled-poll"));
+        DeleteAfterTest(source);
+        var stopped = await Transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(60) }, TestCancellationToken);
+        using (var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(500)))
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stopped.ReceiveAsync(10, TimeSpan.FromSeconds(20), stop.Token));
+        await stopped.DisposeAsync();
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 3).Select(i => Message($"m{i}", $"id-{i}")).ToList(), TestCancellationToken);
+        await using var receiver = await CreateReceiverAsync(source);
+        var received = await ReceiveAsync(receiver, 3, TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.Equal(["id-0", "id-1", "id-2"], received.Select(m => m.MessageId).Order());
+    }
+
+    [Fact]
     public async Task ReceiveAsync_ConcurrentCallsGetEarlyMessagesWhileManyAreInFlight_SendsEachAgainInsteadOfHidingIt()
     {
         Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
