@@ -7,7 +7,8 @@
 -- Reads stop once about max bytes were read, always returning at least one message when one is available. The source
 -- is drained when the stream had fewer unread messages than the receive could take.
 -- Returns the messages, the ms until the next delayed or leased message is due (-1 when there is none or the source was
--- not drained), the number of groups released because their outstanding message was lost, and 1 when it was drained
+-- not drained), the number of groups released because their outstanding message was lost, 1 when it was drained, and 1
+-- when the source's stream or consumer group was missing (Redis lost its keys) and was created again
 local stream, leases, delayed, idle = KEYS[1], KEYS[2], KEYS[3], KEYS[8]
 local k = { stream = stream, delayed = delayed, delayedData = KEYS[4], groups = KEYS[5], held = KEYS[6] }
 local group, consumer = ARGV[1], ARGV[2]
@@ -18,6 +19,7 @@ local now = nowMs()
 -- Retries are kept in the retries set only while they wait out their delay, so their source's stats can tell them
 -- from messages that are in flight; once due they are leases like any other.
 redis.call('ZREMRANGEBYSCORE', KEYS[7], '-inf', now)
+local recreated = redis.call('EXISTS', stream) == 0
 local released = ensureStream(k, group, now)
 released = released + promote(k, now, tonumber(ARGV[5]), maxBytes)
 trimDeadLetters(stream, tonumber(ARGV[8]), tonumber(ARGV[9]))
@@ -46,6 +48,7 @@ local function readGroup(count)
             return read
         end
         redis.call('XGROUP', 'CREATE', stream, group, '0', 'MKSTREAM')
+        recreated = true
         read = redis.call('XREADGROUP', 'GROUP', group, consumer, 'COUNT', count, 'STREAMS', stream, '>')
     end
     return read
@@ -123,4 +126,4 @@ elseif not drained and ARGV[11] == '1' then
     redis.call('ZREM', idle, consumer)
 end
 
-return { messages, wait, released, drained and 1 or 0 }
+return { messages, wait, released, drained and 1 or 0, recreated and 1 or 0 }

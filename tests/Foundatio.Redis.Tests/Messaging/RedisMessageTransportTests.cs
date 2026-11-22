@@ -528,6 +528,34 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         var next = await ReceiveOneAsync(receiver);
         Assert.Equal("after", next.MessageId);
         await receiver.CompleteAsync(next, TestCancellationToken);
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains(source.ToString()) && e.Message.Contains("created and registered"));
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_AfterRedisLostOnlyTheTopicsSubscriptions_RegistersAgainWithAWarning()
+    {
+        // The topic's subscriptions live on another slot than the subscription's keys, so a failover can lose one alone.
+        string topic = NewName("lost-set");
+        var source = MessageSource.Subscription(topic, "billing");
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("before", "before")], TestCancellationToken);
+        await receiver.CompleteAsync(await ReceiveOneAsync(receiver), TestCancellationToken);
+
+        await GetMuxer().GetDatabase().KeyDeleteAsync($"{KeyPrefix}:{{t:{topic}}}:subscriptions");
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("lost", "lost")], TestCancellationToken);
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains(topic) && e.Message.Contains("now has none"));
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (!Log.LogEntries.Any(e => e.LogLevel == LogLevel.Warning && e.Message.Contains(source.ToString()) && e.Message.Contains("registered again")))
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The subscription did not register with its topic again.");
+            Assert.Empty(await receiver.ReceiveAsync(1, TimeSpan.FromMilliseconds(250), TestCancellationToken));
+        }
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("after", "after")], TestCancellationToken);
+        var next = await ReceiveOneAsync(receiver);
+        Assert.Equal("after", next.MessageId);
+        await receiver.CompleteAsync(next, TestCancellationToken);
     }
 
     [Theory]

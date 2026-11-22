@@ -14,6 +14,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private const int MaxPromotedPerReceive = 100;
     private const int HeartbeatsPerTimeout = 6;
     private static readonly TimeSpan IdleRegistrationRefreshInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan SubscriptionRegistrationRefreshInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaxHeartbeatRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan WakePassOnDelay = TimeSpan.FromMilliseconds(5);
 
@@ -21,6 +22,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private readonly RedisSourceKeys _keys;
     private readonly ReceiverOptions _options;
     private readonly RedisInstanceSubscription? _instance;
+    private readonly RedisKey? _topicSubscriptions;
     private readonly string _consumer = $"{Environment.MachineName}:{Guid.NewGuid():N}";
     private readonly CancellationTokenSource _disposing = new();
     private readonly RedisChannel _wakeChannel;
@@ -35,6 +37,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private bool _mayBeRegistered;
     private bool _registrationCurrent;
     private long _registeredAt;
+    private long _subscriptionRegisteredAt = Stopwatch.GetTimestamp();
     private int _receiving;
     private long _receiveStarts;
     private long _signals;
@@ -50,6 +53,8 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         _keys = keys;
         _options = options;
         _instance = instance;
+        if (source.Kind == MessageSourceKind.Subscription)
+            _topicSubscriptions = new RedisTopicKeys(transport.Options.Prefix, source.Topic!).Subscriptions;
         _wakeChannel = transport.WakeChannel(keys.WakeChannelPrefix + _consumer);
         _onSignal = (_, _) =>
         {
@@ -280,6 +285,12 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         var entries = (RedisResult[])result[0]!;
         long wait = (long)result[1];
         _transport.LogReleasedGroups(_keys, (long)result[2]);
+        bool recreated = (long)result[4] == 1;
+        if (recreated && _topicSubscriptions is null)
+            _transport.Logger.Log(deadLetters ? LogLevel.Debug : LogLevel.Warning, "{Source} was missing in Redis and is created again: it was deleted, or Redis lost its keys " +
+                "(a restart without persistence, a failover before replication, or a flush), and with them the messages it held", Source);
+        if (_topicSubscriptions is { } subscriptions && (recreated || Stopwatch.GetElapsedTime(_subscriptionRegisteredAt, now) >= SubscriptionRegistrationRefreshInterval))
+            await RegisterSubscriptionAsync(subscriptions, recreated, now).AnyContext();
         bool registered = register && (long)result[3] == 1;
         if (registered)
         {
@@ -309,6 +320,32 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         }
 
         return (messages, nextChange, idle);
+    }
+
+    /// <summary>
+    /// Adds this durable subscription to its topic's subscriptions again, which publishes read to know where to copy a
+    /// message. Done when the receive found the subscription's keys missing, and every few seconds, since the topic's
+    /// set lives on another cluster slot and can be lost while the subscription's keys survive.
+    /// </summary>
+    private async Task RegisterSubscriptionAsync(RedisKey subscriptions, bool recreated, long now)
+    {
+        try
+        {
+            bool added = await _transport.Database.SetAddAsync(subscriptions, Source.Name).AnyContext();
+            _subscriptionRegisteredAt = now;
+            if (recreated)
+                _transport.Logger.LogWarning("{Source} was missing in Redis and is created and registered with topic {Topic} again: it was deleted, or Redis lost its keys " +
+                    "(a restart without persistence, a failover before replication, or a flush). The messages it held were lost, and so were those published to the topic meanwhile", Source, Source.Topic);
+            else if (added)
+                _transport.Logger.LogWarning("{Source} was missing from the subscriptions of topic {Topic} in Redis and is registered again: it was deleted, or Redis lost the topic's keys " +
+                    "(a restart without persistence, a failover before replication, or a flush). Messages published to the topic meanwhile were not delivered to it", Source, Source.Topic);
+        }
+        catch (Exception ex) when (ex is RedisException)
+        {
+            // Retried on the next receive.
+            _subscriptionRegisteredAt = 0;
+            _transport.Logger.LogDebug(ex, "Could not register {Source} with topic {Topic}", Source, Source.Topic);
+        }
     }
 
     private IdleRegistration? TakeIdleRegistration()

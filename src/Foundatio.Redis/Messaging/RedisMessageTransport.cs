@@ -69,6 +69,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     private readonly ConcurrentDictionary<RedisMessageReceiver, byte> _receivers = new();
     private readonly ConcurrentDictionary<RedisKey, long> _orphanChecks = new();
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _instanceSubscriptions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _topicsWithSubscriptions = new(StringComparer.Ordinal);
     private int _evictionPolicyChecked;
     private int _shardedChannels = -1;
     private int _disposed;
@@ -191,6 +192,7 @@ public sealed class RedisMessageTransport : IMessageTransport
         try
         {
             var subscriptions = await PublishAsync(topic, encoded, accepted).AnyContext();
+            WarnIfSubscriptionsVanished(topic.Topic, subscriptions.Count);
             if (accepted.Count > 0 && subscriptions.Count > 0)
                 await Task.WhenAll(subscriptions.Select(s => CopyToSubscriptionAsync(RedisSourceKeys.Subscription(Options.Prefix, topic.Topic, s), accepted))).AnyContext();
         }
@@ -286,7 +288,10 @@ public sealed class RedisMessageTransport : IMessageTransport
 
         var keys = GetKeys(source);
         if (source.Kind == MessageSourceKind.Subscription)
+        {
             await Database.SetRemoveAsync(new RedisTopicKeys(Options.Prefix, source.Topic!).Subscriptions, source.Name).AnyContext();
+            _topicsWithSubscriptions.TryRemove(source.Topic!, out _);
+        }
 
         RedisKey[] deleted = source.Kind == MessageSourceKind.DeadLetter ? keys.All : [.. keys.All, .. keys.DeadLetter.All];
         await Database.ScriptEvaluateAsync(DeleteScript, deleted).AnyContext();
@@ -385,6 +390,18 @@ public sealed class RedisMessageTransport : IMessageTransport
     }
 
     private Task SweepInstancesAsync(RedisTopicKeys topic) => PublishAsync(topic, [], []);
+
+    // A topic's durable subscriptions are only ever removed by DeleteAsync, so a topic this transport saw subscriptions
+    // of that has none left has most likely lost its keys; its subscribers register again on their next receives.
+    private void WarnIfSubscriptionsVanished(string topic, int subscriptions)
+    {
+        if (subscriptions > 0)
+            _topicsWithSubscriptions.TryAdd(topic, 0);
+        else if (_topicsWithSubscriptions.TryRemove(topic, out _))
+            Logger.LogWarning("Topic {Topic} had durable subscriptions and now has none in Redis, so messages published to it reach none until they register again. " +
+                "If none was deleted, Redis lost the topic's keys (a restart without persistence, a failover before replication, or a flush); " +
+                "running subscribers register again within seconds", topic);
+    }
 
     private async Task DeleteInstancesAsync(RedisTopicKeys topic, IReadOnlyList<string> instances)
     {
