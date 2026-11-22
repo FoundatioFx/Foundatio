@@ -306,6 +306,12 @@ internal sealed class MessageClient : IMessageClient
         if (_handlers.Count == 0 || checkedTypes.ContainsKey(route.Type) || checkedTypes.Count >= MaxReportedMessageTypes || !checkedTypes.TryAdd(route.Type, 0))
             return;
 
+        WarnIfMisrouted(kind, route, destinationName);
+    }
+
+    /// <summary>The first send of a type: kept apart from <see cref="CheckRouting"/> so its lambdas allocate nothing on every later send.</summary>
+    private void WarnIfMisrouted(MessageDestinationKind kind, MessageRoute route, string destinationName)
+    {
         if (kind == MessageDestinationKind.Queue)
         {
             if (_handlers.Any(h => h.Kind == MessageHandlerKind.Consumer && _runtime.Types.GetRoute(h.MessageType).Queue == destinationName)
