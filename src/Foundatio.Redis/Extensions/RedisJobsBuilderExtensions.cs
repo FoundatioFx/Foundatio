@@ -9,6 +9,25 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class RedisJobsBuilderExtensions
 {
     /// <summary>
+    /// Stores jobs in Redis, connecting with <paramref name="connectionString"/>, so every instance shares them. The
+    /// connection is registered as the service collection's <see cref="IConnectionMultiplexer"/>, so messaging
+    /// (<c>UseRedis</c> on the messaging builder with the same string), caches and locks can share it, and the service
+    /// provider disposes it. Redis being down at startup does not fail it unless the string sets <c>abortConnect=true</c>.
+    /// </summary>
+    /// <param name="builder">The jobs builder.</param>
+    /// <param name="connectionString">The StackExchange.Redis configuration string, for example "localhost:6379".</param>
+    /// <param name="options">The store's options.</param>
+    /// <exception cref="InvalidOperationException">
+    /// An <see cref="IConnectionMultiplexer"/> is registered already, other than by a <c>UseRedis</c> call with the same connection string.
+    /// </exception>
+    public static FoundatioJobsBuilder UseRedis(this FoundatioJobsBuilder builder, string connectionString, RedisJobStoreOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        RedisConnectionRegistration.Add(builder.Services, connectionString);
+        return builder.UseRedis(options);
+    }
+
+    /// <summary>
     /// Stores jobs in Redis, on the <see cref="IConnectionMultiplexer"/> registered in the service collection, so
     /// every instance shares them. The connection stays yours.
     /// </summary>

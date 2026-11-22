@@ -11,6 +11,28 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class RedisMessagingBuilderExtensions
 {
     /// <summary>
+    /// Uses Redis Streams as the message transport, connecting with <paramref name="connectionString"/>. The connection
+    /// is registered as the service collection's <see cref="IConnectionMultiplexer"/>, so jobs (<c>UseRedis</c> on the
+    /// jobs builder with the same string), caches and locks can share it, and the service provider disposes it. Redis
+    /// being down at startup does not fail it unless the string sets <c>abortConnect=true</c>.
+    /// </summary>
+    /// <param name="builder">The messaging builder.</param>
+    /// <param name="connectionString">The StackExchange.Redis configuration string, for example "localhost:6379".</param>
+    /// <param name="options">
+    /// The transport's options. A <see cref="RedisMessageTransportOptions.LoggerFactory"/> or
+    /// <see cref="RedisMessageTransportOptions.TimeProvider"/> left unset is taken from the service provider: the clock is <see cref="MessagingOptions.TimeProvider"/> when that is set.
+    /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// An <see cref="IConnectionMultiplexer"/> is registered already, other than by a <c>UseRedis</c> call with the same connection string.
+    /// </exception>
+    public static FoundatioMessagingBuilder UseRedis(this FoundatioMessagingBuilder builder, string connectionString, RedisMessageTransportOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        RedisConnectionRegistration.Add(builder.Services, connectionString);
+        return builder.UseRedis(options);
+    }
+
+    /// <summary>
     /// Uses Redis Streams as the message transport, on the <see cref="IConnectionMultiplexer"/> registered in the
     /// service collection. The service provider creates and disposes the transport; the connection stays yours.
     /// </summary>

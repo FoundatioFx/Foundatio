@@ -68,6 +68,7 @@ builder.Services.AddFoundatioMessaging(m => m
 ```
 
 - `UseRedis()` uses the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. To use another connection, call `UseRedis(connection, options)`. Either way the connection stays yours; the transport doesn't close it.
+- `UseRedis(builder.Configuration.GetConnectionString("Redis")!)` connects for you instead: it registers the `IConnectionMultiplexer`, which jobs (`UseRedis` with the same string), caches and locks can share, and the host disposes it.
 - It orders groups, honors `DeduplicationId`, and delays messages for any length of time.
 - Messages live in Redis memory. Set `maxmemory-policy noeviction`, and bound dead letters with `DeadLetterMaxLength` or `DeadLetterRetention`.
 - See the [Redis README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport) for every option, memory use and latency.
@@ -90,7 +91,7 @@ m.UseSqs(sp => new SqsMessageTransportOptions
 });
 ```
 
-- Without a connection string (`UseSqs()`), the default AWS credential and region resolution is used, such as an IAM role.
+- `UseSqs("Region=us-east-1")` takes the connection string alone. Without one (`UseSqs()`), the `IAmazonSQS` and `IAmazonSimpleNotificationService` registered in DI are used (`AddAWSService<IAmazonSQS>()`), or, with neither registered, the default AWS credential and region resolution, such as an IAM role. `UseSqs(sqs, sns, options)` takes the clients.
 - Standard queues neither order groups nor deduplicate. Set `Fifo = true` for both, at lower throughput.
 - An empty `Prefix` shares queue names with `SQSQueue<T>` and `SQSMessageBus`. Use a prefix while they run side by side.
 - See the [AWS README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for delays, quotas and the IAM actions the transport needs.

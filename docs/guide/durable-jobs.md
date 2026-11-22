@@ -63,7 +63,7 @@ builder.Services.AddFoundatioJobs(j => j
     .AddJob<GenerateReportJob>());
 ```
 
-- `UseRedis()` uses the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. To use another connection, call `UseRedis(connection, options)`; to build the options from configuration, pass a `Func<IServiceProvider, RedisJobStoreOptions>`. The connection stays yours.
+- `UseRedis()` uses the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. To use another connection, call `UseRedis(connection, options)`; to build the options from configuration, pass a `Func<IServiceProvider, RedisJobStoreOptions>`. The connection stays yours. `UseRedis(builder.Configuration.GetConnectionString("Redis")!)` connects and registers the connection for you instead, shared with a messaging `UseRedis` given the same string.
 - `RedisJobStoreOptions` is in `Foundatio.Jobs.Store`. Every process that enqueues or runs the same jobs must use the same `Prefix` and `Database`.
 - The prefix is the store's hash tag, so on a cluster the whole store lives on one shard. Give each application its own prefix.
 

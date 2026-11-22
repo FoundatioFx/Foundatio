@@ -2,8 +2,11 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Jobs;
+using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
+using Foundatio.Tests.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -74,6 +77,44 @@ public class RedisMessagingBuilderExtensionsTests(ITestOutputHelper output) : Te
         Assert.Equal("foundatio-tests:helpers", transport.Options.Prefix);
         Assert.Same(NullLoggerFactory.Instance, transport.Options.LoggerFactory);
         Assert.Same(timeProvider, transport.TimeProvider);
+    }
+
+    [Fact]
+    public async Task UseRedis_WithAConnectionString_RegistersOneConnectionForMessagingAndJobsAndDisposesIt()
+    {
+        // Arrange
+        string? connectionString = Configuration.GetConnectionString("RedisConnectionString");
+        Assert.SkipWhen(String.IsNullOrEmpty(connectionString), "RedisConnectionString is not configured.");
+        var services = new ServiceCollection();
+        services.AddFoundatioMessaging(m => m.UseRedis(connectionString, new RedisMessageTransportOptions { Prefix = "foundatio-tests:helpers" }));
+        services.AddFoundatioJobs(j => j.UseRedis(connectionString));
+        var provider = services.BuildServiceProvider();
+
+        // Act
+        var transport = Assert.IsType<RedisMessageTransport>(provider.GetRequiredService<IMessageTransport>());
+        Assert.IsType<RedisJobStore>(provider.GetRequiredService<IJobStore>());
+        var connection = Assert.Single(provider.GetServices<IConnectionMultiplexer>());
+        bool connected = connection.IsConnected;
+        await provider.DisposeAsync();
+
+        // Assert
+        Assert.Equal("foundatio-tests:helpers", transport.Options.Prefix);
+        Assert.True(connected);
+        Assert.False(connection.IsConnected);
+    }
+
+    [Fact]
+    public void UseRedis_WithAConnectionStringAndAnotherConnection_Throws()
+    {
+        var registered = new ServiceCollection();
+        registered.AddSingleton<IConnectionMultiplexer>(_ => throw new InvalidOperationException("not created"));
+        var exception = Assert.Throws<InvalidOperationException>(() => registered.AddFoundatioMessaging(m => m.UseRedis("localhost:6379")));
+        Assert.Contains("UseRedis()", exception.Message);
+
+        var other = new ServiceCollection();
+        other.AddFoundatioMessaging(m => m.UseRedis("localhost:6379"));
+        exception = Assert.Throws<InvalidOperationException>(() => other.AddFoundatioJobs(j => j.UseRedis("localhost:6380")));
+        Assert.Contains("connection string", exception.Message);
     }
 
     [Fact]

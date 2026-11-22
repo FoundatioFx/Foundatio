@@ -72,7 +72,8 @@ builder.Services.AddFoundatioMessaging(m => m
 
 - `UseRedis()`, with no options, uses the defaults. `UseRedis(sp => new RedisMessageTransportOptions { ... })` builds the options from the service provider, for example from configuration.
 - Both use the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. `UseRedis(connection, options)` takes the connection instead.
-- The service provider creates the transport and disposes it at shutdown. The connection stays yours.
+- `UseRedis("localhost:6379", options)` connects for you: it registers the `IConnectionMultiplexer` (jobs, caches and locks can share it; `UseRedis` on the jobs builder with the same string does), the service provider disposes it, and Redis being down at startup doesn't fail it unless the string sets `abortConnect=true`. It throws if another `IConnectionMultiplexer` is registered.
+- The service provider creates the transport and disposes it at shutdown. A connection you registered or passed stays yours.
 
 It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and durable subscription lives on one cluster slot; a topic's instance subscriptions all live on the topic's slot. It needs Redis 6.2 or later, or Valkey.
 
@@ -146,7 +147,7 @@ builder.Services.AddFoundatioJobs(j => j
     .AddJob<GenerateReportJob>());
 ```
 
-It has the same overloads as the transport: `UseRedis()`, `UseRedis(sp => options)` and `UseRedis(connection, options)`.
+It has the same overloads as the transport: `UseRedis()`, `UseRedis(sp => options)`, `UseRedis(connection, options)` and `UseRedis(connectionString, options)`, which shares its connection with a messaging `UseRedis` given the same string.
 
 | Option | Default | |
 |---|---|---|
