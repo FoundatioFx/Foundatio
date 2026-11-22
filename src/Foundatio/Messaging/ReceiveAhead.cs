@@ -10,8 +10,9 @@ namespace Foundatio.Messaging;
 /// its handler slot (<c>s</c>) and how long a receive that returned everything it asked for took (<c>t</c>, from receives
 /// within the horizon: a longer one waited for messages to arrive), the depth is what the handlers get through during
 /// one receive plus one batch, <c>min(⌈C·t/s⌉, b·R) + b</c>, at most <c>⌊C·H/s⌋</c> so that a buffered message waits
-/// about the horizon <c>H</c> at most. <c>H</c> is a second, or a quarter of the shortest lease a receive was granted,
-/// counted from when it started, when that is less, so a buffered message normally starts before its first renewal.
+/// about the horizon <c>H</c> at most. <c>H</c> is a second, or a quarter of the shortest lease a recent receive was
+/// granted (within the last <see cref="LeaseWindow"/> to twice that many leases), counted from when it started, when that
+/// is less, so a buffered message normally starts before its first renewal, and one lease that looks short ages out.
 /// The depth is zero until both times have been measured, and while a message keeps its slot longer than <c>H</c>, so
 /// slow handlers do not hoard messages. Buffered bodies are kept within <see cref="MaxBufferedBytes"/>: from the average
 /// body size, the depth covers the messages buffered and only as many more as fit.
@@ -22,6 +23,9 @@ internal sealed class ReceiveAhead
     /// <summary>The most bytes of message bodies to buffer. Above it, the depth counts as zero.</summary>
     internal const long MaxBufferedBytes = 16 * 1024 * 1024;
 
+    /// <summary>How many granted leases the shortest one is taken over, at least: it is the shortest of this window and the one before.</summary>
+    internal const int LeaseWindow = 100;
+
     private const double SlotTimeWeight = 1.0 / 16;
     private const double ReceiveTimeWeight = 1.0 / 8;
     private const double BodySizeWeight = 1.0 / 8;
@@ -31,6 +35,10 @@ internal sealed class ReceiveAhead
     private readonly int _batchSize;
     private readonly int _receives;
     private readonly long _timestampFrequency;
+    private readonly object _leaseLock = new();
+    private long _windowLeaseTicks = Int64.MaxValue;
+    private long _previousLeaseTicks;
+    private int _windowLeases;
     private long _shortestLeaseTicks;
     private double _slotTicks = -1;
     private double _receiveTicks = -1;
@@ -53,7 +61,7 @@ internal sealed class ReceiveAhead
         _batchSize = batchSize;
         _receives = receives;
         _timestampFrequency = timestampFrequency;
-        _shortestLeaseTicks = leaseDuration.Ticks;
+        _shortestLeaseTicks = _previousLeaseTicks = leaseDuration.Ticks;
     }
 
     /// <summary>How many messages may be received beyond the free handler slots now, ignoring the byte cap.</summary>
@@ -122,18 +130,31 @@ internal sealed class ReceiveAhead
 
     /// <summary>
     /// Records a lease the broker granted (from <see cref="IncomingMessage.LeaseExpiresAt"/>), counted from when its
-    /// receive started, so a long poll's wait does not shorten it. The horizon follows the shortest one seen. Returns true
-    /// when the depth rose.
+    /// receive started, so a long poll's wait does not shorten it. The horizon follows the shortest one of the current
+    /// window of <see cref="LeaseWindow"/> leases and the window before it, which starts as the requested lease. Returns
+    /// true when the depth rose.
     /// </summary>
     public bool RecordLease(TimeSpan lease)
     {
-        long ticks = Math.Max(0, lease.Ticks), current;
-        do
+        long ticks = Math.Max(0, lease.Ticks);
+        lock (_leaseLock)
         {
-            current = Interlocked.Read(ref _shortestLeaseTicks);
-            if (ticks >= current)
+            if (ticks < _windowLeaseTicks)
+                _windowLeaseTicks = ticks;
+
+            if (++_windowLeases >= LeaseWindow)
+            {
+                _previousLeaseTicks = _windowLeaseTicks;
+                _windowLeaseTicks = Int64.MaxValue;
+                _windowLeases = 0;
+            }
+
+            long shortest = Math.Min(_previousLeaseTicks, _windowLeaseTicks);
+            if (shortest == Interlocked.Read(ref _shortestLeaseTicks))
                 return false;
-        } while (Interlocked.CompareExchange(ref _shortestLeaseTicks, ticks, current) != current);
+
+            Interlocked.Exchange(ref _shortestLeaseTicks, shortest);
+        }
 
         return Update();
     }

@@ -98,7 +98,7 @@ public sealed record TransportCapabilities
     /// <para>
     /// How far Foundatio reads ahead, its depth, adapts to how long a message keeps its handler slot and how long a
     /// receive takes: what the handlers get through during one receive, plus a batch. It is capped so that a buffered
-    /// message normally waits at most a second, or a quarter of the lease (the shortest a receive was granted, from when
+    /// message normally waits at most a second, or a quarter of the lease (the shortest a recent receive was granted, from when
     /// it started to <see cref="IncomingMessage.LeaseExpiresAt"/>, when the transport sets it), and so that the buffered
     /// bodies stay within 16 MiB at their recent size. It is zero until both times have been measured, while handlers take
     /// longer than that, and for bodies over 16 MiB. At depth zero, receives ask only for free slots, as without this

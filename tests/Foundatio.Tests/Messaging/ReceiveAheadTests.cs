@@ -89,6 +89,27 @@ public class ReceiveAheadTests
     }
 
     [Fact]
+    public void RecordLease_AfterOneShortLease_RecoversOnceLaterLeasesAreLonger()
+    {
+        var ahead = Create(maxConcurrency: 4, batchSize: 4, receives: 2);
+        ahead.RecordReceiveTime(Ticks(20));
+        ahead.RecordSlotTime(Ticks(400));
+        Assert.Equal(5, ahead.Depth);
+
+        // One lease that looks short (clock skew, a lock partly used) turns reading ahead off for a while...
+        ahead.RecordLease(TimeSpan.FromSeconds(1));
+        Assert.Equal(0, ahead.Depth);
+
+        // ...but not for good: once the leases granted since are all long, it ages out.
+        bool raised = false;
+        for (int i = 0; i < 2 * ReceiveAhead.LeaseWindow; i++)
+            raised |= ahead.RecordLease(TimeSpan.FromSeconds(30));
+
+        Assert.True(raised);
+        Assert.Equal(5, ahead.Depth);
+    }
+
+    [Fact]
     public void Depth_BeforeAnyMeasurement_IsZero()
     {
         var ahead = Create(maxConcurrency: 16, batchSize: 10, receives: 3);
