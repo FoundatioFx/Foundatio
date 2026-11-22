@@ -48,6 +48,9 @@ public sealed class JobWorkerOptions
     /// </summary>
     public TimeProvider? TimeProvider { get; set; }
 
+    /// <summary>Set by the test harness: replaces the delay of every retry policy, the job types' own included.</summary>
+    internal TimeSpan? TestRetryDelay { get; set; }
+
     /// <summary>The clock jobs use in <paramref name="services"/>: <see cref="TimeProvider"/>, the registered one, or the system clock.</summary>
     internal static TimeProvider ResolveTimeProvider(IServiceProvider services)
     {

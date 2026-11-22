@@ -66,6 +66,9 @@ public static class JobsServiceCollectionExtensions
             ?? services.GetService<IJobStore>()
             ?? throw new InvalidOperationException("No job store is configured. Inside AddFoundatioJobs, call UseInMemory(), UseRedis() from Foundatio.Redis, or UseStore().");
 
+        foreach (var job in registrations.Jobs.Values)
+            job.Resolve(services, options.TestRetryDelay);
+
         var loggerFactory = services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
         if (registrations.Jobs.Count > 0)
         {

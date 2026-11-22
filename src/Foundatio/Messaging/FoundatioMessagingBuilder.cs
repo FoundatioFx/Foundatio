@@ -126,6 +126,21 @@ public sealed class FoundatioMessagingBuilder
         return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, ValidateConsumer(options)).ToList(), typeof(THandler));
     }
 
+    /// <summary>
+    /// Like <see cref="AddConsumer{THandler}(HandlerOptions?)"/>, with options created from the app's services when
+    /// the host starts, for example from configuration bound with <c>IOptions&lt;T&gt;</c>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// m.AddConsumer&lt;SendReceiptHandler&gt;(sp => new HandlerOptions { RetryPolicy = sp.GetRequiredService&lt;IOptions&lt;AppOptions&gt;&gt;().Value.ReceiptRetries });
+    /// </code>
+    /// </example>
+    public FoundatioMessagingBuilder AddConsumer<THandler>(Func<IServiceProvider, HandlerOptions> options) where THandler : class
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, new HandlerOptions(), options).ToList(), typeof(THandler));
+    }
+
     /// <summary>Handles messages sent with <see cref="IMessageClient.SendAsync{T}"/> using a delegate.</summary>
     /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
     public FoundatioMessagingBuilder AddConsumer<T>(Func<T, IMessageContext, CancellationToken, Task> handler, HandlerOptions? options = null) where T : class
@@ -147,6 +162,16 @@ public sealed class FoundatioMessagingBuilder
     public FoundatioMessagingBuilder AddSubscriber<THandler>(SubscriptionOptions? options = null) where THandler : class
     {
         return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions())).ToList(), typeof(THandler));
+    }
+
+    /// <summary>
+    /// Like <see cref="AddSubscriber{THandler}(SubscriptionOptions?)"/>, with options created from the app's services
+    /// when the host starts, for example from configuration bound with <c>IOptions&lt;T&gt;</c>.
+    /// </summary>
+    public FoundatioMessagingBuilder AddSubscriber<THandler>(Func<IServiceProvider, SubscriptionOptions> options) where THandler : class
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, new SubscriptionOptions(), options).ToList(), typeof(THandler));
     }
 
     /// <summary>Handles events published with <see cref="IMessageClient.PublishAsync{T}"/> using a delegate.</summary>
@@ -176,7 +201,7 @@ public sealed class FoundatioMessagingBuilder
         return this;
     }
 
-    private static HandlerOptions ValidateConsumer(HandlerOptions? options)
+    internal static HandlerOptions ValidateConsumer(HandlerOptions? options)
     {
         if (options is SubscriptionOptions { Name: not null } or SubscriptionOptions { Scope: not null })
         {
@@ -187,7 +212,7 @@ public sealed class FoundatioMessagingBuilder
         return Validate(options ?? new HandlerOptions());
     }
 
-    private static T Validate<T>(T options) where T : HandlerOptions
+    internal static T Validate<T>(T options) where T : HandlerOptions
     {
         options.Validate();
         (options.RetryPolicy)?.Validate();

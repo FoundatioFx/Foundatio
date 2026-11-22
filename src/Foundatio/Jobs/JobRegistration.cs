@@ -13,15 +13,43 @@ internal sealed class JobRegistration
     public required string Name { get; init; }
     public required Type JobType { get; init; }
     public Type? ArgumentsType { get; init; }
-    public required JobTypeOptions Options { get; init; }
+    /// <summary>The options runs use: <see cref="ConfiguredOptions"/>, with the test harness's retry delay if it sets one.</summary>
+    public JobTypeOptions Options { get; private set; } = new();
 
-    /// <summary>Whether <see cref="Options"/> were given when the job was registered, rather than defaulted.</summary>
-    public bool HasOptions { get; init; }
+    /// <summary>The options as registered, or as <see cref="OptionsFactory"/> returned them.</summary>
+    public JobTypeOptions ConfiguredOptions { get; private set; } = new();
+
+    /// <summary>Creates the options from the app's services when the runtime is built, for options registered with a factory.</summary>
+    public Func<IServiceProvider, JobTypeOptions>? OptionsFactory { get; private init; }
+
+    /// <summary>Whether options were given when the job was registered, rather than defaulted.</summary>
+    public bool HasOptions { get; private init; }
+
+    /// <summary>
+    /// Calls <see cref="OptionsFactory"/> and validates what it returns, and applies <paramref name="retryDelay"/> to the
+    /// job type's own retry policy. Runs when the runtime is built.
+    /// </summary>
+    public void Resolve(IServiceProvider services, TimeSpan? retryDelay)
+    {
+        if (OptionsFactory is not null)
+        {
+            var options = OptionsFactory(services) ?? throw new InvalidOperationException($"The options factory of job {Name} returned null.");
+            options.Validate();
+            ConfiguredOptions = options;
+        }
+
+        Options = retryDelay is { } delay && ConfiguredOptions.RetryPolicy is { } policy
+            ? ConfiguredOptions with { RetryPolicy = policy with { Delay = Resilience.RetryPolicy.Fixed(delay) } }
+            : ConfiguredOptions;
+    }
+
+    /// <summary>Whether this registration and <paramref name="other"/> set the same options the same way.</summary>
+    public bool HasSameOptions(JobRegistration other) => OptionsFactory == other.OptionsFactory && ConfiguredOptions == other.ConfiguredOptions;
 
     /// <summary>Runs the job with its deserialized arguments (null for a job without arguments). Throws when the run fails.</summary>
     public required Func<IServiceProvider, object?, IJobContext, CancellationToken, Task> Invoke { get; init; }
 
-    public static IReadOnlyList<JobRegistration> For(Type jobType, JobTypeOptions options, bool hasOptions = false)
+    public static IReadOnlyList<JobRegistration> For(Type jobType, JobTypeOptions options, bool hasOptions = false, Func<IServiceProvider, JobTypeOptions>? optionsFactory = null)
     {
         if (jobType.IsAbstract || jobType.IsInterface)
             throw new ArgumentException($"{jobType.FullName} must be a concrete class.", nameof(jobType));
@@ -33,6 +61,8 @@ internal sealed class JobRegistration
                 JobType = jobType,
                 ArgumentsType = argumentsType,
                 Options = options,
+                ConfiguredOptions = options,
+                OptionsFactory = optionsFactory,
                 HasOptions = hasOptions,
                 Invoke = (Func<IServiceProvider, object?, IJobContext, CancellationToken, Task>)typeof(JobRegistration)
                     .GetMethod(nameof(CreateInvoker), BindingFlags.NonPublic | BindingFlags.Static)!
@@ -56,6 +86,8 @@ internal sealed class JobRegistration
                 Name = JobNaming.GetName(jobType),
                 JobType = jobType,
                 Options = options,
+                ConfiguredOptions = options,
+                OptionsFactory = optionsFactory,
                 HasOptions = hasOptions,
                 Invoke = (services, _, context, cancellationToken) =>
                     ((IJobHandler)ActivatorUtilities.GetServiceOrCreateInstance(services, jobType)).HandleAsync(context, cancellationToken)

@@ -28,7 +28,7 @@ internal static class HandlerRegistrationValidator
             var first = source.First();
             foreach (var other in source.Skip(1))
             {
-                if (FindDifference(first.Options, other.Options) is { } difference)
+                if (FindDifference(first.ConfiguredOptions, other.ConfiguredOptions) is { } difference)
                     throw new InvalidOperationException(DescribeConflict(source.Key, first, other, difference));
             }
         }

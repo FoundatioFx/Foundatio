@@ -2,6 +2,7 @@ using System;
 using Foundatio.Extensions;
 using Foundatio.Jobs.Cronos;
 using Foundatio.Jobs.Store;
+using System.Collections.Generic;
 using Foundatio.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -83,21 +84,40 @@ public sealed class FoundatioJobsBuilder
         bool hasOptions = options is not null;
         options ??= new JobTypeOptions();
         options.Validate();
+        return AddJob(typeof(TJob), JobRegistration.For(typeof(TJob), options, hasOptions));
+    }
 
-        foreach (var registration in JobRegistration.For(typeof(TJob), options, hasOptions))
+    /// <summary>
+    /// Like <see cref="AddJob{TJob}(JobTypeOptions?)"/>, with options created from the app's services when the host
+    /// starts, for example from configuration bound with <c>IOptions&lt;T&gt;</c>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// j.AddJob&lt;GenerateReportJob&gt;(sp => new JobTypeOptions { MaxConcurrency = sp.GetRequiredService&lt;IOptions&lt;ReportSettings&gt;&gt;().Value.Workers });
+    /// </code>
+    /// </example>
+    public FoundatioJobsBuilder AddJob<TJob>(Func<IServiceProvider, JobTypeOptions> options) where TJob : class
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return AddJob(typeof(TJob), JobRegistration.For(typeof(TJob), new JobTypeOptions(), hasOptions: true, options));
+    }
+
+    private FoundatioJobsBuilder AddJob(Type jobType, IReadOnlyList<JobRegistration> registrations)
+    {
+        foreach (var registration in registrations)
         {
             if (_registrations.Jobs.TryGetValue(registration.Name, out var existing))
             {
                 if (existing.JobType != registration.JobType)
                     throw new ArgumentException($"Job name \"{registration.Name}\" is used by both {JobNaming.GetDisplayName(existing.JobType)} and {JobNaming.GetDisplayName(registration.JobType)}. Give one a unique name with [Job(Name = \"...\")].");
 
-                if (!hasOptions || existing.Options == options)
+                if (!registration.HasOptions || registration.HasSameOptions(existing))
                     continue;
 
                 if (existing.HasOptions)
                 {
-                    throw new ArgumentException($"{JobNaming.GetDisplayName(registration.JobType)} is already registered with different JobTypeOptions ({JobRegistration.Describe(existing.Options)}, "
-                        + $"then {JobRegistration.Describe(options)}). Set its options once, on AddJob or on AddCronJob's CronJobOptions.JobTypeOptions.");
+                    throw new ArgumentException($"{JobNaming.GetDisplayName(registration.JobType)} is already registered with different JobTypeOptions ({Describe(existing)}, "
+                        + $"then {Describe(registration)}). Set its options once, on AddJob or on AddCronJob's CronJobOptions.JobTypeOptions.");
                 }
             }
 
@@ -106,9 +126,11 @@ public sealed class FoundatioJobsBuilder
 
         // Unless the app registered it, so ValidateOnBuild (on by default in Development) reports a missing dependency
         // when the host is built, not when the job runs.
-        Services.TryAddScoped(typeof(TJob));
+        Services.TryAddScoped(jobType);
         return this;
     }
+
+    private static string Describe(JobRegistration registration) => registration.OptionsFactory is null ? JobRegistration.Describe(registration.ConfiguredOptions) : "an options factory";
 
     /// <summary>
     /// Runs a legacy <see cref="IJob"/>, such as a <see cref="JobBase"/>, when it is enqueued, through
@@ -135,11 +157,11 @@ public sealed class FoundatioJobsBuilder
 
     /// <summary>
     /// Enqueues the job that takes <paramref name="arguments"/> on a CRON schedule, once per occurrence across all
-    /// instances. Register the job itself with <see cref="AddJob{TJob}"/> in the process that should run it.
+    /// instances. Register the job itself with <see cref="AddJob{TJob}(JobTypeOptions?)"/> in the process that should run it.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// <paramref name="options"/> sets <see cref="CronJobOptions.JobTypeOptions"/>. This overload does not register the
-    /// job, so set its options with <see cref="AddJob{TJob}"/> in the process that runs it.
+    /// job, so set its options with <see cref="AddJob{TJob}(JobTypeOptions?)"/> in the process that runs it.
     /// </exception>
     public FoundatioJobsBuilder AddCronJob<TArgs>(string cronExpression, TArgs arguments, CronJobOptions? options = null) where TArgs : class
     {

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
 using Foundatio.Serializer;
+using Foundatio.Testing;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
@@ -65,6 +66,7 @@ internal sealed class MessageClient : IMessageClient
         options = options with { Scope = options.Scope ?? SubscriptionScope.Instance };
 
         var registration = MessageHandlerRegistration.ForDelegate(handler, MessageHandlerKind.Subscriber, options);
+        registration.Resolve(EmptyServiceProvider.Instance, o => o, _runtime.Options.TestRetryDelay);
         _runtime.RegisterDerivedTypes(typeof(T));
         var processor = await _runtime.StartProcessorAsync(_runtime.GetSource(registration), [registration], retryInBackground: false, cancellationToken).AnyContext();
         return new AsyncDisposableAction(() => _runtime.StopProcessorAsync(processor));

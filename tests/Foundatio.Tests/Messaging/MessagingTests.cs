@@ -1008,6 +1008,24 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddSubscriber_WithOptionsFromServices_UsesTheSubscriptionNameTheyGive()
+    {
+        await using var host = await StartAsync(m => m.AddSubscriber<WelcomeEmailHandler>(sp => new SubscriptionOptions { Name = sp.GetRequiredService<SubscriptionSettings>().Name }),
+            s => s.AddSingleton(new HandlerCalls()).AddSingleton(new SubscriptionSettings("welcome")));
+
+        Assert.Equal($"subscription:{QueueName<UserRegistered>()}/welcome", Assert.Single(host.Services.GetRequiredService<MessagingStatus>().GetProcessors()).Name);
+    }
+
+    [Fact]
+    public async Task AddConsumer_WithOptionsFromServicesThatNameASubscription_FailsAtStartup()
+    {
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => StartAsync(m => m.AddConsumer<PlaceOrderHandler>(_ => new SubscriptionOptions { Name = "orders-own" }),
+            s => s.AddSingleton(new Recorder()).AddScoped<ScopedDependency>()));
+
+        Assert.Contains("SubscriptionOptions.Name and Scope do not apply", error.Message);
+    }
+
+    [Fact]
     public void AddSubscriber_WithoutAServiceNameOnABrokerTransport_FailsAtStartupListingTheSubscriptions()
     {
         using var provider = BuildServices(m => m
@@ -1176,6 +1194,8 @@ public class MessagingTests : TestWithLoggingBase
     public record Note(string Text);
 
     public record UserRegistered(int UserId);
+
+    public record SubscriptionSettings(string Name);
 
     public interface IMissingService;
 

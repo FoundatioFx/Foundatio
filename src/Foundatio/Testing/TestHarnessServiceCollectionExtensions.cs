@@ -45,6 +45,21 @@ public static class TestHarnessServiceCollectionExtensions
         services.AddSingleton(_ => new TestHarnessRegistration(options));
         services.PostConfigure<MessagingOptions>(o => o.TimeProvider = timeProvider);
         services.PostConfigure<JobWorkerOptions>(o => o.TimeProvider = timeProvider);
+        if (options.RetryDelay is { } retryDelay)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(retryDelay, TimeSpan.Zero, nameof(options.RetryDelay));
+            var delay = Resilience.RetryPolicy.Fixed(retryDelay);
+            services.PostConfigure<MessagingOptions>(o =>
+            {
+                o.TestRetryDelay = retryDelay;
+                o.DefaultRetryPolicy = o.DefaultRetryPolicy with { Delay = delay };
+            });
+            services.PostConfigure<JobWorkerOptions>(o =>
+            {
+                o.TestRetryDelay = retryDelay;
+                o.DefaultRetryPolicy = o.DefaultRetryPolicy with { Delay = delay };
+            });
+        }
         services.RemoveAll<IMessageTransport>();
         services.AddSingleton<IMessageTransport>(sp => sp.GetRequiredService<TestHarnessRegistration>().Transport);
         services.RemoveAll<IJobStore>();

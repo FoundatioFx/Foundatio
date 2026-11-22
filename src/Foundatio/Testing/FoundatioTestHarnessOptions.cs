@@ -1,3 +1,4 @@
+using System;
 using Foundatio.Messaging.Transport;
 
 namespace Foundatio.Testing;
@@ -31,4 +32,13 @@ public sealed class FoundatioTestHarnessOptions
     /// <see cref="FoundatioTestHarness.WaitForIdleAsync"/>. The harness's waits and timeouts always use real time.
     /// </summary>
     public System.TimeProvider? TimeProvider { get; set; }
+
+    /// <summary>
+    /// Replaces the delay of every retry policy, messaging's and jobs' defaults and each handler's and job type's own,
+    /// so a retried message or job runs again after this delay instead of its production backoff. Attempts and
+    /// <see cref="Resilience.RetryPolicy.ShouldRetry"/> are kept, and handlers that share a subscription are still
+    /// checked with their own policies.
+    /// Defaults to null, which keeps every policy's delay.
+    /// </summary>
+    public TimeSpan? RetryDelay { get; set; }
 }

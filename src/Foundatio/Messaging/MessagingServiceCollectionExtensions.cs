@@ -61,6 +61,9 @@ public static class MessagingServiceCollectionExtensions
             ?? services.GetService<IMessageTransport>()
             ?? throw new InvalidOperationException("No message transport is configured. Inside AddFoundatioMessaging, call UseInMemory(), a provider's UseRedis(), UseSqs(), UseKafka(), UseAzureServiceBus() or UseRabbitMQ() (from Foundatio.Redis, Foundatio.AWS, Foundatio.Kafka, Foundatio.AzureServiceBus or Foundatio.RabbitMQ), or UseTransport().");
 
+        foreach (var handler in registrations.Handlers)
+            handler.Resolve(services, handler.Kind == MessageHandlerKind.Consumer ? FoundatioMessagingBuilder.ValidateConsumer : FoundatioMessagingBuilder.Validate, options.TestRetryDelay);
+
         var types = new MessageTypeRegistry();
         foreach (var (type, name, queue, topic) in registrations.Maps)
             types.Map(type, name, queue, topic);

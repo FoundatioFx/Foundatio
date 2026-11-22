@@ -346,6 +346,23 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddConsumer_WithOptionsFromServices_AndAHarnessRetryDelay_RetriesWithoutTheHandlersOwnBackoff()
+    {
+        var host = await StartHarnessAsync(o => o.RetryDelay = TimeSpan.FromMilliseconds(10), services => services
+            .AddSingleton(new ReceiptSettings(Attempts: 2))
+            .AddFoundatioMessaging(m => m.AddConsumer<BouncingHandler>(sp => new HandlerOptions
+            {
+                RetryPolicy = new RetryPolicy { MaxAttempts = sp.GetRequiredService<ReceiptSettings>().Attempts, Delay = RetryPolicy.Fixed(TimeSpan.FromMinutes(10)) }
+            })));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new Bounce(1), cancellationToken: TestCancellationToken);
+        var deadLetter = Assert.Single(await harness.WaitForDeadLetteredAsync<Bounce>(timeout: TimeSpan.FromSeconds(10), cancellationToken: TestCancellationToken));
+
+        Assert.Equal(2, deadLetter.Attempt);
+    }
+
+    [Fact]
     public void AddFoundatioTestHarness_WithCapabilitiesTheInMemoryTransportCannotEmulate_Throws()
     {
         var services = new ServiceCollection();
@@ -364,6 +381,15 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         _hosts.Add(host);
         await host.StartAsync(TestCancellationToken);
         return host;
+    }
+
+    public record ReceiptSettings(int Attempts);
+
+    public record Bounce(int Id);
+
+    public sealed class BouncingHandler : IMessageHandler<Bounce>
+    {
+        public Task HandleAsync(Bounce message, IMessageContext context, CancellationToken cancellationToken) => throw new InvalidOperationException("Bounced");
     }
 
     public record ArchiveOrders(int OlderThanDays);

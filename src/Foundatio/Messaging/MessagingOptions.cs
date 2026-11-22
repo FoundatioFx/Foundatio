@@ -47,6 +47,9 @@ public sealed class MessagingOptions
     /// </summary>
     public TimeProvider? TimeProvider { get; set; }
 
+    /// <summary>Set by the test harness: replaces the delay of every retry policy, the handlers' own included.</summary>
+    internal TimeSpan? TestRetryDelay { get; set; }
+
     /// <summary>The clock messaging uses in <paramref name="services"/>: <see cref="TimeProvider"/>, the registered one, or the system clock.</summary>
     internal static TimeProvider ResolveTimeProvider(IServiceProvider services)
     {

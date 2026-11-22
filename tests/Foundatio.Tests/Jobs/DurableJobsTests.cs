@@ -797,6 +797,18 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddJob_WithOptionsFromServices_AppliesThemWhenTheHostStarts()
+    {
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(sp => new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = sp.GetRequiredService<JobSettings>().Attempts, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) } }),
+            s => s.AddSingleton(new JobSettings(Attempts: 2)));
+
+        var job = await (await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken)).WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(2, job.Attempt);
+    }
+
+    [Fact]
     public void AddJob_WithDifferentOptionsForOneJob_ThrowsNamingBoth()
     {
         var services = new ServiceCollection();
@@ -1196,6 +1208,8 @@ public class DurableJobsTests : TestWithLoggingBase
             await Task.Delay(100, cancellationToken);
         }
     }
+
+    public record JobSettings(int Attempts);
 
     public interface IMissingService;
 
