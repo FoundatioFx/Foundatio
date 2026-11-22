@@ -948,6 +948,34 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task SendAsync_WhenAHostAcceptsConnectionsButNeverAnswers_ConnectsToAnotherHost()
+    {
+        // Arrange: a node that is paused, or a TCP load balancer whose backend is down, accepts the connection and
+        // never starts the AMQP handshake. The client shuffles the hosts, so each attempt may pick it first.
+        var broker = new Uri(Fixture.ConnectionString);
+        await using var silent = TcpTestProxy.Silent();
+        var source = MessageSource.Queue(NewName("stalled-host"));
+        DeleteAfterTest(source);
+        var options = CreateOptions() with
+        {
+            Hosts = [silent.Host, $"{broker.Host}:{broker.Port}"],
+            ConfigureConnectionFactory = f => f.HandshakeContinuationTimeout = TimeSpan.FromSeconds(1)
+        };
+
+        // Act
+        for (int i = 0; i < 6; i++)
+        {
+            await using var transport = new RabbitMQMessageTransport(options);
+            await transport.SendAsync(MessageDestination.Queue(source.Name), [Message($"m{i}", $"id-{i}")], TestCancellationToken);
+        }
+
+        // Assert
+        await using var receiver = await CreateReceiverAsync(source);
+        var received = await ReceiveAsync(receiver, 6);
+        Assert.Equal(Enumerable.Range(0, 6).Select(i => $"id-{i}"), received.Select(m => m.MessageId).Order());
+    }
+
+    [Fact]
     public async Task GetStats_WithTheManagementApi_CountsInFlightMessages()
     {
         Assert.SkipWhen(Fixture.ManagementEndpoint is null, "The test broker has no management endpoint.");

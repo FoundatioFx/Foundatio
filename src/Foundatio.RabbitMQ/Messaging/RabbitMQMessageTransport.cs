@@ -506,15 +506,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
                 await current.DisposeAsync().AnyContext();
 
             string role = consumer ? "receivers" : "publisher";
-            IConnection connection;
-            try
-            {
-                connection = await _factory!.CreateConnectionAsync(_endpoints!, $"Foundatio {Options.Prefix} transport ({role})", cancellationToken).AnyContext();
-            }
-            catch (BrokerUnreachableException ex)
-            {
-                throw new MessageBusException($"Could not connect to RabbitMQ: {ex.Message}", ex);
-            }
+            var connection = await ConnectAsync($"Foundatio {Options.Prefix} transport ({role})", cancellationToken).AnyContext();
 
             connection.ConnectionShutdownAsync += (_, args) =>
             {
@@ -534,6 +526,65 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
         finally
         {
             _connectionLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Connects to the first host, in random order, that completes the AMQP handshake within the connection factory's
+    /// <see cref="ConnectionFactory.HandshakeContinuationTimeout"/>. RabbitMQ.Client moves on to the next host only when
+    /// a connection is refused, and waits as long as the caller's token for a host that accepts the connection and
+    /// never starts the handshake (a paused node, or a load balancer whose backend is down), so each host is tried on
+    /// its own, with that timeout.
+    /// </summary>
+    private async Task<IConnection> ConnectAsync(string name, CancellationToken cancellationToken)
+    {
+        var factory = _factory!;
+        var endpoints = _endpoints!.ToArray();
+        Random.Shared.Shuffle(endpoints);
+        Exception? failure = null;
+        foreach (var endpoint in endpoints)
+        {
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            attempt.CancelAfter(factory.HandshakeContinuationTimeout);
+            var connecting = factory.CreateConnectionAsync([endpoint], name, attempt.Token);
+            try
+            {
+                // The client takes seconds more to give up once cancelled, so it is not waited for.
+                return await connecting.WaitAsync(attempt.Token).AnyContext();
+            }
+            catch (Exception ex) when (ex is BrokerUnreachableException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                if (!connecting.IsCompleted)
+                    _ = CloseLateConnectionAsync(connecting);
+
+                failure = ex is OperationCanceledException
+                    ? new TimeoutException($"{endpoint.HostName}:{endpoint.Port} did not complete the AMQP handshake within {factory.HandshakeContinuationTimeout}.", ex)
+                    : ex;
+                if (endpoints.Length > 1)
+                    Logger.LogWarning("Could not connect to RabbitMQ at {Host}:{Port}, trying the next host: {Reason}", endpoint.HostName, endpoint.Port, Reason(failure));
+            }
+            catch (OperationCanceledException) when (!connecting.IsCompleted)
+            {
+                _ = CloseLateConnectionAsync(connecting);
+                throw;
+            }
+        }
+
+        string hosts = String.Join(", ", endpoints.Select(e => $"{e.HostName}:{e.Port}"));
+        throw new MessageBusException($"Could not connect to RabbitMQ at {hosts}: {Reason(failure!)}", failure!);
+
+        static string Reason(Exception ex) => ex is BrokerUnreachableException { InnerException: { } inner } ? inner.Message : ex.Message;
+    }
+
+    private static async Task CloseLateConnectionAsync(Task<IConnection> connecting)
+    {
+        try
+        {
+            await (await connecting.AnyContext()).DisposeAsync().AnyContext();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The attempt that timed out failed after all.
         }
     }
 

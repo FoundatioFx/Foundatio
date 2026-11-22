@@ -17,6 +17,9 @@ public sealed record RabbitMQMessageTransportOptions
     /// <summary>
     /// Hosts to fail over between, as "hostname" or "hostname:port" (brackets around an IPv6 address with a port). The
     /// host in <see cref="ConnectionString"/> is then ignored; its credentials, virtual host and TLS settings still apply.
+    /// Each connection tries the hosts in random order, moving on from one that refuses the connection or does not
+    /// complete the AMQP handshake within the connection factory's <see cref="ConnectionFactory.HandshakeContinuationTimeout"/>
+    /// (10 seconds by default; change it with <see cref="ConfigureConnectionFactory"/>).
     /// </summary>
     public IReadOnlyList<string>? Hosts { get; init; }
 
