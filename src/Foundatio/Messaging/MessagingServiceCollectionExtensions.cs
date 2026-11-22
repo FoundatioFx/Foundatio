@@ -5,10 +5,12 @@ using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Monitoring;
 using Foundatio.Serializer;
+using Foundatio.Testing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -36,6 +38,7 @@ public static class MessagingServiceCollectionExtensions
         {
             registrations = new MessagingRegistrations();
             services.AddSingleton(registrations);
+            services.AddOptions();
             services.TryAddSingleton(WorkTracker.Create);
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
             services.TryAddSingleton<IMessageClient>(sp => new MessageClient(sp.GetRequiredService<MessagingRuntime>()));
@@ -50,13 +53,12 @@ public static class MessagingServiceCollectionExtensions
 
     private static MessagingRuntime CreateRuntime(IServiceProvider services, MessagingRegistrations registrations)
     {
-        var options = new MessagingOptions();
-        foreach (var configure in registrations.ConfigureOptions)
-            configure(options);
+        var options = services.GetRequiredService<IOptions<MessagingOptions>>().Value;
         options.Validate();
         options.DefaultRetryPolicy.Validate();
 
-        var transport = services.GetService<IMessageTransport>()
+        var transport = services.GetService<TestHarnessRegistration>()?.Transport
+            ?? services.GetService<IMessageTransport>()
             ?? throw new InvalidOperationException("No message transport is configured. Inside AddFoundatioMessaging, call UseInMemory(), a provider's UseRedis(), UseSqs(), UseKafka(), UseAzureServiceBus() or UseRabbitMQ() (from Foundatio.Redis, Foundatio.AWS, Foundatio.Kafka, Foundatio.AzureServiceBus or Foundatio.RabbitMQ), or UseTransport().");
 
         var types = new MessageTypeRegistry();
@@ -74,7 +76,7 @@ public static class MessagingServiceCollectionExtensions
             options.Serializer ?? services.GetService<ISerializer>() ?? DefaultSerializer.Instance,
             services.GetRequiredService<IServiceScopeFactory>(),
             services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,
-            services.GetService<TimeProvider>() ?? TimeProvider.System,
+            options.TimeProvider ?? services.GetService<TimeProvider>() ?? TimeProvider.System,
             serviceName, serviceNameIsDefault: options.ServiceName is null)
         {
             Observer = services.GetService<IMessagingObserver>(),

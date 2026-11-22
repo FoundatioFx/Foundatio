@@ -1,6 +1,8 @@
 using System;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Foundatio.Messaging;
 
@@ -36,6 +38,20 @@ public sealed class MessagingOptions
     /// instead of sending. When false (the default), the message is sent and a warning is logged once per message type.
     /// </summary>
     public bool RequireTransportCapabilities { get; set; }
+
+    /// <summary>
+    /// The clock messaging runs on: delivery times, delays, leases and retry backoff. Defaults to the registered
+    /// <see cref="System.TimeProvider"/>, or the system clock. The transport <c>UseInMemory()</c> creates uses it too.
+    /// Set it to <see cref="System.TimeProvider.System"/> to keep messaging on real time while tests move the app's clock:
+    /// a lease taken on a clock moved ahead, then back, would otherwise hold its message for the time it was moved.
+    /// </summary>
+    public TimeProvider? TimeProvider { get; set; }
+
+    /// <summary>The clock messaging uses in <paramref name="services"/>: <see cref="TimeProvider"/>, the registered one, or the system clock.</summary>
+    internal static TimeProvider ResolveTimeProvider(IServiceProvider services)
+    {
+        return services.GetService<IOptions<MessagingOptions>>()?.Value.TimeProvider ?? services.GetService<TimeProvider>() ?? System.TimeProvider.System;
+    }
 
     internal void Validate()
     {

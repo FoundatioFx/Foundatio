@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Messaging.Transport;
+using Foundatio.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -23,25 +24,33 @@ public sealed class FoundatioMessagingBuilder
     /// <summary>The service collection being configured, for provider extensions that register their own services.</summary>
     public IServiceCollection Services { get; }
 
-    /// <summary>Uses a process-local transport. Messages are lost when the process stops.</summary>
+    /// <summary>Uses a process-local transport, on <see cref="MessagingOptions.TimeProvider"/>. Messages are lost when the process stops.</summary>
     public FoundatioMessagingBuilder UseInMemory()
     {
-        return UseTransport(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
+        return UseTransport(sp => new InMemoryMessageTransport(MessagingOptions.ResolveTimeProvider(sp)));
     }
 
     /// <summary>Uses a transport you create and dispose yourself, for example one shared by several hosts in a test.</summary>
+    /// <remarks>Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness owns the transport.</remarks>
     public FoundatioMessagingBuilder UseTransport(IMessageTransport transport)
     {
         ArgumentNullException.ThrowIfNull(transport);
+        if (TestHarnessRegistration.IsRegistered(Services))
+            return this;
+
         Services.RemoveAll<IMessageTransport>();
         Services.AddSingleton(transport);
         return this;
     }
 
     /// <summary>Uses a transport created, and disposed, by the service provider.</summary>
+    /// <remarks>Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness owns the transport.</remarks>
     public FoundatioMessagingBuilder UseTransport(Func<IServiceProvider, IMessageTransport> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
+        if (TestHarnessRegistration.IsRegistered(Services))
+            return this;
+
         Services.ReplaceSingleton(factory);
         return this;
     }
@@ -56,11 +65,15 @@ public sealed class FoundatioMessagingBuilder
         return Configure(o => o.ServiceName = serviceName);
     }
 
-    /// <summary>Changes <see cref="MessagingOptions"/>. Callbacks run in the order they were added, when messaging is first resolved.</summary>
+    /// <summary>
+    /// Changes <see cref="MessagingOptions"/>. The same as <c>services.Configure&lt;MessagingOptions&gt;(configure)</c>:
+    /// callbacks from both, and options bound from configuration, run in the order they were added when messaging is
+    /// first resolved.
+    /// </summary>
     public FoundatioMessagingBuilder Configure(Action<MessagingOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
-        _registrations.ConfigureOptions.Add(configure);
+        Services.Configure(configure);
         return this;
     }
 
@@ -80,12 +93,11 @@ public sealed class FoundatioMessagingBuilder
             var options = new SharedMessageBusOptions();
             if (sp.GetService<Foundatio.Serializer.ISerializer>() is { } serializer)
                 options.Serializer = serializer;
-            if (sp.GetService<TimeProvider>() is { } timeProvider)
-                options.TimeProvider = timeProvider;
+            options.TimeProvider = MessagingOptions.ResolveTimeProvider(sp);
             if (sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>() is { } loggerFactory)
                 options.LoggerFactory = loggerFactory;
             configure?.Invoke(options);
-            return new LegacyMessageBusAdapter(sp.GetRequiredService<IMessageTransport>(), options);
+            return new LegacyMessageBusAdapter(sp.GetRequiredService<MessagingRuntime>().Transport, options);
         });
         Services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
         Services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());

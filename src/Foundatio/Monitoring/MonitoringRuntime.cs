@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Foundatio.Monitoring;
 
@@ -110,16 +111,9 @@ internal sealed class MonitoringRuntime : IAsyncDisposable
         if (Options.ServiceName is { } serviceName)
             return serviceName;
 
-        if (_services.GetService<MessagingRegistrations>() is { } registrations)
-        {
-            // Read from the registrations rather than the runtime, which a process without handlers may not be able to create.
-            var messaging = new MessagingOptions();
-            foreach (var configure in registrations.ConfigureOptions)
-                configure(messaging);
-
-            if (messaging.ServiceName is { } messagingServiceName)
-                return MessageTypeRegistry.NormalizeName(messagingServiceName);
-        }
+        // Read from the options rather than the runtime, which a process without handlers may not be able to create.
+        if (_services.GetService<MessagingRegistrations>() is not null && _services.GetService<IOptions<MessagingOptions>>()?.Value.ServiceName is { } messagingServiceName)
+            return MessageTypeRegistry.NormalizeName(messagingServiceName);
 
         return _services.GetService<IHostEnvironment>()?.ApplicationName
             ?? Assembly.GetEntryAssembly()?.GetName().Name

@@ -4,10 +4,12 @@ using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
 using Foundatio.Monitoring;
 using Foundatio.Serializer;
+using Foundatio.Testing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -35,6 +37,7 @@ public static class JobsServiceCollectionExtensions
         {
             registrations = new JobsRegistrations();
             services.AddSingleton(registrations);
+            services.AddOptions();
             services.TryAddSingleton(WorkTracker.Create);
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
             services.TryAddSingleton(sp => new JobClient(sp.GetRequiredService<JobsRuntime>()));
@@ -49,9 +52,7 @@ public static class JobsServiceCollectionExtensions
 
     private static JobsRuntime CreateRuntime(IServiceProvider services, JobsRegistrations registrations)
     {
-        var options = new JobWorkerOptions();
-        foreach (var configure in registrations.ConfigureOptions)
-            configure(options);
+        var options = services.GetRequiredService<IOptions<JobWorkerOptions>>().Value;
         options.Validate();
 
         foreach (var schedule in registrations.Schedules.Values)
@@ -61,14 +62,15 @@ public static class JobsServiceCollectionExtensions
                 throw new InvalidOperationException($"The misfire threshold of schedule {schedule.Name} ({schedule.Options.MisfireThreshold}) must be shorter than job retention ({retention}), or an occurrence could run twice.");
         }
 
-        var store = services.GetService<IJobStore>()
+        var store = services.GetService<TestHarnessRegistration>()?.Store
+            ?? services.GetService<IJobStore>()
             ?? throw new InvalidOperationException("No job store is configured. Inside AddFoundatioJobs, call UseInMemory(), UseRedis() from Foundatio.Redis, or UseStore().");
 
         return new JobsRuntime(store, options, registrations,
             options.Serializer ?? services.GetService<ISerializer>() ?? DefaultSerializer.Instance,
             services.GetRequiredService<IServiceScopeFactory>(),
             services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,
-            services.GetService<TimeProvider>() ?? TimeProvider.System)
+            options.TimeProvider ?? services.GetService<TimeProvider>() ?? TimeProvider.System)
         {
             Observer = services.GetService<IJobsObserver>(),
             Tracker = services.GetRequiredService<WorkTracker>()

@@ -22,4 +22,13 @@ public sealed class FoundatioTestHarnessOptions
     /// </code>
     /// </example>
     public TransportCapabilities? TransportCapabilities { get; set; }
+
+    /// <summary>
+    /// The clock messaging, jobs, the in-memory transport and the job store run on. Defaults to the system clock,
+    /// whatever <see cref="System.TimeProvider"/> the app registers, so a test that moves the app's clock does not strand
+    /// leases or postpone retries. Set a fake clock (for example Microsoft.Extensions.Time.Testing's FakeTimeProvider)
+    /// to drive delays, retries and leases from the test; advance it, then call
+    /// <see cref="FoundatioTestHarness.WaitForIdleAsync"/>. The harness's waits and timeouts always use real time.
+    /// </summary>
+    public System.TimeProvider? TimeProvider { get; set; }
 }

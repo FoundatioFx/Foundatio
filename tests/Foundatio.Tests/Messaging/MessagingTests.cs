@@ -888,6 +888,39 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ServicesConfigure_OfMessagingOptions_IsAppliedInOrderWithTheBuilder()
+    {
+        await using var host = await StartAsync(m => m.AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask).Services.Configure<MessagingOptions>(o => o.ServiceName = "billing"),
+            s => s.Configure<MessagingOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(3)));
+
+        Assert.Equal($"subscription:{QueueName<OrderShipped>()}/billing", Assert.Single(host.Services.GetRequiredService<MessagingStatus>().GetProcessors()).Name);
+        Assert.Equal(TimeSpan.FromSeconds(5), host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<MessagingOptions>>().Value.ShutdownTimeout);
+    }
+
+    [Fact]
+    public async Task MessagingOptionsTimeProvider_RunsTheRuntimeAndTheInMemoryTransportOnItInsteadOfTheRegisteredClock()
+    {
+        var registered = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(-30));
+        var handled = new TaskCompletionSource<IMessageContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(Log);
+        services.AddSingleton<TimeProvider>(registered);
+        services.AddFoundatioMessaging(m => m
+            .UseInMemory()
+            .Configure(o => o.TimeProvider = TimeProvider.System)
+            .AddConsumer<PlaceOrder>((_, context, _) => { handled.TrySetResult(context); return Task.CompletedTask; }));
+        await using var provider = services.BuildServiceProvider();
+        var hosted = Assert.Single(provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>());
+        await hosted.StartAsync(TestCancellationToken);
+
+        await provider.GetRequiredService<IMessageClient>().SendAsync(new PlaceOrder(1), new SendOptions { Delay = TimeSpan.FromMilliseconds(50) }, TestCancellationToken);
+
+        var context = await handled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.True(context.SentAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+        await hosted.StopAsync(TestCancellationToken);
+    }
+
+    [Fact]
     public void AddSubscriber_WithoutAServiceNameOnABrokerTransport_FailsAtStartupListingTheSubscriptions()
     {
         using var provider = BuildServices(m => m

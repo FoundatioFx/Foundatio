@@ -8,5 +8,4 @@ internal sealed class JobsRegistrations
 {
     public Dictionary<string, JobRegistration> Jobs { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, CronSchedule> Schedules { get; } = new(StringComparer.Ordinal);
-    public List<Action<JobWorkerOptions>> ConfigureOptions { get; } = [];
 }

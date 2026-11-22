@@ -756,6 +756,32 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ServicesConfigure_OfJobWorkerOptions_IsApplied()
+    {
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(), s => s.Configure<JobWorkerOptions>(o => o.DefaultRetryPolicy = RetryPolicy.None));
+
+        var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken);
+
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(1, job.Attempt);
+    }
+
+    [Fact]
+    public async Task JobWorkerOptionsTimeProvider_RunsJobsOnItInsteadOfTheRegisteredClock()
+    {
+        var registered = new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(-30));
+        await using var host = await StartAsync(j => j.UseInMemory().Configure(o => o.TimeProvider = TimeProvider.System).AddJob<ResizeImageJob>(),
+            s => s.AddSingleton<TimeProvider>(registered));
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("later.png", 1), new EnqueueOptions { Delay = TimeSpan.FromMilliseconds(50) }, TestCancellationToken);
+
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.True(job.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+    }
+
+    [Fact]
     public async Task JobsEnqueuedWhileHandlingAMessage_InheritItsCorrelationId()
     {
         var transport = new InMemoryMessageTransport();

@@ -323,6 +323,29 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddFoundatioTestHarness_BeforeTheAppsRegistrations_StillOwnsTheTransportAndStore()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders().AddTestLogger(_output);
+        builder.Services.AddFoundatioTestHarness();
+        builder.Services.AddOrdersApp();
+        builder.Services.AddFoundatioMessaging(m => m.UseInMemory().AddLegacyMessageBus());
+        builder.Services.AddFoundatioJobs(j => j.UseInMemory().UseStore(_ => throw new InvalidOperationException("Tests must not reach this store.")));
+        var host = builder.Build();
+        _hosts.Add(host);
+        await host.StartAsync(TestCancellationToken);
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().PublishAsync(new OrderPlaced(1, "a@b.com"), cancellationToken: TestCancellationToken);
+        await harness.WaitForIdleAsync(cancellationToken: TestCancellationToken);
+
+        Assert.Equal(["a@b.com: Receipt for order 1"], host.Services.GetRequiredService<EmailSender>().Sent);
+        Assert.Equal(JobState.Succeeded, Assert.Single(harness.JobRuns).State);
+        Assert.IsType<InMemoryMessageTransport>(host.Services.GetRequiredService<IMessageTransport>());
+        Assert.IsType<Foundatio.Jobs.Store.InMemoryJobStore>(host.Services.GetRequiredService<Foundatio.Jobs.Store.IJobStore>());
+    }
+
+    [Fact]
     public void AddFoundatioTestHarness_WithCapabilitiesTheInMemoryTransportCannotEmulate_Throws()
     {
         var services = new ServiceCollection();

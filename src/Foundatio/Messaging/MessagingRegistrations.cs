@@ -7,6 +7,5 @@ namespace Foundatio.Messaging;
 internal sealed class MessagingRegistrations
 {
     public List<MessageHandlerRegistration> Handlers { get; } = [];
-    public List<Action<MessagingOptions>> ConfigureOptions { get; } = [];
     public List<(Type Type, string Name, string? Queue, string? Topic)> Maps { get; } = [];
 }

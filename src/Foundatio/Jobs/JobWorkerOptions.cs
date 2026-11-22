@@ -1,6 +1,8 @@
 using System;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Foundatio.Jobs;
 
@@ -38,6 +40,19 @@ public sealed class JobWorkerOptions
 
     /// <summary>Identifies this worker in <see cref="JobDetails.WorkerId"/>. Defaults to the machine name and process id.</summary>
     public string? WorkerId { get; set; }
+
+    /// <summary>
+    /// The clock jobs run on: due times, leases, retry backoff, CRON occurrences and retention. Defaults to the
+    /// registered <see cref="System.TimeProvider"/>, or the system clock. The store <c>UseInMemory()</c> creates uses it
+    /// too. Set it to <see cref="System.TimeProvider.System"/> to keep jobs on real time while tests move the app's clock.
+    /// </summary>
+    public TimeProvider? TimeProvider { get; set; }
+
+    /// <summary>The clock jobs use in <paramref name="services"/>: <see cref="TimeProvider"/>, the registered one, or the system clock.</summary>
+    internal static TimeProvider ResolveTimeProvider(IServiceProvider services)
+    {
+        return services.GetService<IOptions<JobWorkerOptions>>()?.Value.TimeProvider ?? services.GetService<TimeProvider>() ?? System.TimeProvider.System;
+    }
 
     internal void Validate()
     {

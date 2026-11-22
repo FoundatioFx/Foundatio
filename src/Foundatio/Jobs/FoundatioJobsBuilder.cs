@@ -2,6 +2,7 @@ using System;
 using Foundatio.Extensions;
 using Foundatio.Jobs.Cronos;
 using Foundatio.Jobs.Store;
+using Foundatio.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -24,31 +25,43 @@ public sealed class FoundatioJobsBuilder
     /// <summary>Stores jobs in memory. They are lost when the process stops, and are not shared between processes.</summary>
     public FoundatioJobsBuilder UseInMemory()
     {
-        return UseStore(sp => new InMemoryJobStore(sp.GetService<TimeProvider>()));
+        return UseStore(sp => new InMemoryJobStore(JobWorkerOptions.ResolveTimeProvider(sp)));
     }
 
     /// <summary>Uses a store you create and dispose yourself, for example one shared by several hosts in a test.</summary>
+    /// <remarks>Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness owns the store.</remarks>
     public FoundatioJobsBuilder UseStore(IJobStore store)
     {
         ArgumentNullException.ThrowIfNull(store);
+        if (TestHarnessRegistration.IsRegistered(Services))
+            return this;
+
         Services.RemoveAll<IJobStore>();
         Services.AddSingleton(store);
         return this;
     }
 
     /// <summary>Uses a store created, and disposed, by the service provider.</summary>
+    /// <remarks>Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness owns the store.</remarks>
     public FoundatioJobsBuilder UseStore(Func<IServiceProvider, IJobStore> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
+        if (TestHarnessRegistration.IsRegistered(Services))
+            return this;
+
         Services.ReplaceSingleton(factory);
         return this;
     }
 
-    /// <summary>Changes <see cref="JobWorkerOptions"/>. Callbacks run in the order they were added, when jobs are first resolved.</summary>
+    /// <summary>
+    /// Changes <see cref="JobWorkerOptions"/>. The same as <c>services.Configure&lt;JobWorkerOptions&gt;(configure)</c>:
+    /// callbacks from both, and options bound from configuration, run in the order they were added when jobs are
+    /// first resolved.
+    /// </summary>
     public FoundatioJobsBuilder Configure(Action<JobWorkerOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
-        _registrations.ConfigureOptions.Add(configure);
+        Services.Configure(configure);
         return this;
     }
 

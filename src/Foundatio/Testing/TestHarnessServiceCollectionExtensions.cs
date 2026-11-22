@@ -14,8 +14,9 @@ public static class TestHarnessServiceCollectionExtensions
 {
     /// <summary>
     /// Runs the app's messaging and jobs on a fresh in-memory transport and job store, and records what they do in
-    /// <see cref="FoundatioTestHarness"/>. Call it after the app's own registrations so it replaces their transport and
-    /// store, then resolve <see cref="FoundatioTestHarness"/> from the service provider. CRON schedules only run when
+    /// <see cref="FoundatioTestHarness"/>. Call it before or after the app's own registrations: either way it replaces
+    /// their transport and store, and a later <c>UseTransport</c>, <c>UseStore</c> or provider <c>UseRedis()</c> and the
+    /// like are ignored. Then resolve <see cref="FoundatioTestHarness"/> from the service provider. CRON schedules only run when
     /// triggered with <see cref="FoundatioTestHarness.TriggerCronJobAsync{TJobOrArgs}"/>. Set
     /// <see cref="FoundatioTestHarnessOptions.TransportCapabilities"/> to emulate your production transport's guarantees.
     /// </summary>
@@ -39,10 +40,15 @@ public static class TestHarnessServiceCollectionExtensions
         if (capabilities is not null)
             InMemoryMessageTransport.ValidateCapabilities(capabilities);
 
-        services.ReplaceSingleton<IMessageTransport>(sp => capabilities is null
-            ? new InMemoryMessageTransport(sp.GetService<TimeProvider>())
-            : new InMemoryMessageTransport(capabilities, sp.GetService<TimeProvider>()));
-        services.ReplaceSingleton<IJobStore>(sp => new InMemoryJobStore(sp.GetService<TimeProvider>()));
+        var timeProvider = options.TimeProvider ?? TimeProvider.System;
+        services.RemoveAll<TestHarnessRegistration>();
+        services.AddSingleton(_ => new TestHarnessRegistration(options));
+        services.PostConfigure<MessagingOptions>(o => o.TimeProvider = timeProvider);
+        services.PostConfigure<JobWorkerOptions>(o => o.TimeProvider = timeProvider);
+        services.RemoveAll<IMessageTransport>();
+        services.AddSingleton<IMessageTransport>(sp => sp.GetRequiredService<TestHarnessRegistration>().Transport);
+        services.RemoveAll<IJobStore>();
+        services.AddSingleton<IJobStore>(sp => sp.GetRequiredService<TestHarnessRegistration>().Store);
         services.TryAddSingleton(sp => new FoundatioTestHarness(sp));
         services.TryAddSingleton<IMessagingObserver>(sp => sp.GetRequiredService<FoundatioTestHarness>());
         services.TryAddSingleton<IJobsObserver>(sp => sp.GetRequiredService<FoundatioTestHarness>());
