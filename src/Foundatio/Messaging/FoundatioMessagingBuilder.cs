@@ -94,12 +94,16 @@ public sealed class FoundatioMessagingBuilder
     /// of one also reaches its <see cref="IMessageSubscriber.SubscribeAsync{T}"/> subscribers, each once. Other types
     /// stay on the legacy bus. Between services, each one must know the type.
     /// </para>
+    /// <para>
+    /// Such a publish is sent twice, to the legacy topic and to the type's topic. To send it once, to the type's topic,
+    /// add the type to <see cref="LegacyMessageBusOptions.MigratedMessageTypes"/> in every process that shares the bus.
+    /// </para>
     /// </remarks>
-    public FoundatioMessagingBuilder AddLegacyMessageBus(Action<SharedMessageBusOptions>? configure = null)
+    public FoundatioMessagingBuilder AddLegacyMessageBus(Action<LegacyMessageBusOptions>? configure = null)
     {
         Services.ReplaceSingleton<IMessageBus>(sp =>
         {
-            var options = new SharedMessageBusOptions();
+            var options = new LegacyMessageBusOptions();
             if (sp.GetService<Foundatio.Serializer.ISerializer>() is { } serializer)
                 options.Serializer = serializer;
             options.TimeProvider = MessagingOptions.ResolveTimeProvider(sp);

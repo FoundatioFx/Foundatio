@@ -32,6 +32,11 @@ namespace Foundatio.Messaging;
 /// copy keeps the legacy type header, which tells that subscription to skip it: its subscribers already received it
 /// from the legacy topic. So each subscriber, on either API, gets every publish once.
 /// </para>
+/// <para>
+/// A publish of one of <see cref="LegacyMessageBusOptions.MigratedMessageTypes"/> is sent only to its topic, without
+/// the legacy type header, exactly as <see cref="IMessageClient.PublishAsync{T}"/> would send it, and subscribers of it,
+/// its base types or <see cref="IMessage"/> receive it from there.
+/// </para>
 /// </remarks>
 internal sealed class LegacyMessageBusAdapter : IMessageBus
 {
@@ -53,6 +58,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     private readonly string _topic;
     private readonly MessageDestination _destination;
     private readonly IReadOnlyDictionary<string, Type> _typeMappings;
+    private readonly HashSet<Type> _migratedTypes;
     private readonly ConcurrentDictionary<Type, string> _typeNames = new();
     private readonly ConcurrentDictionary<Guid, Subscriber> _subscribers = new();
     private readonly ConcurrentDictionary<string, Type?> _types = new(StringComparer.Ordinal);
@@ -69,6 +75,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     }
 
     /// <summary>A legacy bus on <paramref name="runtime"/>'s transport that shares the message types it knows with <see cref="IMessageClient"/>.</summary>
+    /// <exception cref="ArgumentException"><see cref="LegacyMessageBusOptions.MigratedMessageTypes"/> has a null entry.</exception>
     public LegacyMessageBusAdapter(MessagingRuntime runtime, SharedMessageBusOptions options) : this(runtime.Transport, runtime, options)
     {
     }
@@ -81,6 +88,11 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
         _topic = MessageTypeRegistry.NormalizeName(options.Topic);
         _destination = MessageDestination.Topic(_topic);
         _typeMappings = new Dictionary<string, Type>(options.MessageTypeMappings);
+        _migratedTypes = options is LegacyMessageBusOptions legacyOptions ? [.. legacyOptions.MigratedMessageTypes] : [];
+        if (_migratedTypes.Contains(null!))
+            throw new ArgumentException("MigratedMessageTypes has a null entry.", nameof(options));
+        if (_migratedTypes.Count > 0 && runtime is null)
+            throw new ArgumentException("MigratedMessageTypes needs the messaging runtime to publish them on; use AddLegacyMessageBus().", nameof(options));
         _timeProvider = options.TimeProvider;
         _loggerFactory = options.LoggerFactory;
         _logger = options.LoggerFactory.CreateLogger<LegacyMessageBusAdapter>();
@@ -125,11 +137,13 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
             Headers = headers,
             DeliverAt = delay > TimeSpan.Zero && !holdInMemory ? now.Add(delay) : null
         };
-        var copy = CreateSharedCopy(message, outgoing);
+        bool migrated = _migratedTypes.Count > 0 && _migratedTypes.Contains(message.GetType());
+        var copy = CreateSharedCopy(message, outgoing, migrated);
+        var legacy = migrated ? null : outgoing;
 
         if (!holdInMemory)
         {
-            await SendAsync(message, outgoing, copy, cancellationToken).AnyContext();
+            await SendAsync(message, legacy, copy, cancellationToken).AnyContext();
             return;
         }
 
@@ -138,7 +152,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
             try
             {
                 await _timeProvider.SafeDelay(delay, _disposed.Token).AnyContext();
-                await SendAsync(message, outgoing, copy, _disposed.Token).AnyContext();
+                await SendAsync(message, legacy, copy, _disposed.Token).AnyContext();
             }
             catch (OperationCanceledException) when (_disposed.IsCancellationRequested)
             {
@@ -161,6 +175,10 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
         var subscriber = Subscriber.For(typeof(T), (message, ct) => handler((T)message, ct));
         if (subscriber.Kind != SubscriberKind.Raw && TryGetSharedRoute(subscriber.BodyType, out var route))
             await EnsureReceivingSharedTopicAsync(route.Topic, cancellationToken).AnyContext();
+
+        // Migrated types are only published to their own topics, so subscribers of a base type or of every message read those too.
+        foreach (var migrated in _migratedTypes.Where(subscriber.Accepts))
+            await EnsureReceivingSharedTopicAsync(_runtime!.Types.GetRoute(migrated).Topic, cancellationToken).AnyContext();
 
         var id = Guid.NewGuid();
         _subscribers[id] = subscriber;
@@ -197,12 +215,13 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     }
 
     /// <summary>
-    /// Sends a legacy publish to the legacy topic and, for a type <see cref="IMessageClient"/> knows, its copy to that
-    /// type's topic.
+    /// Sends a legacy publish to the legacy topic, unless its type is migrated, and, for a type <see cref="IMessageClient"/>
+    /// knows, its copy to that type's topic.
     /// </summary>
-    private async Task SendAsync(object message, OutgoingMessage outgoing, (MessageDestination Destination, OutgoingMessage Message)? copy, CancellationToken cancellationToken)
+    private async Task SendAsync(object message, OutgoingMessage? legacy, (MessageDestination Destination, OutgoingMessage Message)? copy, CancellationToken cancellationToken)
     {
-        await _transport.SendAsync(_destination, [outgoing], cancellationToken).AnyContext();
+        if (legacy is not null)
+            await _transport.SendAsync(_destination, [legacy], cancellationToken).AnyContext();
         if (copy is not { } shared)
             return;
 
@@ -212,16 +231,21 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
 
     /// <summary>
     /// The copy of a legacy publish that goes to the topic <see cref="IMessageClient"/> publishes its type to, with the
-    /// headers it adds. Null when there is no runtime, or it does not know the type.
+    /// headers it adds. A <paramref name="migrated"/> type's copy is the only one sent, so it leaves out the legacy type
+    /// header, which would tell legacy subscribers of that topic to skip it. Null when there is no runtime, or it does
+    /// not know the type.
     /// </summary>
-    private (MessageDestination Destination, OutgoingMessage Message)? CreateSharedCopy(object message, OutgoingMessage outgoing)
+    private (MessageDestination Destination, OutgoingMessage Message)? CreateSharedCopy(object message, OutgoingMessage outgoing, bool migrated)
     {
         if (_runtime is null || !TryGetSharedRoute(message.GetType(), out var route))
             return null;
 
         var headers = new Dictionary<string, string>(outgoing.Headers.Count + 4);
         foreach (var header in outgoing.Headers)
-            headers[header.Key] = header.Value;
+        {
+            if (!migrated || header.Key != LegacyTypeHeader)
+                headers[header.Key] = header.Value;
+        }
 
         headers[KnownHeaders.MessageType] = route.Name;
         if (_runtime.Types.GetBaseTypeNames(route.Type) is { } baseTypes)
@@ -249,7 +273,8 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
 
     /// <summary>
     /// Whether <see cref="IMessageClient"/> knows <paramref name="type"/>: it is mapped, handled by a registered handler
-    /// (or derives from a handled type in the same assembly), has a <see cref="MessageAttribute"/>, or was sent before.
+    /// (or derives from a handled type in the same assembly), has a <see cref="MessageAttribute"/>, was sent before, or
+    /// is migrated.
     /// </summary>
     private bool TryGetSharedRoute(Type type, out MessageRoute route)
     {
@@ -259,6 +284,12 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
 
         if (_runtime.Types.TryGetRoute(type, out route))
             return true;
+
+        if (_migratedTypes.Contains(type))
+        {
+            route = _runtime.Types.GetRoute(type);
+            return true;
+        }
 
         if (!_attributedTypes.GetOrAdd(type, static t => t.GetCustomAttribute<MessageAttribute>(inherit: false) is not null))
             return false;

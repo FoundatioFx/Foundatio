@@ -128,6 +128,83 @@ public class LegacyMessageBusInteropTests : TestWithLoggingBase
         Assert.Equal(new InteropEvent(2), published.Message);
     }
 
+    [Fact]
+    public async Task PublishAsync_OfAMigratedType_SendsOnceToItsTopicAndReachesEverySubscriberOnce()
+    {
+        // Arrange
+        var transport = new InterceptingMessageTransport(new InMemoryMessageTransport());
+        _transports.Add(transport);
+        var sends = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        transport.OnSend = (destination, messages) =>
+        {
+            foreach (var _ in messages)
+                sends.Enqueue(destination.ToString());
+        };
+        var v2 = new Counter();
+        var host = await StartHostAsync(m => m.UseTransport(transport).MapMessage<InteropEvent>("interop-event")
+            .AddLegacyMessageBus(o => o.MigratedMessageTypes.Add(typeof(InteropEvent)))
+            .AddSubscriber<InteropEvent>((_, _, _) => v2.IncrementAsync()));
+        var bus = host.Services.GetRequiredService<IMessageBus>();
+        var legacy = new Counter();
+        var legacyRaw = new Counter();
+        var received = new System.Collections.Concurrent.ConcurrentQueue<(string? Id, object? Body, string? Tenant)>();
+        await bus.SubscribeAsync<InteropEvent>(_ => legacy.Increment(), TestCancellationToken);
+        await bus.SubscribeAsync<IMessage>(m =>
+        {
+            received.Enqueue((m.UniqueId, m.GetBody(), m.Properties.TryGetValue("tenant", out string? tenant) ? tenant : null));
+            legacyRaw.Increment();
+        }, TestCancellationToken);
+
+        // Act
+        await bus.PublishAsync(new InteropEvent(1), new MessageOptions { UniqueId = "event-1", Properties = new Dictionary<string, string> { ["tenant"] = "acme" } }, TestCancellationToken);
+        await host.Services.GetRequiredService<IMessageClient>().PublishAsync(new InteropEvent(2), cancellationToken: TestCancellationToken);
+        await bus.PublishAsync(new LegacyOnlyEvent(3), cancellationToken: TestCancellationToken);
+
+        // Assert
+        await legacy.WaitForAsync(2, TestCancellationToken);
+        await legacyRaw.WaitForAsync(3, TestCancellationToken);
+        await v2.WaitForAsync(2, TestCancellationToken);
+        await Task.Delay(NoMoreDeliveries, TestCancellationToken);
+        Assert.Equal(2, legacy.Count);
+        Assert.Equal(3, legacyRaw.Count);
+        Assert.Equal(2, v2.Count);
+        Assert.Equal(["topic:interop-event", "topic:interop-event", "topic:messages"], sends);
+        var first = Assert.Single(received, m => m.Id == "event-1");
+        Assert.Equal(new InteropEvent(1), first.Body);
+        Assert.Equal("acme", first.Tenant);
+    }
+
+    [Fact]
+    public async Task PublishAsync_OfATypeMigratedOnlyInThePublisher_ReachesAnotherServicesLegacySubscriberOnce()
+    {
+        // Arrange
+        var transport = new InMemoryMessageTransport();
+        _transports.Add(transport);
+        var publisher = await StartHostAsync(m => m.UseTransport(transport).UseServiceName("publisher").MapMessage<InteropEvent>("interop-event")
+            .AddLegacyMessageBus(o => o.MigratedMessageTypes.Add(typeof(InteropEvent))));
+        var subscriber = await StartHostAsync(m => m.UseTransport(transport).UseServiceName("subscriber").MapMessage<InteropEvent>("interop-event"));
+        var legacy = new Counter();
+        await subscriber.Services.GetRequiredService<IMessageBus>().SubscribeAsync<InteropEvent>(_ => legacy.Increment(), TestCancellationToken);
+
+        // Act
+        await publisher.Services.GetRequiredService<IMessageBus>().PublishAsync(new InteropEvent(1), cancellationToken: TestCancellationToken);
+
+        // Assert
+        await legacy.WaitForAsync(1, TestCancellationToken);
+        await Task.Delay(NoMoreDeliveries, TestCancellationToken);
+        Assert.Equal(1, legacy.Count);
+    }
+
+    [Fact]
+    public async Task AddLegacyMessageBus_WithANullMigratedType_FailsWhenTheBusIsResolved()
+    {
+        var host = await StartHostAsync(m => m.AddLegacyMessageBus(o => o.MigratedMessageTypes.Add(null!)));
+
+        var error = Assert.Throws<ArgumentException>(() => host.Services.GetRequiredService<IMessageBus>());
+
+        Assert.Contains("MigratedMessageTypes", error.Message);
+    }
+
     public override async ValueTask DisposeAsync()
     {
         foreach (var host in _hosts)
