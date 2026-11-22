@@ -2,7 +2,6 @@
 
 The original queue, message bus and job APIs keep working alongside the new ones, so you can move one queue or job at a time.
 
-
 ## Before you start: not in v2 yet
 
 Check these first; work that depends on them stays on the original APIs for now:
