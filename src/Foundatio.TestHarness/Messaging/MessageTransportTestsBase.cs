@@ -1427,6 +1427,44 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             Assert.Equal(Enumerable.Range(0, perSender).Select(i => $"s{sender}-{i}"), order.Where(id => id.StartsWith($"s{sender}-", StringComparison.Ordinal)));
     }
 
+    /// <summary>
+    /// With <see cref="TransportCapabilities.OneOutstandingPerGroup"/>, no receive, on any receiver, returns a message of a
+    /// group while another of it is unsettled, nor two of one group in one batch.
+    /// </summary>
+    [Fact]
+    public async Task OneOutstandingPerGroup_ReceivesNeverReturnTwoMessagesOfAGroup()
+    {
+        Assert.SkipUnless(Transport.Capabilities is { OrderedGroups: true, OneOutstandingPerGroup: true }, "The transport does not hand out one message of a group at a time.");
+        string[] groups = ["a", "b", "c"];
+        const int perGroup = 3;
+        var source = MessageSource.Queue(NewName("one-per-group"));
+        await using var first = await CreateReceiverAsync(source);
+        await using var second = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            Enumerable.Range(0, perGroup).SelectMany(i => groups.Select(g => Message($"{g}{i}", $"{g}-{i}") with { GroupKey = g })).ToList(), TestCancellationToken);
+
+        var order = new List<string>();
+        var deadline = DateTime.UtcNow + DeliveryTimeout * 2;
+        while (order.Count < groups.Length * perGroup && DateTime.UtcNow < deadline)
+        {
+            var received = await Task.WhenAll(first.ReceiveAsync(10, TimeSpan.FromMilliseconds(500), TestCancellationToken), second.ReceiveAsync(10, TimeSpan.FromMilliseconds(500), TestCancellationToken));
+            var meanwhile = await first.ReceiveAsync(10, TimeSpan.FromMilliseconds(100), TestCancellationToken);
+            var outstanding = received[0].Concat(meanwhile).Select(m => (Receiver: first, Message: m)).Concat(received[1].Select(m => (Receiver: second, Message: m))).ToList();
+
+            var twice = outstanding.GroupBy(o => o.Message.GroupKey).Where(g => g.Count() > 1).ToList();
+            Assert.True(twice.Count == 0, $"Unsettled at once: {String.Join("; ", twice.Select(g => String.Join(", ", g.Select(o => o.Message.MessageId))))}.");
+            foreach (var (receiver, message) in outstanding.OrderBy(o => o.Message.MessageId, StringComparer.Ordinal))
+            {
+                order.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        Assert.Equal(groups.Length * perGroup, order.Count);
+        foreach (string group in groups)
+            Assert.Equal(Enumerable.Range(0, perGroup).Select(i => $"{group}-{i}"), order.Where(id => id.StartsWith($"{group}-", StringComparison.Ordinal)));
+    }
+
     /// <summary>A dead-letter queue does not hold groups back, so all dead letters of one group are received together.</summary>
     [Fact]
     public async Task DeadLetters_OfOneGroup_CanAllBeReceivedAtOnce()
