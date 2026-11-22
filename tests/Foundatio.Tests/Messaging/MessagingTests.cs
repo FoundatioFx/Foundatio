@@ -937,6 +937,20 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public void AddConsumer_OfAHandlerWithAMissingDependency_FailsWhenTheHostIsBuiltWithValidateOnBuild()
+    {
+        var services = new ServiceCollection();
+        services.AddFoundatioMessaging(m => m.UseInMemory().AddConsumer<NeedsMissingServiceHandler>().AddSubscriber<WelcomeEmailHandler>());
+        services.AddSingleton(new HandlerCalls());
+
+        var error = Assert.Throws<AggregateException>(() => services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }));
+
+        Assert.Contains(nameof(NeedsMissingServiceHandler), error.Message);
+        Assert.Contains(nameof(IMissingService), error.Message);
+        Assert.DoesNotContain(nameof(WelcomeEmailHandler), error.Message);
+    }
+
+    [Fact]
     public async Task MessagingOptionsTimeProvider_RunsTheRuntimeAndTheInMemoryTransportOnItInsteadOfTheRegisteredClock()
     {
         var registered = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(-30));
@@ -1128,6 +1142,13 @@ public class MessagingTests : TestWithLoggingBase
     public record Note(string Text);
 
     public record UserRegistered(int UserId);
+
+    public interface IMissingService;
+
+    public sealed class NeedsMissingServiceHandler(IMissingService missing) : IMessageHandler<PlaceOrder>
+    {
+        public Task HandleAsync(PlaceOrder message, IMessageContext context, CancellationToken cancellationToken) => Task.FromResult(missing);
+    }
 
     public sealed class HandlerCalls
     {

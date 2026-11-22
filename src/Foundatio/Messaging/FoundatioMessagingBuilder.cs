@@ -123,7 +123,7 @@ public sealed class FoundatioMessagingBuilder
     /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
     public FoundatioMessagingBuilder AddConsumer<THandler>(HandlerOptions? options = null) where THandler : class
     {
-        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, ValidateConsumer(options)).ToList());
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, ValidateConsumer(options)).ToList(), typeof(THandler));
     }
 
     /// <summary>Handles messages sent with <see cref="IMessageClient.SendAsync{T}"/> using a delegate.</summary>
@@ -146,7 +146,7 @@ public sealed class FoundatioMessagingBuilder
     /// </remarks>
     public FoundatioMessagingBuilder AddSubscriber<THandler>(SubscriptionOptions? options = null) where THandler : class
     {
-        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions())).ToList());
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions())).ToList(), typeof(THandler));
     }
 
     /// <summary>Handles events published with <see cref="IMessageClient.PublishAsync{T}"/> using a delegate.</summary>
@@ -155,8 +155,16 @@ public sealed class FoundatioMessagingBuilder
         return AddHandlers([MessageHandlerRegistration.ForDelegate(handler, MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions()))]);
     }
 
-    private FoundatioMessagingBuilder AddHandlers(System.Collections.Generic.IReadOnlyList<MessageHandlerRegistration> registrations)
+    /// <param name="registrations">The handlers to add.</param>
+    /// <param name="handlerType">
+    /// The handler class, registered as a scoped service unless the app registered it, so <c>ValidateOnBuild</c> (on by
+    /// default in Development) reports a missing dependency when the host is built, not when a message arrives.
+    /// </param>
+    private FoundatioMessagingBuilder AddHandlers(System.Collections.Generic.IReadOnlyList<MessageHandlerRegistration> registrations, Type? handlerType = null)
     {
+        if (handlerType is not null)
+            Services.TryAddScoped(handlerType);
+
         foreach (var registration in registrations)
         {
             if (registration.Kind == MessageHandlerKind.Consumer && _registrations.Handlers.Any(h => h.Kind == MessageHandlerKind.Consumer && h.MessageType == registration.MessageType))

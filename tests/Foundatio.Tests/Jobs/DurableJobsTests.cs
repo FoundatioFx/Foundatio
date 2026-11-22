@@ -812,6 +812,18 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public void AddJob_OfAJobWithAMissingDependency_FailsWhenTheHostIsBuiltWithValidateOnBuild()
+    {
+        var services = new ServiceCollection();
+        services.AddFoundatioJobs(j => j.UseInMemory().AddJob<NeedsMissingServiceJob>().AddJob<ResizeImageJob>());
+
+        var error = Assert.Throws<AggregateException>(() => services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }));
+
+        Assert.Contains(nameof(NeedsMissingServiceJob), error.Message);
+        Assert.Contains(nameof(IMissingService), error.Message);
+    }
+
+    [Fact]
     public async Task ServicesConfigure_OfJobWorkerOptions_IsApplied()
     {
         await using var host = await StartAsync(j => j.AddJob<FlakyJob>(), s => s.Configure<JobWorkerOptions>(o => o.DefaultRetryPolicy = RetryPolicy.None));
@@ -1183,6 +1195,13 @@ public class DurableJobsTests : TestWithLoggingBase
             using var _ = probe.Enter();
             await Task.Delay(100, cancellationToken);
         }
+    }
+
+    public interface IMissingService;
+
+    public sealed class NeedsMissingServiceJob(IMissingService missing) : IJobHandler<Slow>
+    {
+        public Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.FromResult(missing);
     }
 
     [Job(Name = "slow-tick")]

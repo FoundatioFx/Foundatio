@@ -104,6 +104,9 @@ public sealed class FoundatioJobsBuilder
             _registrations.Jobs[registration.Name] = registration;
         }
 
+        // Unless the app registered it, so ValidateOnBuild (on by default in Development) reports a missing dependency
+        // when the host is built, not when the job runs.
+        Services.TryAddScoped(typeof(TJob));
         return this;
     }
 
