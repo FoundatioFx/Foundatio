@@ -37,6 +37,33 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task DelegateHandler_ReadingContextServices_GetsANewScopePerMessageDisposedAfterIt()
+    {
+        var scopes = new ConcurrentQueue<DisposableDependency>();
+        var sentAt = new ConcurrentQueue<DateTimeOffset?>();
+        int handled = 0;
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((_, context, _) =>
+        {
+            if (context.MessageType.Length > 0)
+                scopes.Enqueue(context.Services.GetRequiredService<DisposableDependency>());
+
+            sentAt.Enqueue(context.SentAt);
+            Interlocked.Increment(ref handled);
+            return Task.CompletedTask;
+        }), s => s.AddScoped<DisposableDependency>());
+
+        var before = DateTimeOffset.UtcNow.AddSeconds(-1);
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await host.Client.SendAsync(new PlaceOrder(2), cancellationToken: TestCancellationToken);
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+
+        Assert.Equal(2, Volatile.Read(ref handled));
+        Assert.Equal(2, scopes.Distinct().Count());
+        Assert.All(scopes, dependency => Assert.True(dependency.Disposed));
+        Assert.All(sentAt, time => Assert.True(time > before && time <= DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
     public async Task Shutdown_LetsInFlightMessagesFinishAndCompletesThem()
     {
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1284,6 +1311,13 @@ public class MessagingTests : TestWithLoggingBase
             [KnownHeaders.MessageBaseTypes] = "tests.shipment-event"
         }
     };
+
+    public sealed class DisposableDependency : IDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public void Dispose() => Disposed = true;
+    }
 
     public sealed class ScopedDependency
     {

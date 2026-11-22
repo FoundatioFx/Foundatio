@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Monitoring;
 using Foundatio.Utility;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
@@ -14,16 +16,88 @@ internal sealed class MessageContext : TrackedWork, IMessageContext
     private static readonly AsyncLocal<MessageContext?> CurrentContext = new();
 
     private long _progressEmittedAt;
+    private IServiceProvider _services = Testing.EmptyServiceProvider.Instance;
+    private IServiceScopeFactory? _scopeFactory;
+    private AsyncServiceScope? _scope;
+    private IReadOnlyDictionary<string, string>? _sentAtHeaders;
+    private DateTimeOffset? _sentAt;
 
     public required string MessageId { get; init; }
     public required string MessageType { get; init; }
     public string? CorrelationId { get; init; }
     public int Attempt { get; init; }
-    public DateTimeOffset? SentAt { get; init; }
+    /// <summary>Parsed from the <see cref="KnownHeaders.SentAt"/> header on first read.</summary>
+    public DateTimeOffset? SentAt
+    {
+        get
+        {
+            if (_sentAtHeaders is { } headers)
+            {
+                _sentAt = headers.TryGetValue(KnownHeaders.SentAt, out string? value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var time) ? time : null;
+                _sentAtHeaders = null;
+            }
+
+            return _sentAt;
+        }
+        init => _sentAt = value;
+    }
     public string? GroupKey { get; init; }
     public required IReadOnlyDictionary<string, string> Headers { get; init; }
     public required string Source { get; init; }
-    public IServiceProvider Services { get; set; } = Testing.EmptyServiceProvider.Instance;
+    /// <summary>The handler's scope: set for a handler resolved from it, or created on first read (see <see cref="UseScopeOnDemand"/>).</summary>
+    public IServiceProvider Services
+    {
+        get
+        {
+            if (Volatile.Read(ref _scopeFactory) is { } factory)
+                CreateScope(factory);
+
+            return _services;
+        }
+        set
+        {
+            _services = value;
+            _scopeFactory = null;
+        }
+    }
+
+    /// <summary>Reads <see cref="SentAt"/> from <paramref name="headers"/> when it is first read, not before.</summary>
+    public void ParseSentAtOnDemand(IReadOnlyDictionary<string, string> headers) => _sentAtHeaders = headers;
+
+    /// <summary>
+    /// Lets <see cref="Services"/> create a scope from <paramref name="scopeFactory"/> when it is first read, for a handler
+    /// that is not resolved from one; <see cref="DisposeScopeAsync"/> then disposes it.
+    /// </summary>
+    public void UseScopeOnDemand(IServiceScopeFactory scopeFactory)
+    {
+        _scopeFactory = scopeFactory;
+        _services = Testing.EmptyServiceProvider.Instance;
+    }
+
+    private void CreateScope(IServiceScopeFactory factory)
+    {
+        // Handlers rarely read Services from several threads at once; the factory is shared, but only first reads take it.
+        lock (factory)
+        {
+            if (_scopeFactory is null)
+                return;
+
+            _scope = factory.CreateAsyncScope();
+            _services = _scope.Value.ServiceProvider;
+            Volatile.Write(ref _scopeFactory, null);
+        }
+    }
+
+    /// <summary>Disposes a scope <see cref="Services"/> created on demand, if it did.</summary>
+    public ValueTask DisposeScopeAsync()
+    {
+        _scopeFactory = null;
+        if (_scope is not { } scope)
+            return ValueTask.CompletedTask;
+
+        _scope = null;
+        return scope.DisposeAsync();
+    }
 
     /// <summary>The handler's span, which progress reports add events to.</summary>
     public Activity? Activity { get; init; }

@@ -112,13 +112,13 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             MessageType = messageType,
             CorrelationId = headers.GetValueOrDefault(KnownHeaders.CorrelationId),
             Attempt = Math.Max(1, message.DeliveryCount),
-            SentAt = TryGetTime(headers, KnownHeaders.SentAt),
             GroupKey = message.GroupKey,
             Headers = headers,
             Source = _sourceName,
             Activity = activity,
             Logger = _logger
         };
+        context.ParseSentAtOnDemand(headers);
 
         var policy = matches[0].Handler.Options.RetryPolicy ?? _runtime.Options.DefaultRetryPolicy;
         using var handlerCancellation = CancellationTokenSource.CreateLinkedTokenSource(abortToken);
@@ -133,9 +133,27 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         {
             foreach (var match in matches)
             {
-                await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
-                context.Services = scope.ServiceProvider;
-                await match.Handler.Invoke(scope.ServiceProvider, FindPayload(payloads, payloadCount, match.PayloadType)!, context, handlerCancellation.Token).AnyContext();
+                var payload = FindPayload(payloads, payloadCount, match.PayloadType)!;
+                if (match.Handler.ResolvesFromScope)
+                {
+                    await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
+                    context.Services = scope.ServiceProvider;
+                    await match.Handler.Invoke(scope.ServiceProvider, payload, context, handlerCancellation.Token).AnyContext();
+                    _runtime.Observer?.OnHandlerCompleted(context, match.Handler);
+                    continue;
+                }
+
+                // A delegate gets a scope only if it reads context.Services.
+                context.UseScopeOnDemand(_runtime.ScopeFactory);
+                try
+                {
+                    await match.Handler.Invoke(Testing.EmptyServiceProvider.Instance, payload, context, handlerCancellation.Token).AnyContext();
+                }
+                finally
+                {
+                    await context.DisposeScopeAsync().AnyContext();
+                }
+
                 _runtime.Observer?.OnHandlerCompleted(context, match.Handler);
             }
         }

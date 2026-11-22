@@ -13,6 +13,12 @@ internal sealed class MessageHandlerRegistration
     public required MessageHandlerKind Kind { get; init; }
     public required string HandlerName { get; init; }
 
+    /// <summary>
+    /// False for a delegate, which is not resolved from the services passed to <see cref="Invoke"/>: its scope is then
+    /// created only if it reads <see cref="IMessageContext.Services"/>.
+    /// </summary>
+    public bool ResolvesFromScope { get; init; } = true;
+
     /// <summary>The handler class, or null for a delegate handler.</summary>
     public Type? HandlerType { get; init; }
     public required Func<IServiceProvider, object, IMessageContext, CancellationToken, Task> Invoke { get; init; }
@@ -102,6 +108,7 @@ internal sealed class MessageHandlerRegistration
             MessageType = typeof(T),
             Kind = kind,
             HandlerName = $"{typeof(T).Name} delegate",
+            ResolvesFromScope = false,
             Invoke = (_, message, context, cancellationToken) => handler((T)message, context, cancellationToken)
         };
         registration.SetOptions(options);
