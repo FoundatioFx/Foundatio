@@ -1839,6 +1839,61 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Empty(await admin.PeekDeadLettersAsync(source, cancellationToken: TestCancellationToken));
     }
 
+    /// <summary>End to end: dead letters can be paged, and one replayed or deleted by id through <see cref="IMessageAdmin"/>.</summary>
+    [Fact]
+    public async Task Messaging_DeadLettersArePagedAndReplayedOrDeletedById()
+    {
+        string name = NewName("dlq-admin");
+        var source = MessageSource.Queue(name);
+        DeleteAfterTest(source);
+        bool fixedHandler = false;
+        var handled = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var host = await MessagingTestHost.StartAsync(Transport, Log, "worker", m => m
+            .MapMessage<ConformanceMessage>(name)
+            .AddConsumer<ConformanceMessage>((message, context, _) =>
+            {
+                if (!Volatile.Read(ref fixedHandler))
+                    context.DeadLetter($"message {message.Value} is invalid");
+                else
+                    handled.TrySetResult(message.Value);
+
+                return Task.CompletedTask;
+            }));
+
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var ids = await host.Client.SendBatchAsync(Enumerable.Range(0, 6).Select(i => new ConformanceMessage(i)), m => new MessageKeys { MessageId = $"{name}-{m.Value}" }, cancellationToken: TestCancellationToken);
+        Assert.Equal(Enumerable.Range(0, 6).Select(i => $"{name}-{i}"), ids);
+
+        IReadOnlyList<DeadLetterMessage> all;
+        var deadline = DateTime.UtcNow + DeliveryTimeout * 2;
+        while ((all = await admin.PeekDeadLettersAsync(source, max: 10, cancellationToken: TestCancellationToken)).Count < 6)
+        {
+            Assert.True(DateTime.UtcNow < deadline, $"Only {all.Count} of 6 messages were dead-lettered.");
+            await Task.Delay(100, TestCancellationToken);
+        }
+
+        Assert.Equal(ids.Order(), all.Select(d => d.MessageId).Order());
+        Assert.Equal(2, (await admin.PeekDeadLettersAsync(source, skip: 4, max: 10, cancellationToken: TestCancellationToken)).Count);
+        Assert.Empty(await admin.PeekDeadLettersAsync(source, skip: 6, max: 10, cancellationToken: TestCancellationToken));
+
+        if (Transport.Capabilities.InOrderCompletion)
+        {
+            await Assert.ThrowsAsync<MessageBusException>(() => admin.ReplayDeadLetterAsync(source, $"{name}-3", TestCancellationToken));
+            await Assert.ThrowsAsync<MessageBusException>(() => admin.DeleteDeadLetterAsync(source, $"{name}-4", TestCancellationToken));
+            Assert.Equal(6, (await admin.PeekDeadLettersAsync(source, max: 10, cancellationToken: TestCancellationToken)).Count);
+            return;
+        }
+
+        Volatile.Write(ref fixedHandler, true);
+        Assert.True(await admin.ReplayDeadLetterAsync(source, $"{name}-3", TestCancellationToken));
+        Assert.Equal(3, await handled.Task.WaitAsync(DeliveryTimeout, TestCancellationToken));
+        Assert.True(await admin.DeleteDeadLetterAsync(source, $"{name}-4", TestCancellationToken));
+        Assert.False(await admin.DeleteDeadLetterAsync(source, $"{name}-missing", TestCancellationToken));
+
+        var remaining = await admin.PeekDeadLettersAsync(source, max: 10, cancellationToken: TestCancellationToken);
+        Assert.Equal([$"{name}-0", $"{name}-1", $"{name}-2", $"{name}-5"], remaining.Select(d => d.MessageId).Order());
+    }
+
     /// <summary>Deletes the sources the test created, then disposes every transport it tracked.</summary>
     public override async ValueTask DisposeAsync()
     {

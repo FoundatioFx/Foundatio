@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Foundatio.Messaging;
 
-/// <summary>A message in a dead-letter queue, returned by <see cref="IMessageAdmin.PeekDeadLettersAsync"/>.</summary>
+/// <summary>A message in a dead-letter queue, returned by <see cref="IMessageAdmin.PeekDeadLettersAsync(Transport.MessageSource, int, int, System.Threading.CancellationToken)"/>.</summary>
 public sealed record DeadLetterMessage
 {
     /// <summary>The id the message was sent with.</summary>

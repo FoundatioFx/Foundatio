@@ -16,7 +16,11 @@ internal sealed class MessageAdmin : IMessageAdmin
     // Every receive waits long enough to be a long poll: a shorter wait is a short poll on SQS, which often comes back
     // empty while messages remain, and an empty receive ends a peek or replay.
     private static readonly TimeSpan ReceiveWait = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan PeekLease = TimeSpan.FromSeconds(30);
+    // Long enough that leases of messages held while looking through many dead letters do not run out.
+    private static readonly TimeSpan PeekLease = TimeSpan.FromMinutes(2);
+
+    // How many dead letters a lookup by id holds at most.
+    internal const int MaxScan = 10_000;
 
     // Headers that would stop a replayed message from being handled at once.
     private static readonly string[] ReplayRemovesHeaders = [KnownHeaders.DeadLetterReason, KnownHeaders.DeliverAt, KnownHeaders.ExpiresAt];
@@ -39,25 +43,30 @@ internal sealed class MessageAdmin : IMessageAdmin
         return _runtime.Transport.GetStatsAsync(source, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int max = 20, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int max = 20, CancellationToken cancellationToken = default)
+        => PeekDeadLettersAsync(source, 0, max, cancellationToken);
+
+    public async Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int skip, int max, CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
+        ArgumentOutOfRangeException.ThrowIfNegative(skip);
         ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
+        int wanted = (int)Math.Min((long)skip + max, Int32.MaxValue);
 
         await using var receiver = await CreateDeadLetterReceiverAsync(source, cancellationToken).AnyContext();
         var received = new List<IncomingMessage>();
         try
         {
-            while (received.Count < max)
+            while (received.Count < wanted)
             {
-                var batch = await receiver.ReceiveAsync(Math.Min(max - received.Count, ReceiveBatchSize), ReceiveWait, cancellationToken).AnyContext();
+                var batch = await receiver.ReceiveAsync(Math.Min(wanted - received.Count, ReceiveBatchSize), ReceiveWait, cancellationToken).AnyContext();
                 if (batch.Count == 0)
                     break;
 
                 received.AddRange(batch);
             }
 
-            return received.Select(ToDeadLetter).ToList();
+            return received.Skip(skip).Select(ToDeadLetter).ToList();
         }
         finally
         {
@@ -100,13 +109,7 @@ internal sealed class MessageAdmin : IMessageAdmin
                 if (fresh.Count == 0)
                     continue;
 
-                await _runtime.Transport.SendAsync(destination, fresh.Select(m => new OutgoingMessage
-                {
-                    MessageId = m.MessageId,
-                    Body = m.Body,
-                    Headers = m.Headers.Where(h => !ReplayRemovesHeaders.Contains(h.Key, StringComparer.Ordinal)).ToDictionary(h => h.Key, h => h.Value),
-                    GroupKey = m.GroupKey
-                }).ToList(), cancellationToken).AnyContext();
+                await _runtime.Transport.SendAsync(destination, fresh.Select(ToReplay).ToList(), cancellationToken).AnyContext();
 
                 foreach (var message in fresh)
                     await receiver.CompleteAsync(message, CancellationToken.None).AnyContext();
@@ -123,6 +126,57 @@ internal sealed class MessageAdmin : IMessageAdmin
             _logger.LogInformation("Replayed {Count} dead letters to {Destination}", replayed, destination);
 
         return replayed;
+    }
+
+    public Task<bool> ReplayDeadLetterAsync(MessageSource source, string messageId, CancellationToken cancellationToken = default)
+        => SettleDeadLetterAsync(source, messageId, replay: true, cancellationToken);
+
+    public Task<bool> DeleteDeadLetterAsync(MessageSource source, string messageId, CancellationToken cancellationToken = default)
+        => SettleDeadLetterAsync(source, messageId, replay: false, cancellationToken);
+
+    /// <summary>
+    /// Finds the first dead letter with <paramref name="messageId"/> and replays or deletes it. The dead letters before
+    /// it stay leased until the end, since released ones would be received again, and are then released.
+    /// </summary>
+    private async Task<bool> SettleDeadLetterAsync(MessageSource source, string messageId, bool replay, CancellationToken cancellationToken)
+    {
+        ValidateSource(source);
+        ArgumentException.ThrowIfNullOrEmpty(messageId);
+        if (_runtime.Transport.Capabilities.InOrderCompletion)
+        {
+            throw new MessageBusException($"{_runtime.Transport.GetType().Name} removes messages only in order, so it cannot {(replay ? "replay" : "delete")} one dead letter of {source} by id. "
+                + "Replay or purge all of them instead.");
+        }
+
+        var held = new List<IncomingMessage>();
+        await using var receiver = await CreateDeadLetterReceiverAsync(source, cancellationToken).AnyContext();
+        try
+        {
+            while (held.Count < MaxScan)
+            {
+                var batch = await receiver.ReceiveAsync(Math.Min(MaxScan - held.Count, ReceiveBatchSize), ReceiveWait, cancellationToken).AnyContext();
+                if (batch.Count == 0)
+                    return false;
+
+                held.AddRange(batch);
+                if (batch.FirstOrDefault(m => String.Equals(m.MessageId, messageId, StringComparison.Ordinal)) is not { } match)
+                    continue;
+
+                if (replay)
+                    await _runtime.Transport.SendAsync(MessageDestination.For(source), [ToReplay(match)], cancellationToken).AnyContext();
+
+                await receiver.CompleteAsync(match, CancellationToken.None).AnyContext();
+                held.Remove(match);
+                _logger.LogInformation(replay ? "Replayed dead letter {MessageId} to {Source}" : "Deleted dead letter {MessageId} of {Source}", messageId, source);
+                return true;
+            }
+        }
+        finally
+        {
+            await ReleaseAsync(receiver, held).AnyContext();
+        }
+
+        throw new MessageBusException($"Looked through the first {MaxScan} dead letters of {source} without finding message {messageId}. Replay or purge the dead letters ahead of it to reach it.");
     }
 
     public Task PurgeDeadLettersAsync(MessageSource source, CancellationToken cancellationToken = default)
@@ -156,8 +210,18 @@ internal sealed class MessageAdmin : IMessageAdmin
 
     private Task<IMessageReceiver> CreateDeadLetterReceiverAsync(MessageSource source, CancellationToken cancellationToken)
     {
-        return _runtime.Transport.CreateReceiverAsync(MessageSource.DeadLetter(source), new ReceiverOptions { LeaseDuration = PeekLease }, cancellationToken);
+        var lease = _runtime.Transport.Capabilities.MaxLeaseDuration is { } maxLease && maxLease < PeekLease ? maxLease : PeekLease;
+        return _runtime.Transport.CreateReceiverAsync(MessageSource.DeadLetter(source), new ReceiverOptions { LeaseDuration = lease }, cancellationToken);
     }
+
+    /// <summary>The message to send back to the source a dead letter came from, without what would stop it being handled at once.</summary>
+    private static OutgoingMessage ToReplay(IncomingMessage message) => new()
+    {
+        MessageId = message.MessageId,
+        Body = message.Body,
+        Headers = message.Headers.Where(h => !ReplayRemovesHeaders.Contains(h.Key, StringComparer.Ordinal)).ToDictionary(h => h.Key, h => h.Value),
+        GroupKey = message.GroupKey
+    };
 
     private DeadLetterMessage ToDeadLetter(IncomingMessage message)
     {

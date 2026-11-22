@@ -824,6 +824,48 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Admin_PagesDeadLettersAndReplaysOrDeletesOneById()
+    {
+        bool fixedHandler = false;
+        var handled = new ConcurrentQueue<int>();
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((message, _, _) =>
+        {
+            if (!Volatile.Read(ref fixedHandler))
+                throw new InvalidOperationException($"order {message.OrderId} is invalid");
+
+            handled.Enqueue(message.OrderId);
+            return Task.CompletedTask;
+        }, new HandlerOptions { RetryPolicy = RetryPolicy.None }));
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var source = MessageSource.Queue(QueueName<PlaceOrder>());
+
+        await host.Client.SendBatchAsync(Enumerable.Range(0, 25).Select(i => new PlaceOrder(i)), o => new MessageKeys { MessageId = $"order-{o.OrderId}" }, cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 25);
+
+        var first = await admin.PeekDeadLettersAsync(source, cancellationToken: TestCancellationToken);
+        var second = await admin.PeekDeadLettersAsync(source, skip: 20, max: 20, cancellationToken: TestCancellationToken);
+        Assert.Equal(20, first.Count);
+        Assert.Equal(5, second.Count);
+        Assert.Equal(25, first.Concat(second).Select(d => d.MessageId).Distinct().Count());
+        Assert.Equal(first.Select(d => d.MessageId), (await admin.PeekDeadLettersAsync(source, skip: 0, max: 20, cancellationToken: TestCancellationToken)).Select(d => d.MessageId));
+        Assert.Empty(await admin.PeekDeadLettersAsync(source, skip: 25, max: 20, cancellationToken: TestCancellationToken));
+
+        Volatile.Write(ref fixedHandler, true);
+        Assert.True(await admin.ReplayDeadLetterAsync(source, "order-21", TestCancellationToken));
+        await WaitForAsync(() => handled.Contains(21));
+        Assert.True(await admin.DeleteDeadLetterAsync(source, "order-7", TestCancellationToken));
+        Assert.False(await admin.DeleteDeadLetterAsync(source, "order-7", TestCancellationToken));
+        Assert.False(await admin.ReplayDeadLetterAsync(source, "missing", TestCancellationToken));
+
+        var remaining = await admin.PeekDeadLettersAsync(source, max: 100, cancellationToken: TestCancellationToken);
+        Assert.Equal(23, remaining.Count);
+        Assert.DoesNotContain(remaining, d => d.MessageId is "order-21" or "order-7");
+        Assert.Equal([21], handled);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => admin.PeekDeadLettersAsync(source, skip: -1, max: 20, cancellationToken: TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => admin.ReplayDeadLetterAsync(source, "", TestCancellationToken));
+    }
+
+    [Fact]
     public async Task AdminGetStatsAsync_CountsTheSourceThroughTheTransportAndRejectsDeadLetterSources()
     {
         await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((_, context, _) =>

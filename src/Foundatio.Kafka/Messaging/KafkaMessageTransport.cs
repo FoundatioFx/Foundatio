@@ -117,6 +117,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
             MaxMessageSize = options.MaxMessageSize - KafkaMessageTransportCodec.EncodingReserve,
             MaxLeaseDuration = null,
             LeaseExpiration = false,
+            InOrderCompletion = true,
             OrderedGroups = true,
             Deduplication = false
         };

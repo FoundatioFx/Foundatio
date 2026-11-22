@@ -153,6 +153,14 @@ public sealed record TransportCapabilities
     public bool LeaseExpiration { get; init; } = true;
 
     /// <summary>
+    /// True when the broker records completions by offset, so a completed message stays removed only once every
+    /// message before it in its partition is settled too (Kafka): completing one message while earlier ones are released
+    /// delivers it again to the next receiver. <see cref="IMessageAdmin"/> then cannot replay or delete a single dead
+    /// letter by id. Defaults to false.
+    /// </summary>
+    public bool InOrderCompletion { get; init; }
+
+    /// <summary>
     /// True when messages with the same <see cref="OutgoingMessage.GroupKey"/> are delivered in send order and no
     /// message of a group is delivered to any receiver of the source, in any process, while an earlier one of that
     /// group is unsettled. Send order is the order within one <see cref="IMessageTransport.SendAsync"/> call and of

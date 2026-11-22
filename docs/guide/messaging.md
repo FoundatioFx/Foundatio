@@ -270,14 +270,17 @@ var source = MessageSource.Subscription("orders.order-placed", "billing");   // 
 
 MessageSourceStats? counts = await admin.GetStatsAsync(source);   // Queued, Delayed, InFlight, DeadLettered; null where the transport can't tell
 IReadOnlyList<DeadLetterMessage> failed = await admin.PeekDeadLettersAsync(source);   // Reason, MessageType, Message (deserialized), Headers
+var nextPage = await admin.PeekDeadLettersAsync(source, skip: 20, max: 20);
 int replayed = await admin.ReplayDeadLettersAsync(source);   // back to that queue or subscription only
+bool found = await admin.ReplayDeadLetterAsync(source, failed[0].MessageId);   // just the one you fixed
+await admin.DeleteDeadLetterAsync(source, poisonMessageId);   // drop one that should never run
 await admin.PurgeDeadLettersAsync(source);
 await admin.DeleteAsync(MessageSource.Subscription("orders.order-placed", "retired-service"));   // stop collecting copies for a removed service
 ```
 
 Replayed messages keep their id, body and headers and are handled as new deliveries; the dead-letter reason, delay and expiry are dropped.
 
-Peek reads the oldest `max` dead letters (20 by default) and replay takes up to `max` (100) from the front; there is no paging and no replay or delete of a single message by id. To handle one dead letter, peek it, send its `Message` again with `SendAsync`, and purge once the queue holds nothing else you need.
+Peeking receives the messages and releases them, so a page after `skip` costs `skip + max` receives, and pages keep the dead-letter queue's order on every transport but SQS, where they may overlap. `ReplayDeadLetterAsync` and `DeleteDeadLetterAsync` look through up to 10,000 dead letters for the id and return false when it isn't there. Kafka records progress by offset and can't remove one message from the middle of a topic, so on Kafka they throw `MessageBusException`; replay or purge the whole dead-letter queue instead.
 
 Dead-lettering is at least once, like delivery: on transports that move a message by copying it to the dead-letter queue and then removing the original (RabbitMQ, SQS and Kafka), a connection or lease lost in between delivers the original again, and it can be dead-lettered a second time. A dead-letter queue may then hold two entries with the same message id, which a replay sends twice; replayed handlers should be idempotent too.
 

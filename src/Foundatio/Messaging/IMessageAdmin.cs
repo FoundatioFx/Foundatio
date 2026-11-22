@@ -34,11 +34,47 @@ public interface IMessageAdmin
     Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int max = 20, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns up to <paramref name="max"/> dead letters of a queue or durable subscription after the first
+    /// <paramref name="skip"/>, leaving them in place: a page of them. Peeking receives <paramref name="skip"/> plus
+    /// <paramref name="max"/> messages and releases them, so later pages cost more.
+    /// </summary>
+    /// <remarks>
+    /// Pages follow the dead-letter queue's order, which every transport but SQS keeps between calls; on SQS, whose
+    /// order is approximate, pages may overlap or miss messages. A transport that limits how many messages one receiver
+    /// holds ends the page there (Kafka: 1,000).
+    /// </remarks>
+    Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int skip, int max, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Moves up to <paramref name="max"/> dead letters back to the queue or subscription they came from, where they
     /// are handled again as new deliveries. A replayed subscription message goes only to that subscription.
     /// </summary>
     /// <returns>The number of messages replayed.</returns>
     Task<int> ReplayDeadLettersAsync(MessageSource source, int max = 100, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves the dead letter with id <paramref name="messageId"/> back to the queue or subscription it came from, like
+    /// <see cref="ReplayDeadLettersAsync"/>. Looks through up to 10,000 dead letters for it, holding the others until
+    /// it returns. If the dead-letter queue holds the message twice, only the first copy is replayed.
+    /// </summary>
+    /// <returns>Whether a dead letter with that id was found and replayed.</returns>
+    /// <exception cref="MessageBusException">
+    /// The first 10,000 dead letters do not include it, or the transport removes messages only in order
+    /// (<see cref="TransportCapabilities.InOrderCompletion"/>: Kafka).
+    /// </exception>
+    Task<bool> ReplayDeadLetterAsync(MessageSource source, string messageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes the dead letter with id <paramref name="messageId"/>, such as a poison message that should never run.
+    /// Looks through up to 10,000 dead letters for it, holding the others until it returns. If the dead-letter queue
+    /// holds the message twice, only the first copy is deleted.
+    /// </summary>
+    /// <returns>Whether a dead letter with that id was found and deleted.</returns>
+    /// <exception cref="MessageBusException">
+    /// The first 10,000 dead letters do not include it, or the transport removes messages only in order
+    /// (<see cref="TransportCapabilities.InOrderCompletion"/>: Kafka).
+    /// </exception>
+    Task<bool> DeleteDeadLetterAsync(MessageSource source, string messageId, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes every dead letter of a queue or durable subscription.</summary>
     Task PurgeDeadLettersAsync(MessageSource source, CancellationToken cancellationToken = default);
