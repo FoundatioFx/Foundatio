@@ -8,8 +8,8 @@ using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using RabbitMQ.Client;
 using Microsoft.Extensions.Time.Testing;
+using RabbitMQ.Client;
 using Xunit;
 
 namespace Foundatio.RabbitMQ.Tests.Messaging;
