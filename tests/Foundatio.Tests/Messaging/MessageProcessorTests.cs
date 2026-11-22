@@ -144,6 +144,43 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task LeaseRenewal_WithoutLeaseExpiration_WhenRenewalsKeepFailing_LetsTheHandlerFinish()
+    {
+        // Without lease expiration (Kafka, RabbitMQ) a lease never runs out, so failed renewals alone never cancel the handler.
+        await using var inner = new InMemoryMessageTransport(new InMemoryMessageTransport().Capabilities with { LeaseExpiration = false });
+        int renewals = 0, cancelled = 0, handled = 0;
+        var transport = new InterceptingMessageTransport(inner)
+        {
+            OnRenew = (_, _) =>
+            {
+                Interlocked.Increment(ref renewals);
+                throw new IOException("The broker cannot be reached");
+            }
+        };
+
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (_, _, ct) =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2.5), ct);
+                Interlocked.Increment(ref handled);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref cancelled);
+                throw;
+            }
+        }, new HandlerOptions { LeaseDuration = ShortLease, MaxConcurrency = 1 }));
+
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+
+        Assert.True(await inner.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        Assert.True(Volatile.Read(ref renewals) > 1, "No renewal failed, so the test did not exercise failing renewals.");
+        Assert.Equal(0, Volatile.Read(ref cancelled));
+        Assert.Equal(1, Volatile.Read(ref handled));
+    }
+
+    [Fact]
     public async Task LeaseRenewal_WhenTheBrokerDecidesAShorterLease_RenewsBeforeItEnds()
     {
         int handled = 0, renewals = 0;

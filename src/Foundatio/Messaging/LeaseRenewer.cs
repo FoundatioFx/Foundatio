@@ -14,6 +14,9 @@ namespace Foundatio.Messaging;
 /// too. Deliveries settled within a renewal interval never touch the timer, and a failed renewal is retried quickly,
 /// well before the lease runs out. When the transport reports the broker's own lease end in
 /// <see cref="IncomingMessage.LeaseExpiresAt"/>, renewals and retries follow it instead of the requested lease.
+/// With <see cref="TransportCapabilities.LeaseExpiration"/>, a delivery whose lease could not be renewed by shortly
+/// before it ends is marked lost, as the job worker does with a job's lease: its handler is cancelled and it is never
+/// settled, since the broker may already have given it to another consumer.
 /// </summary>
 internal sealed class LeaseRenewer : IDisposable
 {
@@ -22,9 +25,11 @@ internal sealed class LeaseRenewer : IDisposable
     private static readonly TimeSpan MinRenewTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxRenewTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan TimerResolution = TimeSpan.FromMilliseconds(5);
+    private static readonly TimeSpan MaxLeaseMargin = TimeSpan.FromSeconds(5);
 
     private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _interval;
+    private readonly TimeSpan _margin;
     private readonly bool _leaseExpiration;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
@@ -43,6 +48,9 @@ internal sealed class LeaseRenewer : IDisposable
 
         // A third of the way through the lease leaves two thirds to retry a renewal that failed.
         _interval = TimeSpan.FromTicks(Math.Max(1, leaseDuration.Ticks / 3));
+
+        // How long before its end a lease that could not be renewed counts as lost, as for jobs.
+        _margin = TimeSpan.FromTicks(Math.Min(leaseDuration.Ticks / 4, MaxLeaseMargin.Ticks));
 
         // Without lease expiration, renewing only asks whether the delivery is still ours (a revoked Kafka partition), so ask often.
         if (!leaseExpiration && _interval > OwnershipCheckInterval)
@@ -170,7 +178,7 @@ internal sealed class LeaseRenewer : IDisposable
             return;
 
         if (!renewNow)
-            delivery.LeaseExpiresAt = delivery.Message.LeaseExpiresAt ?? now + _leaseDuration;
+            SetLease(delivery, delivery.Message.LeaseExpiresAt ?? now + _leaseDuration, now);
 
         delivery.RenewAt = renewNow ? now : now + GetRenewInterval(delivery, now);
         delivery.RenewalFailures = 0;
@@ -181,6 +189,8 @@ internal sealed class LeaseRenewer : IDisposable
 
     private void OnTimer()
     {
+        List<MessageDelivery>? expired = null;
+        List<CancellationTokenSource>? renewals = null;
         lock (_lock)
         {
             _timerDueAt = null;
@@ -192,6 +202,18 @@ internal sealed class LeaseRenewer : IDisposable
             DateTimeOffset? next = null;
             foreach (var delivery in _deliveries)
             {
+                if (_leaseExpiration)
+                {
+                    if (delivery.LostAt <= now + TimerResolution)
+                    {
+                        (expired ??= []).Add(delivery);
+                        continue;
+                    }
+
+                    if (next is null || delivery.LostAt < next)
+                        next = delivery.LostAt;
+                }
+
                 if (delivery.Renewal is not null)
                     continue;
 
@@ -199,6 +221,17 @@ internal sealed class LeaseRenewer : IDisposable
                     (due ??= []).Add(delivery);
                 else if (next is null || delivery.RenewAt < next)
                     next = delivery.RenewAt;
+            }
+
+            if (expired is not null)
+            {
+                foreach (var delivery in expired)
+                {
+                    delivery.Tracked = false;
+                    _deliveries.Remove(delivery);
+                    if (delivery.RenewalCancellation is { } cancellation)
+                        (renewals ??= []).Add(cancellation);
+                }
             }
 
             if (due is not null)
@@ -213,6 +246,23 @@ internal sealed class LeaseRenewer : IDisposable
 
             if (next is { } at)
                 ScheduleLocked(at, now);
+        }
+
+        if (expired is null)
+            return;
+
+        foreach (var delivery in expired)
+        {
+            _logger.LogWarning("Could not renew the lease on message {MessageId} before it ran out; cancelling its handler, and another consumer may receive it",
+                delivery.Message.MessageId);
+            delivery.MarkLeaseLost();
+        }
+
+        // A renewal still in flight finds its delivery untracked and leaves it lost.
+        if (renewals is not null)
+        {
+            foreach (var cancellation in renewals)
+                TryCancel(cancellation);
         }
     }
 
@@ -254,7 +304,7 @@ internal sealed class LeaseRenewer : IDisposable
                 }
                 else if (error is null)
                 {
-                    delivery.LeaseExpiresAt = delivery.Message.LeaseExpiresAt ?? started + _leaseDuration;
+                    SetLease(delivery, delivery.Message.LeaseExpiresAt ?? started + _leaseDuration, started);
                     delivery.RenewalFailures = 0;
                     delivery.RenewAt = now + GetRenewInterval(delivery, now);
                     ScheduleLocked(delivery.RenewAt, now);
@@ -276,6 +326,17 @@ internal sealed class LeaseRenewer : IDisposable
             delivery.MarkLeaseLost();
         else if (error is not null)
             _logger.LogWarning(error, "Could not renew the lease on message {MessageId}; retrying in {Delay}", delivery.Message.MessageId, retryIn);
+    }
+
+    /// <summary>
+    /// Records the end of a lease the broker granted at <paramref name="grantedAt"/> or later, and when it counts as lost
+    /// without a renewal: <see cref="_margin"/> before its end, and at most a quarter of its length.
+    /// </summary>
+    private void SetLease(MessageDelivery delivery, DateTimeOffset expiresAt, DateTimeOffset grantedAt)
+    {
+        long length = Math.Max(0, (expiresAt - grantedAt).Ticks);
+        delivery.LeaseExpiresAt = expiresAt;
+        delivery.LostAt = expiresAt - TimeSpan.FromTicks(Math.Min(_margin.Ticks, length / 4));
     }
 
     /// <summary>

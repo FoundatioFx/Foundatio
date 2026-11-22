@@ -216,6 +216,8 @@ Stopping the host doesn't cancel handlers at once. As soon as the host begins st
 
 Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent.
 
+When the broker can't be reached to renew a lease (SQS, Redis, Service Bus), Foundatio cancels the handler's `CancellationToken` shortly before the lease ends (a quarter of the lease before, at most 5 seconds) and leaves the message unsettled, as the job worker does with a job's lease, so it doesn't keep running while the broker gives the message to another consumer. Pass the token on to whatever the handler awaits. Kafka and RabbitMQ leases don't expire, so failed renewals there never cancel a handler.
+
 ## Reporting progress
 
 A long-running handler can report how far it has got, so it shows in the [monitor](./monitoring) with its progress:

@@ -52,6 +52,7 @@ internal sealed class MessageDelivery
     // Renewal state, read and written only under the renewer's lock.
     internal bool Tracked { get; set; }
     internal DateTimeOffset LeaseExpiresAt { get; set; }
+    internal DateTimeOffset LostAt { get; set; }
     internal DateTimeOffset RenewAt { get; set; }
     internal int RenewalFailures { get; set; }
     internal Task? Renewal { get; set; }
