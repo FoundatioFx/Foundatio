@@ -278,7 +278,14 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             _transport.Logger.Log(deadLetters ? LogLevel.Debug : LogLevel.Warning, "{Source} was missing in Redis and is created again: it was deleted, or Redis lost its keys " +
                 "(a restart without persistence, a failover before replication, or a flush), and with them the messages it held", Source);
         if (_topicSubscriptions is { } subscriptions && (recreated || Stopwatch.GetElapsedTime(_subscriptionRegisteredAt, now) >= SubscriptionRegistrationRefreshInterval))
+        {
             await RegisterSubscriptionAsync(subscriptions, recreated, now).AnyContext();
+
+            // Messages published between the loss and this receive reached no subscription, so this receiver would miss
+            // them without a sign; faulting it says so, and its replacement receives what is published from now on.
+            if (recreated)
+                throw new MessageReceiverFaultedException($"{Source} was missing in Redis: it was deleted, or Redis lost its keys. It is registered with its topic again; messages published to the topic meanwhile did not reach it.");
+        }
         bool registered = register && (long)result[3] == 1;
         if (registered)
         {

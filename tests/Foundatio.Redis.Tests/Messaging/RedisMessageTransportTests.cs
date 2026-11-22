@@ -22,16 +22,6 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         return new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log });
     }
 
-    /// <summary>CONF-2: the receiver of a deleted durable subscription keeps reading a stream no publish reaches.</summary>
-    [Theory]
-    [InlineData(MessageSourceKind.Queue)]
-    [InlineData(MessageSourceKind.Subscription)]
-    public override Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(MessageSourceKind kind)
-    {
-        Assert.SkipWhen(kind == MessageSourceKind.Subscription, "CONF-2: a receiver of a deleted durable subscription neither faults nor re-registers it, so it goes deaf.");
-        return base.Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(kind);
-    }
-
     [Fact]
     public async Task InstanceSubscription_OfAStoppedProcess_IsRemovedByTheNextPublish()
     {
@@ -567,10 +557,11 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
-    public async Task ReceiveAsync_AfterRedisLostEveryKey_StillReceivesWhatIsPublishedToItsTopic()
+    public async Task ReceiveAsync_AfterRedisLostEveryKey_RegistersAgainAndFaults()
     {
         // Redis restarted without persistence (or failed over before replicating): the topic's list of subscriptions is
-        // gone along with the subscription's stream, while the subscriber's receiver keeps running.
+        // gone along with the subscription's stream, while the subscriber's receiver keeps running. Whatever was
+        // published meanwhile reached no subscription, so the receiver faults rather than go on as if nothing was missed.
         string topic = NewName("lost-all");
         var source = MessageSource.Subscription(topic, "billing");
         await using var receiver = await CreateReceiverAsync(source);
@@ -579,13 +570,15 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
         foreach (string key in await FindKeysAsync($"*{topic}*"))
             await GetMuxer().GetDatabase().KeyDeleteAsync(key);
-        Assert.Empty(await receiver.ReceiveAsync(1, TimeSpan.FromMilliseconds(200), TestCancellationToken));
+        await Assert.ThrowsAsync<MessageReceiverFaultedException>(() => receiver.ReceiveAsync(1, TimeSpan.FromMilliseconds(200), TestCancellationToken));
 
+        // The faulting receive registered the subscription again, so what is published from now on reaches it.
         await Transport.SendAsync(MessageDestination.Topic(topic), [Message("after", "after")], TestCancellationToken);
+        await using var replacement = await CreateReceiverAsync(source);
 
-        var next = await ReceiveOneAsync(receiver);
+        var next = await ReceiveOneAsync(replacement);
         Assert.Equal("after", next.MessageId);
-        await receiver.CompleteAsync(next, TestCancellationToken);
+        await replacement.CompleteAsync(next, TestCancellationToken);
         Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains(source.ToString()) && e.Message.Contains("created and registered"));
     }
 
