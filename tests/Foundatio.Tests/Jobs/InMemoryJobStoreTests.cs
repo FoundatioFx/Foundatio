@@ -34,7 +34,7 @@ public class InMemoryJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase
         Assert.Equal(2, await store.CountAsync(cancellationToken: TestCancellationToken));
         Assert.Equal(2, (await store.QueryAsync(new JobQuery { Name = name }, TestCancellationToken)).Jobs.Count);
         Assert.Null(await store.GetAsync("job-0", TestCancellationToken));
-        Assert.True(await store.CreateAsync(jobs[0], TestCancellationToken));
+        Assert.NotNull(await store.CreateAsync(jobs[0], TestCancellationToken));
         Assert.Equal(JobState.Queued, (await store.GetAsync("job-0", TestCancellationToken))?.State);
     }
 

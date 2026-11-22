@@ -227,7 +227,8 @@ internal sealed class JobWorker
             _runningByName.AddOrUpdate(claimed.Name, 0, (_, count) => count - 1);
             Interlocked.Decrement(ref _running);
             _slots.Release();
-            if (_runtime.Jobs[claimed.Name].Options.MaxConcurrency is not null)
+            // A limited job type has room again, or the job's concurrency key is free for the next job waiting for it.
+            if (_runtime.Jobs[claimed.Name].Options.MaxConcurrency is not null || claimed.ConcurrencyKey is not null)
                 _runtime.SignalWorkAvailable();
         }
     }

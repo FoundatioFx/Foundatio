@@ -1,7 +1,10 @@
--- KEYS: job, running, queued, expiring, running index, running name index, target status index, target status name index
+-- KEYS: job, running, queued, expiring, running index, running name index, target status index, target status name
+--       index, holders (the name's concurrency keys), waiting (the name's jobs waiting for a concurrency key)
 -- ARGV: id, claim token, status, retry delay us, refund attempt, retain us, has message, message, has error, error, name
+-- Releases the job's concurrency key, making the job waiting longest for it claimable.
 local id, status = ARGV[1], ARGV[3]
-local job = redis.call('HMGET', KEYS[1], 'status', 'token', 'name', 'index', 'attempt', 'available', 'scheduled')
+local job = redis.call('HMGET', KEYS[1], 'status', 'token', 'name', 'index', 'attempt', 'available', 'scheduled', 'ckey')
+local concurrencyKey = present(job[8])
 if job[1] ~= RUNNING or job[2] ~= ARGV[2] or job[3] ~= ARGV[11] then
     return 0
 end
@@ -9,6 +12,9 @@ end
 redis.call('HDEL', KEYS[1], 'token', 'lease', 'worker')
 redis.call('HSET', KEYS[1], 'status', status, 'updated', str(now))
 redis.call('ZREM', KEYS[2], id)
+if concurrencyKey then
+    releaseKey(KEYS[9], KEYS[10], KEYS[3], concurrencyKey, id)
+end
 
 if status == QUEUED then
     local availableAt = now + tonumber(ARGV[4])

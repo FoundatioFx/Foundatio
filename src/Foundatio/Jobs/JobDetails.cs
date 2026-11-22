@@ -39,6 +39,8 @@ public sealed class JobDetails
         Error = job.Error;
         CancellationRequested = job.CancellationRequested;
         ScheduleName = job.ScheduleName;
+        ConcurrencyKey = job.ConcurrencyKey;
+        DeduplicationKey = job.DeduplicationKey;
         CorrelationId = job.CorrelationId;
         WorkerId = job.WorkerId;
         Headers = job.Headers;
@@ -93,6 +95,12 @@ public sealed class JobDetails
 
     /// <summary>The CRON schedule that created the job, if any.</summary>
     public string? ScheduleName { get; init; }
+
+    /// <summary>The <see cref="EnqueueOptions.ConcurrencyKey"/> the job was enqueued with.</summary>
+    public string? ConcurrencyKey { get; init; }
+
+    /// <summary>The <see cref="EnqueueOptions.DeduplicationKey"/> the job was enqueued with.</summary>
+    public string? DeduplicationKey { get; init; }
 
     /// <summary>Links the job to the request, message or job that enqueued it.</summary>
     public string? CorrelationId { get; init; }

@@ -12,7 +12,8 @@ namespace Foundatio.Jobs.Store;
 /// <remarks>
 /// Claims, counts and query pages use indexes, so they do not slow down as retained jobs pile up: per-name sets of the
 /// queued and running jobs ordered by when they are due, a set of the finished jobs ordered by when their retention
-/// runs out, and sets ordered by creation for each combination of state and name filters.
+/// runs out, and sets ordered by creation for each combination of state and name filters. A due job whose concurrency
+/// key another job holds is moved aside, to a set of that key's waiting jobs, until the key is released.
 /// </remarks>
 public sealed class InMemoryJobStore : IJobStore
 {
@@ -20,6 +21,9 @@ public sealed class InMemoryJobStore : IJobStore
     private readonly Dictionary<string, SortedSet<Entry>> _dueByName = new(StringComparer.Ordinal);
     private readonly SortedSet<Entry> _expiring = new(ExpiryComparer.Instance);
     private readonly Dictionary<(JobState? State, string? Name), SortedSet<Entry>> _indexes = new();
+    private readonly Dictionary<(string Name, string Key), Entry> _keyHolders = new();
+    private readonly Dictionary<(string Name, string Key), SortedSet<Entry>> _waiting = new();
+    private readonly Dictionary<(string Name, string Key), Entry> _pending = new();
     private readonly TimeProvider _timeProvider;
     private readonly object _lock = new();
     private long _sequence;
@@ -31,12 +35,12 @@ public sealed class InMemoryJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    Task<bool> IJobStore.CreateAsync(JobInfo job, CancellationToken cancellationToken) => CreateAsync(job, null);
+    Task<string?> IJobStore.CreateAsync(JobInfo job, CancellationToken cancellationToken) => CreateAsync(job, null);
 
     /// <inheritdoc />
-    Task<bool> IJobStore.CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken) => CreateAsync(job, (TimeSpan?)availableAfter);
+    Task<string?> IJobStore.CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken) => CreateAsync(job, (TimeSpan?)availableAfter);
 
-    private Task<bool> CreateAsync(JobInfo job, TimeSpan? availableAfter)
+    private Task<string?> CreateAsync(JobInfo job, TimeSpan? availableAfter)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentException.ThrowIfNullOrWhiteSpace(job.Id);
@@ -46,7 +50,10 @@ public sealed class InMemoryJobStore : IJobStore
         {
             var now = RemoveExpired();
             if (_jobs.ContainsKey(job.Id))
-                return Task.FromResult(false);
+                return Task.FromResult<string?>(null);
+
+            if (job.DeduplicationKey is { } deduplicationKey && _pending.TryGetValue((job.Name, deduplicationKey), out var pending))
+                return Task.FromResult<string?>(pending.Id);
 
             if (availableAfter is { } after)
                 job = job with { AvailableAt = now.Add(after) };
@@ -66,7 +73,10 @@ public sealed class InMemoryJobStore : IJobStore
             _jobs.Add(job.Id, entry);
             Index(entry);
             Schedule(entry, entry.Job.AvailableAt);
-            return Task.FromResult(true);
+            if (job.DeduplicationKey is { } key)
+                _pending.Add((job.Name, key), entry);
+
+            return Task.FromResult<string?>(job.Id);
         }
     }
 
@@ -142,13 +152,20 @@ public sealed class InMemoryJobStore : IJobStore
     /// </summary>
     internal Func<string, bool>? ClaimFilter { get; set; }
 
-    /// <summary>Counts the queued jobs named <paramref name="name"/> that are due now.</summary>
+    /// <summary>Counts the queued jobs named <paramref name="name"/> that are due now, those waiting for their concurrency key included.</summary>
     internal int CountDue(string name)
     {
         lock (_lock)
         {
             long now = RemoveExpired().UtcTicks;
-            return _dueByName.TryGetValue(name, out var due) ? due.Count(e => e.Job.State == JobState.Queued && e.DueTicks <= now) : 0;
+            int count = _dueByName.TryGetValue(name, out var due) ? due.Count(e => e.Job.State == JobState.Queued && e.DueTicks <= now) : 0;
+            foreach (var (key, waiting) in _waiting)
+            {
+                if (key.Name == name)
+                    count += waiting.Count;
+            }
+
+            return count;
         }
     }
 
@@ -193,15 +210,17 @@ public sealed class InMemoryJobStore : IJobStore
             if (claimFilter is not null && !claimFilter(name))
                 continue;
 
-            if (_dueByName.TryGetValue(name, out var due) && due.Min is { } first && first.DueTicks <= now.UtcTicks
-                && (next is null || DueComparer.Instance.Compare(first, next) < 0))
-            {
+            if (FirstClaimable(name, now.UtcTicks) is { } first && (next is null || DueComparer.Instance.Compare(first, next) < 0))
                 next = first;
-            }
         }
 
         if (next is null)
             return null;
+
+        if (next.Job.ConcurrencyKey is { } concurrencyKey)
+            _keyHolders[(next.Job.Name, concurrencyKey)] = next;
+        if (next.Job.DeduplicationKey is { } deduplicationKey && _pending.TryGetValue((next.Job.Name, deduplicationKey), out var pending) && pending == next)
+            _pending.Remove((next.Job.Name, deduplicationKey));
 
         var job = next.Job with
         {
@@ -218,6 +237,76 @@ public sealed class InMemoryJobStore : IJobStore
         Update(next, job);
         Schedule(next, job.LeaseExpiresAt.Value);
         return job;
+    }
+
+    /// <summary>
+    /// The job of <paramref name="name"/> due longest, moving aside the due jobs ahead of it whose concurrency key
+    /// another job holds, so later claims don't pass over them again.
+    /// </summary>
+    private Entry? FirstClaimable(string name, long nowTicks)
+    {
+        while (_dueByName.TryGetValue(name, out var due) && due.Min is { } first && first.DueTicks <= nowTicks)
+        {
+            if (first.Job is not { State: JobState.Queued, ConcurrencyKey: { } key } || !_keyHolders.TryGetValue((name, key), out var holder) || holder == first)
+                return first;
+
+            Unschedule(first);
+            if (!_waiting.TryGetValue((name, key), out var waiting))
+                _waiting.Add((name, key), waiting = new SortedSet<Entry>(DueComparer.Instance));
+
+            waiting.Add(first);
+            first.IsWaiting = true;
+        }
+
+        return null;
+    }
+
+    /// <summary>Releases the job's concurrency key if it holds it, and makes the job waiting longest for the key claimable.</summary>
+    private void ReleaseConcurrencyKey(Entry entry)
+    {
+        if (entry.Job.ConcurrencyKey is not { } key || !_keyHolders.TryGetValue((entry.Job.Name, key), out var holder) || holder != entry)
+            return;
+
+        _keyHolders.Remove((entry.Job.Name, key));
+        ScheduleNextWaiting(entry.Job.Name, key);
+    }
+
+    private void ScheduleNextWaiting(string name, string key)
+    {
+        if (!_waiting.TryGetValue((name, key), out var waiting) || waiting.Min is not { } next)
+            return;
+
+        RemoveWaiting(next);
+        Schedule(next, new DateTimeOffset(next.DueTicks, TimeSpan.Zero));
+    }
+
+    private void RemoveWaiting(Entry entry)
+    {
+        if (!entry.IsWaiting)
+            return;
+
+        var key = (entry.Job.Name, entry.Job.ConcurrencyKey!);
+        if (_waiting.TryGetValue(key, out var waiting) && waiting.Remove(entry) && waiting.Count == 0)
+            _waiting.Remove(key);
+
+        entry.IsWaiting = false;
+    }
+
+    /// <summary>
+    /// Forgets a queued job that leaves without being claimed: it no longer deduplicates, and if it was waiting for its
+    /// concurrency key, or is the one a released key made claimable, the next job waiting for the key gets its turn.
+    /// </summary>
+    private void ReleaseQueued(Entry entry)
+    {
+        if (entry.Job.DeduplicationKey is { } deduplicationKey && _pending.TryGetValue((entry.Job.Name, deduplicationKey), out var pending) && pending == entry)
+            _pending.Remove((entry.Job.Name, deduplicationKey));
+
+        if (entry.Job.ConcurrencyKey is not { } key)
+            return;
+
+        RemoveWaiting(entry);
+        if (!_keyHolders.ContainsKey((entry.Job.Name, key)))
+            ScheduleNextWaiting(entry.Job.Name, key);
     }
 
     /// <inheritdoc />
@@ -273,6 +362,7 @@ public sealed class InMemoryJobStore : IJobStore
                 return Task.FromResult(false);
 
             Unschedule(entry);
+            ReleaseConcurrencyKey(entry);
             var job = entry.Job;
             if (completion.State == JobState.Queued)
             {
@@ -324,6 +414,7 @@ public sealed class InMemoryJobStore : IJobStore
             if (entry.Job.State == JobState.Queued)
             {
                 Unschedule(entry);
+                ReleaseQueued(entry);
                 Update(entry, entry.Job with { State = JobState.Cancelled, CancellationRequested = true, CompletedAt = now, UpdatedAt = now });
                 Expire(entry, now.Add(retainFor));
             }
@@ -386,6 +477,11 @@ public sealed class InMemoryJobStore : IJobStore
     private void Remove(Entry entry)
     {
         Unschedule(entry);
+        if (entry.Job.State == JobState.Queued)
+            ReleaseQueued(entry);
+        else if (entry.Job.State == JobState.Running)
+            ReleaseConcurrencyKey(entry);
+
         if (entry.ExpiresAt is not null)
             _expiring.Remove(entry);
 
@@ -486,6 +582,9 @@ public sealed class InMemoryJobStore : IJobStore
         public long DueTicks { get; set; }
 
         public bool IsScheduled { get; set; }
+
+        /// <summary>Whether the job is due but set aside until its concurrency key is released.</summary>
+        public bool IsWaiting { get; set; }
 
         public DateTimeOffset? ExpiresAt { get; set; }
 

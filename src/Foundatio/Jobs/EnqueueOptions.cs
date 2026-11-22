@@ -12,6 +12,22 @@ public sealed record EnqueueOptions
     /// </summary>
     public string? JobId { get; init; }
 
+    /// <summary>
+    /// Runs at most one job of this name with this key at a time, across every worker: a job whose key is held by a
+    /// running one stays queued, without using an attempt, until that one finishes, fails, is retried or released, or
+    /// is deleted. Jobs with other keys, and jobs of other names, are not held up. For example, use a project's id so
+    /// two resets of one project never overlap. A job whose lease runs out keeps its key until it is claimed again.
+    /// </summary>
+    public string? ConcurrencyKey { get; init; }
+
+    /// <summary>
+    /// While a job of this name with this key is waiting for its first run, enqueuing another returns the waiting job's
+    /// handle instead of creating one. Once the job starts (or is cancelled or deleted), the next enqueue creates a new
+    /// job, so work that arrives while a job runs is not lost. Unlike <see cref="JobId"/>, which keeps an id taken for as
+    /// long as the job is retained, the key is free again as soon as the job starts.
+    /// </summary>
+    public string? DeduplicationKey { get; init; }
+
     /// <summary>Run after this delay.</summary>
     public TimeSpan? Delay { get; init; }
 

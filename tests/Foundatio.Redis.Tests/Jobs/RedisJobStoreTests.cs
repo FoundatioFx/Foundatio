@@ -118,7 +118,7 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         var gate = new SweepGate();
         var store = new RedisJobStore(gate.Wrap(SharedConnection.GetMuxer(Log)!), new RedisJobStoreOptions { Prefix = NewPrefix() });
         var job = NewJob();
-        Assert.True(await store.CreateAsync(job, TestCancellationToken));
+        Assert.NotNull(await store.CreateAsync(job, TestCancellationToken));
 
         try
         {
@@ -142,7 +142,7 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         var gate = new SweepGate();
         var store = new RedisJobStore(gate.Wrap(SharedConnection.GetMuxer(Log)!), new RedisJobStoreOptions { Prefix = NewPrefix() });
         var job = NewJob();
-        Assert.True(await store.CreateAsync(job, TestCancellationToken));
+        Assert.NotNull(await store.CreateAsync(job, TestCancellationToken));
 
         try
         {
@@ -163,7 +163,7 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         gate.Release();
         var store = new RedisJobStore(gate.Wrap(SharedConnection.GetMuxer(Log)!), new RedisJobStoreOptions { Prefix = NewPrefix() });
         var job = NewJob();
-        Assert.True(await store.CreateAsync(job, TestCancellationToken));
+        Assert.NotNull(await store.CreateAsync(job, TestCancellationToken));
 
         var claimed = await store.ClaimAsync(Claim(job.Name), TestCancellationToken);
 
@@ -218,7 +218,7 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
             const int jobCount = 100;
             var now = DateTimeOffset.UtcNow;
             for (int i = 0; i < jobCount; i++)
-                Assert.True(await stores[0].CreateAsync(new JobInfo { Id = $"job-{i}", Name = name, CreatedAt = now, UpdatedAt = now, AvailableAt = now.AddMinutes(-1) }, TestCancellationToken));
+                Assert.NotNull(await stores[0].CreateAsync(new JobInfo { Id = $"job-{i}", Name = name, CreatedAt = now, UpdatedAt = now, AvailableAt = now.AddMinutes(-1) }, TestCancellationToken));
 
             var completions = new ConcurrentDictionary<string, int>();
             var claims = new ConcurrentDictionary<string, int>();
@@ -279,7 +279,7 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         var jobs = Enumerable.Range(0, count).Select(_ => NewJob(name)).ToList();
         foreach (var chunk in jobs.Chunk(100))
         {
-            Assert.All(await Task.WhenAll(chunk.Select(job => store.CreateAsync(job, TestCancellationToken))), Assert.True);
+            Assert.All(await Task.WhenAll(chunk.Select(job => store.CreateAsync(job, TestCancellationToken))), id => Assert.NotNull(id));
             Assert.All(await Task.WhenAll(chunk.Select(job => store.RequestCancellationAsync(job.Id, TimeSpan.FromMilliseconds(1), TestCancellationToken))), Assert.True);
         }
 

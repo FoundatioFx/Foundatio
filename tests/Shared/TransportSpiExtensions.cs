@@ -28,8 +28,8 @@ internal static class TransportSpiExtensions
     public static Task<MessageSourceStats?> GetStatsAsync(this IMessageTransport transport, MessageSource source, CancellationToken cancellationToken = default)
         => transport.GetStatsAsync(source, cancellationToken);
 
-    public static Task<bool> CreateAsync(this IJobStore store, JobInfo job, CancellationToken cancellationToken = default) => store.CreateAsync(job, cancellationToken);
-    public static Task<bool> CreateAsync(this IJobStore store, JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken = default) => store.CreateAsync(job, availableAfter, cancellationToken);
+    public static Task<string?> CreateAsync(this IJobStore store, JobInfo job, CancellationToken cancellationToken = default) => store.CreateAsync(job, cancellationToken);
+    public static Task<string?> CreateAsync(this IJobStore store, JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken = default) => store.CreateAsync(job, availableAfter, cancellationToken);
     public static Task<JobInfo?> GetAsync(this IJobStore store, string jobId, CancellationToken cancellationToken = default) => store.GetAsync(jobId, cancellationToken);
     public static Task<JobPage<JobInfo>> QueryAsync(this IJobStore store, JobQuery query, CancellationToken cancellationToken = default) => store.QueryAsync(query, cancellationToken);
     public static Task<long> CountAsync(this IJobStore store, JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => store.CountAsync(state, name, cancellationToken);

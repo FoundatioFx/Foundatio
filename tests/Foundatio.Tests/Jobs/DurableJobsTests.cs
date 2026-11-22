@@ -25,6 +25,8 @@ public class DurableJobsTests : TestWithLoggingBase
 {
     private readonly InMemoryJobStore _store = new();
     private readonly JobProbe _probe = new();
+    private readonly KeyedProbe _keyed = new();
+    private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public DurableJobsTests(ITestOutputHelper output) : base(output)
     {
@@ -570,6 +572,69 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task EnqueueAsync_WithAConcurrencyKey_RunsOneJobPerKeyAtATimeWithoutUsingAttempts()
+    {
+        await using var host = await StartAsync(j => j.Configure(o => o.MaxConcurrency = 8).AddJob<KeyedJob>());
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 4; i++)
+        {
+            foreach (string project in new[] { "a", "b" })
+                handles.Add(await host.Jobs.EnqueueAsync(new Keyed(project), new EnqueueOptions { ConcurrencyKey = project }, TestCancellationToken));
+        }
+
+        var jobs = new List<JobDetails>();
+        foreach (var handle in handles)
+            jobs.Add(await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+
+        Assert.All(jobs, job => Assert.Equal((JobState.Succeeded, 1), (job.State, job.Attempt)));
+        Assert.Equal("a", jobs[0].ConcurrencyKey);
+        Assert.Equal(1, _keyed.PeakFor("a"));
+        Assert.Equal(1, _keyed.PeakFor("b"));
+        Assert.Equal(2, _probe.PeakConcurrency);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithADeduplicationKey_ReturnsTheWaitingJobUntilItStarts()
+    {
+        await using var host = await StartAsync(j => j.AddJob<GatedJob>());
+        var duplicate = new EnqueueOptions { DeduplicationKey = "org-1", ConcurrencyKey = "org-1" };
+
+        var running = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        var waiting = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        var again = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        var otherKey = await host.Jobs.EnqueueAsync(new Gated(), new EnqueueOptions { DeduplicationKey = "org-2", ConcurrencyKey = "org-2" }, TestCancellationToken);
+
+        Assert.NotEqual(running.Id, waiting.Id);
+        Assert.Equal(waiting.Id, again.Id);
+        Assert.NotEqual(waiting.Id, otherKey.Id);
+        Assert.Equal(JobState.Queued, (await waiting.GetAsync(TestCancellationToken))!.State);
+
+        _gate.TrySetResult();
+        Assert.Equal((JobState.Succeeded, 1), await StateAndAttemptAsync(waiting));
+        var next = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        Assert.NotEqual(waiting.Id, next.Id);
+        Assert.Equal((JobState.Succeeded, 1), await StateAndAttemptAsync(next));
+        Assert.Equal(JobState.Succeeded, (await running.GetAsync(TestCancellationToken))!.State);
+
+        async Task<(JobState, int)> StateAndAttemptAsync(JobHandle handle)
+        {
+            var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+            return (job.State, job.Attempt);
+        }
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithBlankKeys_Throws()
+    {
+        await using var host = await StartAsync(_ => { }, startHostedServices: false);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new Slow(), new EnqueueOptions { ConcurrencyKey = " " }, TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new Slow(), new EnqueueOptions { DeduplicationKey = "" }, TestCancellationToken));
+    }
+
+    [Fact]
     public async Task Query_ListsJobsNewestFirstWithFilters()
     {
         await using var host = await StartAsync(_ => { });
@@ -1001,6 +1066,8 @@ public class DurableJobsTests : TestWithLoggingBase
         collection.AddSingleton<ILoggerFactory>(Log);
         collection.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
         collection.AddSingleton(_probe);
+        collection.AddSingleton(_keyed);
+        collection.AddSingleton(_gate);
         services?.Invoke(collection);
         collection.AddFoundatioJobs(j =>
         {
@@ -1169,7 +1236,7 @@ public class DurableJobsTests : TestWithLoggingBase
 
         private IJobStore Inner => Partitioned ? throw new TimeoutException("Timeout performing EVALSHA") : inner;
 
-        public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => Inner.CreateAsync(job, cancellationToken);
+        public Task<string?> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => Inner.CreateAsync(job, cancellationToken);
         public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => Inner.GetAsync(jobId, cancellationToken);
         public Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => Inner.QueryAsync(query, cancellationToken);
         public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => Inner.CountAsync(state, name, cancellationToken);
@@ -1202,7 +1269,7 @@ public class DurableJobsTests : TestWithLoggingBase
             return jobs;
         }
 
-        public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => inner.CreateAsync(job, cancellationToken);
+        public Task<string?> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => inner.CreateAsync(job, cancellationToken);
         public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => inner.GetAsync(jobId, cancellationToken);
         public Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => inner.QueryAsync(query, cancellationToken);
         public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => inner.CountAsync(state, name, cancellationToken);
@@ -1273,6 +1340,54 @@ public class DurableJobsTests : TestWithLoggingBase
         {
             using var _ = probe.Enter();
             await Task.Delay(arguments.Milliseconds, cancellationToken);
+        }
+    }
+
+    public record Keyed(string Project);
+
+    public record Gated;
+
+    /// <summary>Tracks how many <see cref="KeyedJob"/> runs of each project overlap.</summary>
+    public sealed class KeyedProbe
+    {
+        private readonly ConcurrentDictionary<string, int> _running = new();
+        private readonly ConcurrentDictionary<string, int> _peaks = new();
+
+        public int PeakFor(string project) => _peaks.GetValueOrDefault(project);
+
+        public void Enter(string project)
+        {
+            int now = _running.AddOrUpdate(project, 1, (_, count) => count + 1);
+            _peaks.AddOrUpdate(project, now, (_, peak) => Math.Max(peak, now));
+        }
+
+        public void Exit(string project) => _running.AddOrUpdate(project, 0, (_, count) => count - 1);
+    }
+
+    public sealed class KeyedJob(JobProbe probe, KeyedProbe keyed) : IJobHandler<Keyed>
+    {
+        public async Task HandleAsync(Keyed arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            keyed.Enter(arguments.Project);
+            try
+            {
+                await Task.Delay(100, cancellationToken);
+            }
+            finally
+            {
+                keyed.Exit(arguments.Project);
+            }
+        }
+    }
+
+    /// <summary>The first run waits for the test to open the gate; the others finish at once.</summary>
+    public sealed class GatedJob(JobProbe probe, TaskCompletionSource gate) : IJobHandler<Gated>
+    {
+        public async Task HandleAsync(Gated arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            if (probe.Started.TrySetResult())
+                await gate.Task.WaitAsync(cancellationToken);
         }
     }
 

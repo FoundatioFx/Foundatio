@@ -107,6 +107,10 @@ internal sealed class JobClient : IJobClient
     {
         if (options?.JobId is { } requestedId)
             ArgumentException.ThrowIfNullOrWhiteSpace(requestedId, nameof(options));
+        if (options?.ConcurrencyKey is { } concurrencyKey)
+            ArgumentException.ThrowIfNullOrWhiteSpace(concurrencyKey, nameof(options));
+        if (options?.DeduplicationKey is { } deduplicationKey)
+            ArgumentException.ThrowIfNullOrWhiteSpace(deduplicationKey, nameof(options));
         if (options is { Delay: not null, RunAt: not null })
             throw new ArgumentException("Set Delay or RunAt, not both.", nameof(options));
 
@@ -121,6 +125,8 @@ internal sealed class JobClient : IJobClient
             Payload = payload,
             CorrelationId = options?.CorrelationId ?? MessageContext.Current?.CorrelationId ?? JobRunContext.Current?.CorrelationId ?? Activity.Current?.Id,
             ScheduleName = scheduleName,
+            ConcurrencyKey = options?.ConcurrencyKey,
+            DeduplicationKey = options?.DeduplicationKey,
             Headers = CreateHeaders(options),
             CreatedAt = now,
             UpdatedAt = now,
@@ -129,19 +135,23 @@ internal sealed class JobClient : IJobClient
         };
 
         // An immediate or delayed job is timed by the store's clock; this process's may be off it.
-        bool created = runAt is not null
+        string? id = runAt is not null
             ? await _runtime.Store.CreateAsync(job, cancellationToken).AnyContext()
             : await _runtime.Store.CreateAsync(job, availableAfter, cancellationToken).AnyContext();
-        if (!created && options?.JobId is null)
+        if (id is null && options?.JobId is null)
             throw new InvalidOperationException($"A job with the generated id {job.Id} already exists.");
 
-        if (created)
+        if (id == job.Id)
         {
-            JobsInstruments.Enqueued.Add(1, new System.Collections.Generic.KeyValuePair<string, object?>(JobsInstruments.JobName, name));
+            JobsInstruments.Enqueued.Add(1, new KeyValuePair<string, object?>(JobsInstruments.JobName, name));
             _runtime.SignalWorkAvailable();
         }
+        else if (id is not null && _logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug("Job {JobName} with deduplication key {DeduplicationKey} is already waiting as job {JobId}", name, job.DeduplicationKey, id);
+        }
 
-        return new JobHandle(job.Id, this);
+        return new JobHandle(id ?? job.Id, this);
     }
 
     /// <summary>The caller's headers, plus the current activity's W3C trace context unless the caller set a <c>traceparent</c>.</summary>

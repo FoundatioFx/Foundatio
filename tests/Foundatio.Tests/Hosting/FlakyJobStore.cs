@@ -20,7 +20,7 @@ public sealed class FlakyJobStore(TimeProvider timeProvider) : IJobStore
     /// <summary>Claiming returns a job without a name, which a correct store never does, so the claim loop crashes.</summary>
     public bool ReturnCorruptJob { get; set; }
 
-    public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default)
+    public Task<string?> CreateAsync(JobInfo job, CancellationToken cancellationToken = default)
         => FailCreate ? throw new InvalidOperationException("The job store is read-only") : _inner.CreateAsync(job, cancellationToken);
 
     public async Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)

@@ -34,7 +34,7 @@ public sealed class SwappableJobStore : IJobStore
 
     public void Reset() => _inner = new InMemoryJobStore();
 
-    public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => _inner.CreateAsync(job, cancellationToken);
+    public Task<string> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => _inner.CreateAsync(job, cancellationToken);
     public Task<JobInfo> GetAsync(string jobId, CancellationToken cancellationToken = default) => _inner.GetAsync(jobId, cancellationToken);
     public Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => _inner.QueryAsync(query, cancellationToken);
     public Task<long> CountAsync(JobState? state = null, string name = null, CancellationToken cancellationToken = default) => _inner.CountAsync(state, name, cancellationToken);

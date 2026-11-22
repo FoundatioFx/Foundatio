@@ -30,6 +30,18 @@ public sealed record JobInfo
     /// <summary>The CRON schedule that created the job, if any.</summary>
     public string? ScheduleName { get; init; }
 
+    /// <summary>
+    /// At most one job with this name and key runs at a time; see <see cref="EnqueueOptions.ConcurrencyKey"/>. A store
+    /// leaves a due job queued, without an attempt, while another job with the same name and key is running.
+    /// </summary>
+    public string? ConcurrencyKey { get; init; }
+
+    /// <summary>
+    /// Until this job is first claimed, cancelled or deleted, creating another job with the same name and key creates
+    /// nothing and returns this job's id instead; see <see cref="EnqueueOptions.DeduplicationKey"/>.
+    /// </summary>
+    public string? DeduplicationKey { get; init; }
+
     /// <summary>Headers the job was enqueued with, including the W3C trace context. Never null; empty when there are none.</summary>
     public IReadOnlyDictionary<string, string> Headers { get; init; } = ReadOnlyDictionary<string, string>.Empty;
 

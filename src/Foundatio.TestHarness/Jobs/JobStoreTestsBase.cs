@@ -52,7 +52,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     {
         var job = NewJob(payload: [1, 2, 3, 0, 255]) with { CorrelationId = "correlation", ScheduleName = "nightly" };
 
-        Assert.True(await Store.CreateAsync(job, TestCancellationToken));
+        Assert.NotNull(await Store.CreateAsync(job, TestCancellationToken));
 
         var stored = await Store.GetAsync(job.Id, TestCancellationToken);
         Assert.NotNull(stored);
@@ -71,9 +71,9 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     public async Task Create_WithAnExistingId_ReturnsFalseAndKeepsTheOriginal()
     {
         var job = NewJob(payload: [1]);
-        Assert.True(await Store.CreateAsync(job, TestCancellationToken));
+        Assert.NotNull(await Store.CreateAsync(job, TestCancellationToken));
 
-        Assert.False(await Store.CreateAsync(job with { Payload = new byte[] { 2 } }, TestCancellationToken));
+        Assert.Null(await Store.CreateAsync(job with { Payload = new byte[] { 2 } }, TestCancellationToken));
 
         Assert.Equal([1], (await Store.GetAsync(job.Id, TestCancellationToken))!.Payload.ToArray());
     }
@@ -111,10 +111,10 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         var delayed = NewJob() with { AvailableAt = DateTimeOffset.UtcNow.AddHours(-1) };
         var scheduled = NewJob() with { AvailableAt = aheadOfTheStore, ScheduledFor = aheadOfTheStore };
 
-        Assert.True(await Store.CreateAsync(immediate, TimeSpan.Zero, TestCancellationToken));
-        Assert.True(await Store.CreateAsync(delayed, TimeSpan.FromHours(1), TestCancellationToken));
-        Assert.True(await Store.CreateAsync(scheduled, TimeSpan.Zero, TestCancellationToken));
-        Assert.False(await Store.CreateAsync(immediate, TimeSpan.Zero, TestCancellationToken));
+        Assert.NotNull(await Store.CreateAsync(immediate, TimeSpan.Zero, TestCancellationToken));
+        Assert.NotNull(await Store.CreateAsync(delayed, TimeSpan.FromHours(1), TestCancellationToken));
+        Assert.NotNull(await Store.CreateAsync(scheduled, TimeSpan.Zero, TestCancellationToken));
+        Assert.Null(await Store.CreateAsync(immediate, TimeSpan.Zero, TestCancellationToken));
 
         var claimed = await Store.ClaimAsync(Claim(immediate.Name), TestCancellationToken);
         Assert.NotNull(claimed);
@@ -451,7 +451,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
 
         Assert.Equal(0, await Store.CountAsync(name: job.Name, cancellationToken: TestCancellationToken));
         Assert.Equal(0, await Store.CountAsync(JobState.Succeeded, job.Name, TestCancellationToken));
-        Assert.True(await Store.CreateAsync(job, TestCancellationToken));
+        Assert.NotNull(await Store.CreateAsync(job, TestCancellationToken));
     }
 
     /// <summary>Claiming and retrying a job keep the fields they do not change, such as the payload, correlation id and schedule.</summary>
@@ -459,7 +459,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     public async Task ClaimAndRetry_KeepTheJobsOtherFields()
     {
         var createdAt = DateTimeOffset.UtcNow.AddHours(-1);
-        var job = NewJob(payload: [9, 8, 7]) with { CorrelationId = "correlation", ScheduleName = "hourly", CreatedAt = createdAt };
+        var job = NewJob(payload: [9, 8, 7]) with { CorrelationId = "correlation", ScheduleName = "hourly", CreatedAt = createdAt, ConcurrencyKey = "project-1", DeduplicationKey = "reset" };
         await Store.CreateAsync(job, TestCancellationToken);
 
         var claimed = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
@@ -481,6 +481,8 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
             Assert.Equal([9, 8, 7], stored.Payload.ToArray());
             Assert.Equal("correlation", stored.CorrelationId);
             Assert.Equal("hourly", stored.ScheduleName);
+            Assert.Equal("project-1", stored.ConcurrencyKey);
+            Assert.Equal("reset", stored.DeduplicationKey);
             AssertClose(createdAt, stored.CreatedAt);
         }
     }
@@ -712,7 +714,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
 
         Assert.Equal(0, await Store.CountAsync(JobState.Cancelled, job.Name, TestCancellationToken));
         Assert.Empty((await Store.QueryAsync(new JobQuery { Name = job.Name }, TestCancellationToken)).Jobs);
-        Assert.True(await Store.CreateAsync(job, TestCancellationToken));
+        Assert.NotNull(await Store.CreateAsync(job, TestCancellationToken));
     }
 
     /// <summary>Queries and counts by state find succeeded, failed and cancelled jobs under their own state.</summary>
@@ -804,6 +806,313 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.False(await Store.ReportProgressAsync(job.Id, claimed.ClaimToken!, 50, null, TestCancellationToken));
         Assert.False(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(1)), TestCancellationToken));
         Assert.Null(await Store.GetAsync(job.Id, TestCancellationToken));
+    }
+
+    /// <summary>
+    /// A due job whose concurrency key a running job of its name holds is skipped without an attempt, while jobs with
+    /// other keys, without a key, or of other names with the same key are claimed.
+    /// </summary>
+    [Fact]
+    public async Task Claim_WithAConcurrencyKeyHeldByARunningJob_SkipsTheJobWithoutAnAttempt()
+    {
+        string name = NewName(), other = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var first = NewJob(name) with { ConcurrencyKey = "a", AvailableAt = now.AddMinutes(-5) };
+        var blocked = NewJob(name) with { ConcurrencyKey = "a", AvailableAt = now.AddMinutes(-4) };
+        var otherKey = NewJob(name) with { ConcurrencyKey = "b", AvailableAt = now.AddMinutes(-3) };
+        var noKey = NewJob(name) with { AvailableAt = now.AddMinutes(-2) };
+        var otherName = NewJob(other) with { ConcurrencyKey = "a", AvailableAt = now.AddMinutes(-1) };
+        foreach (var job in new[] { first, blocked, otherKey, noKey, otherName })
+            await Store.CreateAsync(job, TestCancellationToken);
+
+        Assert.Equal(first.Id, (await Store.ClaimAsync(Claim(name, other), TestCancellationToken))?.Id);
+        Assert.Equal(otherKey.Id, (await Store.ClaimAsync(Claim(name, other), TestCancellationToken))?.Id);
+        Assert.Equal(noKey.Id, (await Store.ClaimAsync(Claim(name, other), TestCancellationToken))?.Id);
+        Assert.Equal(otherName.Id, (await Store.ClaimAsync(Claim(name, other), TestCancellationToken))?.Id);
+        Assert.Null(await Store.ClaimAsync(Claim(name, other), TestCancellationToken));
+
+        var skipped = (await Store.GetAsync(blocked.Id, TestCancellationToken))!;
+        Assert.Equal(JobState.Queued, skipped.State);
+        Assert.Equal(0, skipped.Attempt);
+        Assert.Null(skipped.ClaimToken);
+        Assert.Equal(1, await Store.CountAsync(JobState.Queued, name, TestCancellationToken));
+    }
+
+    /// <summary>
+    /// However the holder of a concurrency key leaves running (succeeded, failed, cancelled, retried, released or
+    /// deleted), the job waiting longest for the key becomes claimable at once, and the one after it waits its turn.
+    /// </summary>
+    [Fact]
+    public async Task CompleteOrDelete_OfAConcurrencyKeyHolder_MakesTheNextJobWithTheKeyClaimable()
+    {
+        var retain = TimeSpan.FromMinutes(5);
+        var endings = new (string Ending, Func<JobInfo, Task<bool>> End)[]
+        {
+            ("succeeded", job => Store.CompleteAsync(job.Id, job.ClaimToken!, JobCompletion.Succeeded(retain), TestCancellationToken)),
+            ("failed", job => Store.CompleteAsync(job.Id, job.ClaimToken!, JobCompletion.Failed(retain, "error"), TestCancellationToken)),
+            ("cancelled", job => Store.CompleteAsync(job.Id, job.ClaimToken!, JobCompletion.Cancelled(retain), TestCancellationToken)),
+            ("retried", job => Store.CompleteAsync(job.Id, job.ClaimToken!, JobCompletion.Retry(TimeSpan.FromHours(1), "error"), TestCancellationToken)),
+            ("released", job => Store.CompleteAsync(job.Id, job.ClaimToken!, JobCompletion.Release(), TestCancellationToken)),
+            ("deleted", job => Store.DeleteAsync(job.Id, TestCancellationToken))
+        };
+
+        foreach (var (ending, end) in endings)
+        {
+            string name = NewName();
+            var now = DateTimeOffset.UtcNow;
+            var holder = NewJob(name) with { ConcurrencyKey = "key", AvailableAt = now.AddMinutes(-3) };
+            var next = NewJob(name) with { ConcurrencyKey = "key", AvailableAt = now.AddMinutes(-2) };
+            var last = NewJob(name) with { ConcurrencyKey = "key", AvailableAt = now.AddMinutes(-1) };
+            foreach (var job in new[] { holder, next, last })
+                await Store.CreateAsync(job, TestCancellationToken);
+
+            var claimed = (await Store.ClaimAsync(Claim(name), TestCancellationToken))!;
+            Assert.Equal(holder.Id, claimed.Id);
+            Assert.Null(await Store.ClaimAsync(Claim(name), TestCancellationToken));
+
+            Assert.True(await end(claimed));
+
+            var nextClaimed = await Store.ClaimAsync(Claim(name), TestCancellationToken);
+            Assert.True(nextClaimed?.Id == next.Id, $"After the holder {ending}, claimed {nextClaimed?.Id ?? "nothing"} instead of the next job with its key.");
+            Assert.Equal(1, nextClaimed!.Attempt);
+            var again = await Store.ClaimAsync(Claim(name), TestCancellationToken);
+            Assert.True(again is null, $"After the holder {ending}, claimed {again?.Id} while the next job holds the key.");
+        }
+    }
+
+    /// <summary>
+    /// A holder whose lease runs out keeps its concurrency key: it is claimed again before the jobs waiting for the key,
+    /// and they become claimable once it finishes.
+    /// </summary>
+    [Fact]
+    public async Task Claim_AfterAConcurrencyKeyHolderLosesItsLease_ReclaimsTheHolderFirst()
+    {
+        string name = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var holder = NewJob(name) with { ConcurrencyKey = "key", AvailableAt = now.AddMinutes(-2) };
+        var waiting = NewJob(name) with { ConcurrencyKey = "key", AvailableAt = now.AddMinutes(-1) };
+        await Store.CreateAsync(holder, TestCancellationToken);
+        await Store.CreateAsync(waiting, TestCancellationToken);
+        Assert.Equal(holder.Id, (await Store.ClaimAsync(Claim(name, ShortLease), TestCancellationToken))?.Id);
+
+        var reclaimed = await WaitForClaimAsync(Claim(name));
+
+        Assert.Equal(holder.Id, reclaimed.Id);
+        Assert.Equal(2, reclaimed.Attempt);
+        Assert.Null(await Store.ClaimAsync(Claim(name), TestCancellationToken));
+        Assert.True(await Store.CompleteAsync(holder.Id, reclaimed.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(1)), TestCancellationToken));
+        Assert.Equal(waiting.Id, (await Store.ClaimAsync(Claim(name), TestCancellationToken))?.Id);
+    }
+
+    /// <summary>A batch claim takes at most one job of each concurrency key, and fills the batch with jobs of other keys and without one.</summary>
+    [Fact]
+    public async Task ClaimBatch_NeverClaimsTwoJobsWithTheSameConcurrencyKey()
+    {
+        string name = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var jobs = new List<JobInfo>();
+        for (int i = 0; i < 5; i++)
+            jobs.Add(NewJob(name) with { ConcurrencyKey = "same", AvailableAt = now.AddMinutes(-10 + i) });
+        for (int i = 0; i < 3; i++)
+            jobs.Add(NewJob(name) with { ConcurrencyKey = $"own-{i}", AvailableAt = now.AddMinutes(-4) });
+        jobs.Add(NewJob(name) with { AvailableAt = now.AddMinutes(-4) });
+        foreach (var job in jobs)
+            await Store.CreateAsync(job, TestCancellationToken);
+
+        var claimed = await Store.ClaimBatchAsync(Claim(name), 10, TestCancellationToken);
+
+        Assert.Equal(5, claimed.Count);
+        Assert.Single(claimed, j => j.ConcurrencyKey == "same");
+        Assert.Equal(jobs[0].Id, claimed.Single(j => j.ConcurrencyKey == "same").Id);
+        Assert.Empty(await Store.ClaimBatchAsync(Claim(name), 10, TestCancellationToken));
+        Assert.Equal(4, await Store.CountAsync(JobState.Queued, name, TestCancellationToken));
+    }
+
+    /// <summary>
+    /// Workers claiming in batches at once never run two jobs with one concurrency key at the same time, and still run
+    /// every job, each with one attempt.
+    /// </summary>
+    [Fact]
+    public async Task ClaimBatch_FromConcurrentWorkers_RunsOneJobPerConcurrencyKeyAtATime()
+    {
+        string name = NewName();
+        var now = DateTimeOffset.UtcNow;
+        const int keys = 4, perKey = 8;
+        for (int i = 0; i < keys * perKey; i++)
+            await Store.CreateAsync(NewJob(name) with { ConcurrencyKey = $"key-{i % keys}", AvailableAt = now.AddSeconds(-60 + i) }, TestCancellationToken);
+
+        var running = new ConcurrentDictionary<string, string>();
+        var completed = new ConcurrentBag<string>();
+        var violations = new ConcurrentBag<string>();
+        await Parallel.ForEachAsync(Enumerable.Range(0, 8), TestCancellationToken, async (worker, token) =>
+        {
+            long started = Stopwatch.GetTimestamp();
+            while (completed.Count < keys * perKey && Stopwatch.GetElapsedTime(started) < ExpiryTimeout)
+            {
+                var batch = await Store.ClaimBatchAsync(Claim(name) with { WorkerId = $"worker-{worker}" }, 3, token);
+                if (batch.Count == 0)
+                {
+                    await Task.Delay(5, token);
+                    continue;
+                }
+
+                foreach (var job in batch)
+                {
+                    if (!running.TryAdd(job.ConcurrencyKey!, job.Id))
+                        violations.Add($"{job.Id} claimed while {running[job.ConcurrencyKey!]} runs with key {job.ConcurrencyKey}");
+                    if (job.Attempt != 1)
+                        violations.Add($"{job.Id} claimed at attempt {job.Attempt}");
+                }
+
+                await Task.Yield();
+                foreach (var job in batch)
+                {
+                    running.TryRemove(new KeyValuePair<string, string>(job.ConcurrencyKey!, job.Id));
+                    Assert.True(await Store.CompleteAsync(job.Id, job.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(1)), token));
+                    completed.Add(job.Id);
+                }
+            }
+        });
+
+        Assert.Empty(violations);
+        Assert.Equal(keys * perKey, completed.Distinct().Count());
+    }
+
+    /// <summary>
+    /// Many due jobs waiting for one concurrency key, due longer than the rest, don't keep jobs with other keys or other
+    /// names from being claimed, and keep attempt 0.
+    /// </summary>
+    [Fact]
+    public async Task Claim_BehindManyJobsWaitingForAConcurrencyKey_ClaimsJobsWithOtherKeysAndNames()
+    {
+        string name = NewName(), other = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var waiting = Enumerable.Range(0, 60).Select(i => NewJob(name) with { ConcurrencyKey = "busy", AvailableAt = now.AddMinutes(-30).AddSeconds(i) }).ToList();
+        var otherKey = NewJob(name) with { ConcurrencyKey = "free", AvailableAt = now.AddMinutes(-1) };
+        var otherName = NewJob(other) with { AvailableAt = now.AddSeconds(-30) };
+        foreach (var job in waiting.Append(otherKey).Append(otherName))
+            await Store.CreateAsync(job, TestCancellationToken);
+        Assert.Equal(waiting[0].Id, (await Store.ClaimAsync(Claim(name, other), TestCancellationToken))?.Id);
+
+        var claimed = new List<string>();
+        for (int i = 0; i < 20 && claimed.Count < 2; i++)
+        {
+            if (await Store.ClaimAsync(Claim(name, other), TestCancellationToken) is { } job)
+                claimed.Add(job.Id);
+        }
+
+        Assert.Equal([otherKey.Id, otherName.Id], claimed);
+        Assert.Null(await Store.ClaimAsync(Claim(name, other), TestCancellationToken));
+        Assert.All(await Task.WhenAll(waiting.Skip(1).Select(j => Store.GetAsync(j.Id, TestCancellationToken))), j => Assert.Equal((JobState.Queued, 0), (j!.State, j.Attempt)));
+    }
+
+    /// <summary>
+    /// Cancelling or deleting jobs waiting for a concurrency key, including the one a released key made claimable,
+    /// never leaves the others waiting for a key nobody holds.
+    /// </summary>
+    [Fact]
+    public async Task CancelAndDelete_OfJobsWaitingForAConcurrencyKey_LeaveTheRestClaimable()
+    {
+        string name = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var jobs = Enumerable.Range(0, 5).Select(i => NewJob(name) with { ConcurrencyKey = "key", AvailableAt = now.AddMinutes(-10 + i) }).ToList();
+        foreach (var job in jobs)
+            await Store.CreateAsync(job, TestCancellationToken);
+        var holder = (await Store.ClaimAsync(Claim(name), TestCancellationToken))!;
+        Assert.Null(await Store.ClaimAsync(Claim(name), TestCancellationToken));
+
+        Assert.True(await Store.RequestCancellationAsync(jobs[1].Id, TimeSpan.FromMinutes(1), TestCancellationToken));
+        Assert.True(await Store.CompleteAsync(holder.Id, holder.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(1)), TestCancellationToken));
+        Assert.True(await Store.DeleteAsync(jobs[2].Id, TestCancellationToken));
+        Assert.True(await Store.RequestCancellationAsync(jobs[3].Id, TimeSpan.FromMinutes(1), TestCancellationToken));
+
+        Assert.Equal(jobs[4].Id, (await Store.ClaimAsync(Claim(name), TestCancellationToken))?.Id);
+        Assert.Equal(JobState.Cancelled, (await Store.GetAsync(jobs[1].Id, TestCancellationToken))!.State);
+        Assert.Equal(JobState.Cancelled, (await Store.GetAsync(jobs[3].Id, TestCancellationToken))!.State);
+    }
+
+    /// <summary>
+    /// Creating a job with the deduplication key of a job of its name that has not been claimed creates nothing and
+    /// returns that job's id; other keys and other names are not affected, and an existing id is checked first.
+    /// </summary>
+    [Fact]
+    public async Task Create_WithTheDeduplicationKeyOfAPendingJob_ReturnsThePendingJobsId()
+    {
+        string name = NewName(), other = NewName();
+        var pending = NewJob(name) with { DeduplicationKey = "org-1" };
+        Assert.Equal(pending.Id, await Store.CreateAsync(pending, TestCancellationToken));
+
+        var duplicate = NewJob(name) with { DeduplicationKey = "org-1" };
+        Assert.Equal(pending.Id, await Store.CreateAsync(duplicate, TestCancellationToken));
+        Assert.Equal(pending.Id, await Store.CreateAsync(NewJob(name) with { DeduplicationKey = "org-1" }, TimeSpan.FromMinutes(5), TestCancellationToken));
+        Assert.Null(await Store.CreateAsync(pending with { DeduplicationKey = "org-2" }, TestCancellationToken));
+        var otherKey = NewJob(name) with { DeduplicationKey = "org-2" };
+        Assert.Equal(otherKey.Id, await Store.CreateAsync(otherKey, TestCancellationToken));
+        var otherName = NewJob(other) with { DeduplicationKey = "org-1" };
+        Assert.Equal(otherName.Id, await Store.CreateAsync(otherName, TestCancellationToken));
+
+        Assert.Null(await Store.GetAsync(duplicate.Id, TestCancellationToken));
+        Assert.Equal(2, await Store.CountAsync(JobState.Queued, name, TestCancellationToken));
+    }
+
+    /// <summary>
+    /// A deduplication key is free again once its job is claimed, cancelled or deleted, and a claimed job that is
+    /// retried or released does not take it back. A job waiting for its concurrency key still holds it.
+    /// </summary>
+    [Fact]
+    public async Task Create_WithADeduplicationKey_CreatesAgainOnceThePendingJobIsClaimedCancelledOrDeleted()
+    {
+        string name = NewName();
+        JobInfo Duplicate() => NewJob(name) with { DeduplicationKey = "key", ConcurrencyKey = "one" };
+
+        var first = Duplicate();
+        await Store.CreateAsync(first, TestCancellationToken);
+        var claimed = (await Store.ClaimAsync(Claim(name), TestCancellationToken))!;
+        var second = Duplicate();
+        Assert.Equal(second.Id, await Store.CreateAsync(second, TestCancellationToken));
+        Assert.Null(await Store.ClaimAsync(Claim(name), TestCancellationToken));
+        Assert.Equal(second.Id, await Store.CreateAsync(Duplicate(), TestCancellationToken));
+
+        Assert.True(await Store.CompleteAsync(first.Id, claimed.ClaimToken!, JobCompletion.Retry(TimeSpan.FromHours(1), "error"), TestCancellationToken));
+        Assert.Equal(second.Id, await Store.CreateAsync(Duplicate(), TestCancellationToken));
+
+        Assert.True(await Store.RequestCancellationAsync(second.Id, TimeSpan.FromMinutes(1), TestCancellationToken));
+        var third = Duplicate();
+        Assert.Equal(third.Id, await Store.CreateAsync(third, TestCancellationToken));
+
+        Assert.True(await Store.DeleteAsync(third.Id, TestCancellationToken));
+        var fourth = Duplicate();
+        Assert.Equal(fourth.Id, await Store.CreateAsync(fourth, TestCancellationToken));
+        Assert.Equal(fourth.Id, await Store.CreateAsync(Duplicate(), TestCancellationToken));
+    }
+
+    /// <summary>Concurrent creates with one deduplication key create one job, and every one of them returns its id.</summary>
+    [Fact]
+    public async Task Create_WithOneDeduplicationKeyFromConcurrentProducers_CreatesOneJob()
+    {
+        string name = NewName();
+        var store = Store;
+
+        var ids = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(() => store.CreateAsync(NewJob(name) with { DeduplicationKey = "key" }, TestCancellationToken))));
+
+        Assert.Single(ids.Distinct());
+        Assert.NotNull(ids[0]);
+        Assert.Equal(1, await Store.CountAsync(JobState.Queued, name, TestCancellationToken));
+    }
+
+    /// <summary>A job completed with zero retention is gone at once, and its id can be used again.</summary>
+    [Fact]
+    public async Task Complete_WithZeroRetention_RemovesTheJobAtOnce()
+    {
+        var job = NewJob();
+        await Store.CreateAsync(job, TestCancellationToken);
+        var claimed = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
+
+        Assert.True(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Succeeded(TimeSpan.Zero), TestCancellationToken));
+
+        Assert.Null(await Store.GetAsync(job.Id, TestCancellationToken));
+        Assert.Equal(0, await Store.CountAsync(JobState.Succeeded, job.Name, TestCancellationToken));
+        Assert.Equal(job.Id, await Store.CreateAsync(job, TestCancellationToken));
     }
 
     /// <summary>A job name no other test uses.</summary>
