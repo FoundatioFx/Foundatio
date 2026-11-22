@@ -36,6 +36,9 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 {
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>How far a <see cref="IncomingMessage.LeaseExpiresAt"/> may be off, for clocks and round trips.</summary>
+    private static readonly TimeSpan LeaseClockTolerance = TimeSpan.FromSeconds(1);
+
     private readonly List<IMessageTransport> _transports = [];
     private readonly ConcurrentDictionary<string, MessageSource> _createdSources = new();
     private IMessageTransport? _transport;
@@ -62,7 +65,10 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>The longest a test waits for a message the broker should deliver.</summary>
     protected virtual TimeSpan DeliveryTimeout => TimeSpan.FromSeconds(10);
 
-    /// <summary>The lease used by tests that wait for leases to expire.</summary>
+    /// <summary>
+    /// The lease used by tests that wait for leases to expire. A transport whose broker decides the lease itself, and
+    /// reports it in <see cref="IncomingMessage.LeaseExpiresAt"/>, sets this to the lease its broker grants in the tests.
+    /// </summary>
     protected virtual TimeSpan ShortLease => TimeSpan.FromSeconds(2);
 
     /// <summary>The delay used by delayed-delivery tests.</summary>
@@ -258,7 +264,10 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(second, TestCancellationToken);
     }
 
-    /// <summary>A message that is not settled is delivered again once its lease runs out.</summary>
+    /// <summary>
+    /// A message that is not settled is delivered again once its lease runs out, and not before. A
+    /// <see cref="IncomingMessage.LeaseExpiresAt"/> the transport reports lies within the lease it granted.
+    /// </summary>
     [Fact]
     public async Task UnsettledMessage_IsRedeliveredAfterLeaseExpires()
     {
@@ -267,31 +276,44 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await using var receiver = await CreateReceiverAsync(source, ShortLease);
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("leased")], TestCancellationToken);
 
+        var receiving = DateTimeOffset.UtcNow;
         var first = await ReceiveOneAsync(receiver);
+        var leaseEnd = AssertLeaseExpiresAt(first, receiving, DateTimeOffset.UtcNow);
         var second = await ReceiveOneAsync(receiver, ShortLease + DeliveryTimeout);
 
+        AssertNotRedeliveredBefore(leaseEnd, "its lease ended");
         Assert.Equal(first.MessageId, second.MessageId);
         Assert.True(second.DeliveryCount > first.DeliveryCount);
         await receiver.CompleteAsync(second, TestCancellationToken);
     }
 
-    /// <summary>Renewing keeps a message from being delivered again past its original lease.</summary>
+    /// <summary>
+    /// Renewing keeps a message from being delivered again past its original lease, and extends the lease by about the
+    /// lease duration: once renewals stop, the message is delivered again a lease after the last one, not sooner or much
+    /// later.
+    /// </summary>
     [Fact]
     public async Task Renew_ExtendsTheLease()
     {
         Assert.SkipUnless(Transport.Capabilities.LeaseExpiration, "The transport does not expire leases.");
         var source = MessageSource.Queue(NewName("renew"));
         await using var receiver = await CreateReceiverAsync(source, ShortLease);
-        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("renewed")], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("renewed", "id-renewed")], TestCancellationToken);
 
         var message = await ReceiveOneAsync(receiver);
+        var leaseEnd = DateTimeOffset.MinValue;
         for (int i = 0; i < 4; i++)
         {
             await AssertNothingReceivedAsync(receiver, ShortLease / 2);
+            var renewing = DateTimeOffset.UtcNow;
             await receiver.RenewAsync(message, TestCancellationToken);
+            leaseEnd = AssertLeaseExpiresAt(message, renewing, DateTimeOffset.UtcNow);
         }
 
-        await receiver.CompleteAsync(message, TestCancellationToken);
+        var again = await ReceiveOneAsync(receiver, ShortLease + DeliveryTimeout);
+        AssertNotRedeliveredBefore(leaseEnd, "the lease its last renewal granted ended");
+        Assert.Equal("id-renewed", again.MessageId);
+        await receiver.CompleteAsync(again, TestCancellationToken);
     }
 
     /// <summary>A delivery that still holds its lease can be renewed many times in a row.</summary>
@@ -1726,6 +1748,32 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
             await Task.Delay(50, TestCancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Checks <see cref="IncomingMessage.LeaseExpiresAt"/>, when the transport reports it, against a lease of
+    /// <see cref="ShortLease"/> granted by a call that started at <paramref name="started"/> and returned at
+    /// <paramref name="returned"/>, and returns the earliest time the lease may end.
+    /// </summary>
+    private DateTimeOffset AssertLeaseExpiresAt(IncomingMessage message, DateTimeOffset started, DateTimeOffset returned)
+    {
+        if (message.LeaseExpiresAt is not { } expiresAt)
+            return started + ShortLease;
+
+        Assert.True(expiresAt > returned, $"LeaseExpiresAt was {expiresAt:O}, already past when the call returned at {returned:O}.");
+        Assert.True(expiresAt >= started + ShortLease / 2,
+            $"LeaseExpiresAt was {expiresAt - started} after the call started, less than half of the {ShortLease} lease.");
+        Assert.True(expiresAt <= returned + ShortLease + LeaseClockTolerance,
+            $"LeaseExpiresAt was {expiresAt - returned} after the call returned, longer than the {ShortLease} lease; " +
+            "a transport whose broker decides the lease sets ShortLease to the lease it grants in the tests.");
+        return expiresAt;
+    }
+
+    /// <summary>Fails when a message is received again earlier than <paramref name="leaseEnd"/>, less a quarter of <see cref="ShortLease"/>.</summary>
+    private void AssertNotRedeliveredBefore(DateTimeOffset leaseEnd, string when)
+    {
+        var now = DateTimeOffset.UtcNow;
+        Assert.True(now >= leaseEnd - ShortLease / 4, $"The message was delivered again {leaseEnd - now} before {when}.");
     }
 
     private async Task AssertStaleSettlementLeavesTheNewDeliveryIntactAsync(MessageSource source, IMessageReceiver staleReceiver, IncomingMessage stale,
