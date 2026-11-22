@@ -29,8 +29,9 @@ public interface IJobClient
     Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Cancels a queued job immediately, or signals a running job's cancellation token. Returns false when the job
-    /// does not exist or has already finished.
+    /// Cancels a queued job immediately, or signals a running job's cancellation token: at once when this process is
+    /// running it, otherwise when the worker running it next renews its lease (within about 5 seconds). Returns false
+    /// when the job does not exist or has already finished.
     /// </summary>
     Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);
 }

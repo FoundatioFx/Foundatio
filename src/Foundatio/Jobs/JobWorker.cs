@@ -21,7 +21,6 @@ namespace Foundatio.Jobs;
 internal sealed class JobWorker
 {
     private static readonly TimeSpan MinPollInterval = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan MaxRenewInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan AbortGracePeriod = TimeSpan.FromSeconds(5);
     private const int MaxClaimBatch = 100;
 
@@ -35,7 +34,7 @@ internal sealed class JobWorker
     private readonly List<string> _allNames;
     private readonly bool _limitsByName;
     private readonly CancellationTokenSource _stopClaiming = new();
-    private readonly CancellationTokenSource _abortJobs = new();
+    private readonly JobLeaseRenewer _renewer;
     private Task _loop = Task.CompletedTask;
     private int _running;
 
@@ -49,6 +48,7 @@ internal sealed class JobWorker
             j => (runtime.Tracker.GetCounter(WorkKind.Job, j.Name, null), JobNaming.GetDisplayName(j.JobType)), StringComparer.Ordinal);
         _allNames = runtime.Jobs.Values.Select(j => j.Name).ToList();
         _limitsByName = runtime.Jobs.Values.Any(j => j.Options.MaxConcurrency is not null);
+        _renewer = new JobLeaseRenewer(runtime.Store, runtime.Options.LeaseDuration, runtime.TimeProvider, _logger);
     }
 
     /// <summary>Read by health checks. Claim errors are recorded here; they never stop the worker.</summary>
@@ -61,6 +61,9 @@ internal sealed class JobWorker
         var running = _runtime.Jobs.Keys.ToDictionary(name => name, name => _runningByName.GetValueOrDefault(name), StringComparer.Ordinal);
         return Status.GetStatus("worker", running.Values.Sum(), running);
     }
+
+    /// <summary>Cancels the job's token at once if it is running on this worker, rather than at its next lease renewal.</summary>
+    public bool RequestCancellation(string jobId) => _renewer.RequestCancellation(jobId);
 
     public void Start()
     {
@@ -79,7 +82,7 @@ internal sealed class JobWorker
         if (!await WaitForRunningAsync(_runtime.Options.ShutdownTimeout, cancellationToken).AnyContext())
         {
             _logger.LogWarning("Cancelling {Count} running jobs at shutdown; they will run again without using an attempt", Volatile.Read(ref _running));
-            _abortJobs.Cancel();
+            _renewer.AbortAll();
             await WaitForRunningAsync(AbortGracePeriod, CancellationToken.None).AnyContext();
         }
     }
@@ -267,9 +270,6 @@ internal sealed class JobWorker
         }
 
         var context = new JobRunContext(job, _runtime.Store, _runtime.TimeProvider, _logger);
-        using var cancelled = new CancellationTokenSource();
-        using var lease = new LeaseRenewal(this, job, cancelled, leaseStarted);
-        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancelled.Token, lease.LostToken, _abortJobs.Token);
         using var activity = StartActivity(job);
         long started = Stopwatch.GetTimestamp();
 
@@ -277,10 +277,11 @@ internal sealed class JobWorker
         var previous = JobRunContext.Current;
         JobRunContext.Current = context;
         _runtime.Tracker.Start(context, counter, handler);
+        using var running = _renewer.Track(job, leaseStarted);
         try
         {
             await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
-            await registration.Invoke(scope.ServiceProvider, arguments, context, jobCancellation.Token).AnyContext();
+            await registration.Invoke(scope.ServiceProvider, arguments, context, running.Token).AnyContext();
         }
         catch (Exception ex)
         {
@@ -292,8 +293,8 @@ internal sealed class JobWorker
             _runtime.Tracker.Stop(context);
         }
 
-        await lease.StopAsync().AnyContext();
-        if (lease.IsLost)
+        await _renewer.UntrackAsync(running).AnyContext();
+        if (running.IsLost)
         {
             _logger.LogWarning(error, "Job {JobId} lost its lease while running; its result is not recorded and another worker may run it again", job.Id);
             RecordRun(job, "lost", started);
@@ -319,7 +320,7 @@ internal sealed class JobWorker
         }
         else
         {
-            completion = Decide(job, policy, error, cancelled.IsCancellationRequested);
+            completion = Decide(job, policy, error, running);
         }
 
         await CompleteAsync(job, completion, context).AnyContext();
@@ -403,17 +404,17 @@ internal sealed class JobWorker
     }
 
     /// <summary>Decides how a run that threw <paramref name="error"/> ends: cancelled, released at shutdown, retried or failed.</summary>
-    private JobCompletion Decide(JobInfo job, RetryPolicy policy, Exception error, bool cancellationRequested)
+    private JobCompletion Decide(JobInfo job, RetryPolicy policy, Exception error, RunningJob running)
     {
         if (error is OperationCanceledException)
         {
-            if (cancellationRequested)
+            if (running.CancellationRequested)
             {
                 _logger.LogInformation("Job {JobName} {JobId} was cancelled", job.Name, job.Id);
                 return JobCompletion.Cancelled(_runtime.Options.RetainFailedFor);
             }
 
-            if (_abortJobs.IsCancellationRequested)
+            if (running.Aborted)
             {
                 _logger.LogInformation("Job {JobName} {JobId} was interrupted by shutdown and will run again", job.Name, job.Id);
                 return JobCompletion.Release();
@@ -495,109 +496,5 @@ internal sealed class JobWorker
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Renews a running job's lease and cancels the job when cancellation is requested or the lease is lost: the store
-    /// reports that another claim holds the job, or renewals kept failing until the lease this worker last proved had
-    /// nearly run out. Fencing protects the job's stored state either way; cancelling stops its side effects before
-    /// another worker can claim it.
-    /// </summary>
-    private sealed class LeaseRenewal : IDisposable
-    {
-        private readonly JobWorker _worker;
-        private readonly JobInfo _job;
-        private readonly TimeSpan _heldFor;
-        private readonly CancellationTokenSource _stop = new();
-        private readonly CancellationTokenSource _lost;
-        private readonly CancellationTokenRegistration _expired;
-        private readonly Task _task;
-        private volatile bool _lostByStore;
-
-        /// <param name="worker">The worker running the job.</param>
-        /// <param name="job">The claimed job.</param>
-        /// <param name="cancelled">Cancelled when someone requests cancellation of the job.</param>
-        /// <param name="leaseStarted">A <see cref="TimeProvider"/> timestamp from before the claim was sent.</param>
-        public LeaseRenewal(JobWorker worker, JobInfo job, CancellationTokenSource cancelled, long leaseStarted)
-        {
-            _worker = worker;
-            _job = job;
-            var timeProvider = worker._runtime.TimeProvider;
-            var lease = worker._runtime.Options.LeaseDuration;
-            var interval = TimeSpan.FromTicks(Math.Min(lease.Ticks / 3, MaxRenewInterval.Ticks));
-            _heldFor = lease - TimeSpan.FromTicks(Math.Min(lease.Ticks / 4, MaxRenewInterval.Ticks));
-            _lost = new CancellationTokenSource(Remaining(leaseStarted), timeProvider);
-            _expired = _lost.Token.Register(() =>
-            {
-                if (!_lostByStore)
-                    _worker._logger.LogWarning("Cancelling job {JobId}: its lease could not be renewed in time, so another worker may claim it", _job.Id);
-            });
-
-            _task = Task.Run(async () =>
-            {
-                while (!_stop.IsCancellationRequested && !_lost.IsCancellationRequested)
-                {
-                    try
-                    {
-                        await timeProvider.SafeDelay(interval, _stop.Token).AnyContext();
-                        if (_stop.IsCancellationRequested || _lost.IsCancellationRequested)
-                            return;
-
-                        long sent = timeProvider.GetTimestamp();
-                        var status = await worker._runtime.Store.RenewAsync(job.Id, job.ClaimToken!, lease, _stop.Token).AnyContext();
-                        if (status == JobLeaseStatus.Lost)
-                        {
-                            _lostByStore = true;
-                            await _lost.CancelAsync().AnyContext();
-                            return;
-                        }
-
-                        _lost.CancelAfter(Remaining(sent));
-                        if (status == JobLeaseStatus.CancellationRequested && !cancelled.IsCancellationRequested)
-                        {
-                            worker._logger.LogInformation("Cancellation requested for job {JobId}", job.Id);
-                            await cancelled.CancelAsync().AnyContext();
-                        }
-                    }
-                    catch (OperationCanceledException) when (_stop.IsCancellationRequested)
-                    {
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        worker._logger.LogWarning(ex, "Could not renew the lease on job {JobId}", job.Id);
-                    }
-                }
-            });
-        }
-
-        /// <summary>Cancelled when the lease is lost.</summary>
-        public CancellationToken LostToken => _lost.Token;
-
-        /// <summary>Whether the lease was lost before <see cref="StopAsync"/>. A lost run's result must not be recorded.</summary>
-        public bool IsLost => _lost.IsCancellationRequested;
-
-        /// <summary>Stops renewing. The lease can no longer be lost after this, so <see cref="IsLost"/> is final.</summary>
-        public async Task StopAsync()
-        {
-            _stop.Cancel();
-            await _task.AnyContext();
-            _lost.CancelAfter(Timeout.InfiniteTimeSpan);
-        }
-
-        public void Dispose()
-        {
-            _stop.Cancel();
-            _expired.Dispose();
-            _stop.Dispose();
-            _lost.Dispose();
-        }
-
-        /// <summary>How much longer a lease that was renewed (or claimed) at <paramref name="sent"/> is certainly held.</summary>
-        private TimeSpan Remaining(long sent)
-        {
-            var remaining = _heldFor - _worker._runtime.TimeProvider.GetElapsedTime(sent);
-            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
-        }
     }
 }

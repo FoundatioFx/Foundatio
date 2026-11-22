@@ -72,10 +72,15 @@ internal sealed class JobClient : IJobClient
         return _runtime.Store.CountAsync(state, name, cancellationToken);
     }
 
-    public Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
+    public async Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
-        return _runtime.Store.RequestCancellationAsync(jobId, _runtime.Options.RetainFailedFor, cancellationToken);
+        if (!await _runtime.Store.RequestCancellationAsync(jobId, _runtime.Options.RetainFailedFor, cancellationToken).AnyContext())
+            return false;
+
+        // A worker elsewhere sees the request when it next renews the job's lease; this process's worker can cancel it now.
+        _runtime.Worker?.RequestCancellation(jobId);
+        return true;
     }
 
     internal async Task<JobHandle> CreateAsync(string name, ReadOnlyMemory<byte> payload, EnqueueOptions? options, CancellationToken cancellationToken, string? scheduleName = null)

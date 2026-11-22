@@ -257,6 +257,43 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Cancel_OfAJobRunningInThisProcess_SignalsItsTokenWithoutWaitingForARenewal()
+    {
+        // The default one-minute lease is renewed every 5 seconds.
+        await using var host = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
+        var handle = await host.Jobs.EnqueueAsync(new WaitForCancellation(), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        Assert.True(await handle.CancelAsync(TestCancellationToken));
+        await _probe.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(1), TestCancellationToken);
+
+        Assert.Equal(JobState.Cancelled, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+    }
+
+    [Fact]
+    public async Task RunAsync_JobsRunningSeveralLeasesLong_KeepTheirLeasesAndSucceedOnTheFirstAttempt()
+    {
+        await using var host = await StartAsync(j => j.Configure(o =>
+        {
+            o.LeaseDuration = TimeSpan.FromSeconds(1);
+            o.MaxConcurrency = 4;
+        }).AddJob<LingerJob>());
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 4; i++)
+            handles.Add(await host.Jobs.EnqueueAsync(new Linger(3000), cancellationToken: TestCancellationToken));
+
+        foreach (var handle in handles)
+        {
+            var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(15), TestCancellationToken);
+            Assert.Equal(JobState.Succeeded, job.State);
+            Assert.Equal(1, job.Attempt);
+        }
+
+        Assert.Equal(4, _probe.PeakConcurrency);
+    }
+
+    [Fact]
     public async Task Shutdown_InterruptsRunningJobsWithoutUsingAnAttempt()
     {
         var first = await StartAsync(j => j.Configure(o => o.ShutdownTimeout = TimeSpan.FromMilliseconds(100)).AddJob<WaitForCancellationJob>());
@@ -828,6 +865,7 @@ public class DurableJobsTests : TestWithLoggingBase
         public ConcurrentQueue<(ActivityTraceId TraceId, ActivitySpanId ParentSpanId, string? TraceState, IReadOnlyDictionary<string, string> Headers)> Traces { get; } = new();
         public string? LegacyResult { get; set; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int RunCount;
         public int PeakConcurrency => Volatile.Read(ref _peak);
 
@@ -852,6 +890,7 @@ public class DurableJobsTests : TestWithLoggingBase
     public record Flaky(int FailTimes);
     public record WaitForCancellation(bool CompleteOnSecondRun = false);
     public record Slow;
+    public record Linger(int Milliseconds);
 
     public record Overlap;
 
@@ -1000,7 +1039,15 @@ public class DurableJobsTests : TestWithLoggingBase
                 return;
 
             probe.Started.TrySetResult();
-            await Task.Delay(Timeout.Infinite, cancellationToken);
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                probe.Cancelled.TrySetResult();
+                throw;
+            }
         }
     }
 
@@ -1008,6 +1055,15 @@ public class DurableJobsTests : TestWithLoggingBase
     public sealed class NamedArgumentsJob : IJobHandler<Slow>
     {
         public Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    public sealed class LingerJob(JobProbe probe) : IJobHandler<Linger>
+    {
+        public async Task HandleAsync(Linger arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            await Task.Delay(arguments.Milliseconds, cancellationToken);
+        }
     }
 
     public sealed class SlowJob(JobProbe probe) : IJobHandler<Slow>
