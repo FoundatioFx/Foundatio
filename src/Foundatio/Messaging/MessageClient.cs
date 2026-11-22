@@ -19,11 +19,17 @@ internal sealed class MessageClient : IMessageClient
 
     private readonly MessagingRuntime _runtime;
     private readonly ILogger _logger;
+    private readonly IReadOnlyList<MessageHandlerRegistration> _handlers;
     private readonly ConcurrentDictionary<string, byte> _reportedUnsupportedOptions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Type, byte> _checkedSends = new();
+    private readonly ConcurrentDictionary<Type, byte> _checkedPublishes = new();
 
-    public MessageClient(MessagingRuntime runtime)
+    /// <param name="runtime">The runtime it sends on.</param>
+    /// <param name="handlers">This app's registered handlers, to warn when a message is sent to the wrong kind of handler.</param>
+    public MessageClient(MessagingRuntime runtime, IReadOnlyList<MessageHandlerRegistration>? handlers = null)
     {
         _runtime = runtime;
+        _handlers = handlers ?? [];
         _logger = runtime.LoggerFactory.CreateLogger<MessageClient>();
     }
 
@@ -161,6 +167,7 @@ internal sealed class MessageClient : IMessageClient
             var route = _runtime.Types.GetRoute(message.GetType());
             if (!ReferenceEquals(route, headersRoute))
             {
+                CheckRouting(kind, route, destinationName);
                 headers = CreateHeaders(route, options?.Headers, headerValues, traceParent, traceState);
                 headersRoute = route;
             }
@@ -283,6 +290,43 @@ internal sealed class MessageClient : IMessageClient
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Warns, once per message type, when a command is sent that this app only subscribes to, or an event is published
+    /// that this app only consumes: the most common mix-up of <c>SendAsync</c> and <c>PublishAsync</c>. A sent message
+    /// waits in a queue nothing here reads, and a published one is dropped when its topic has no subscriptions. Only
+    /// this app's own handlers are known, so a mix-up between services is not detected.
+    /// </summary>
+    private void CheckRouting(MessageDestinationKind kind, MessageRoute route, string destinationName)
+    {
+        var checkedTypes = kind == MessageDestinationKind.Queue ? _checkedSends : _checkedPublishes;
+        if (_handlers.Count == 0 || checkedTypes.ContainsKey(route.Type) || checkedTypes.Count >= MaxReportedMessageTypes || !checkedTypes.TryAdd(route.Type, 0))
+            return;
+
+        if (kind == MessageDestinationKind.Queue)
+        {
+            if (_handlers.Any(h => h.Kind == MessageHandlerKind.Consumer && _runtime.Types.GetRoute(h.MessageType).Queue == destinationName)
+                || !_handlers.Any(h => h.Kind == MessageHandlerKind.Subscriber && h.MessageType.IsAssignableFrom(route.Type)))
+            {
+                return;
+            }
+
+            _logger.LogWarning("{MessageType} was sent with SendAsync to queue {Queue}, which nothing in this app consumes, but this app subscribes to it with AddSubscriber. "
+                + "Subscribers only receive published messages: publish events with PublishAsync, or consume the command with AddConsumer", route.Name, destinationName);
+            return;
+        }
+
+        if (_handlers.Any(h => h.Kind == MessageHandlerKind.Subscriber && _runtime.Types.GetRoute(h.MessageType).Topic == destinationName)
+            || _runtime.GetProcessors().Any(p => p.Source.Topic == destinationName)
+            || !_handlers.Any(h => h.Kind == MessageHandlerKind.Consumer && h.MessageType.IsAssignableFrom(route.Type)))
+        {
+            return;
+        }
+
+        _logger.LogWarning("{MessageType} was published with PublishAsync to topic {Topic}, which nothing in this app subscribes to, but this app consumes it with AddConsumer. "
+            + "Consumers only receive sent messages, and a topic with no subscriptions drops what is published to it: send commands with SendAsync, or subscribe "
+            + "to the event with AddSubscriber", route.Name, destinationName);
     }
 
     private bool ShouldReport(string option, string messageType)

@@ -937,6 +937,40 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Send_OfATypeThisAppOnlySubscribesTo_WarnsOnceSuggestingPublish()
+    {
+        await using var host = await StartAsync(m => m
+            .AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask)
+            .AddConsumer<PlaceOrder>((_, _, _) => Task.CompletedTask));
+
+        await host.Client.SendAsync(new OrderShipped(1), cancellationToken: TestCancellationToken);
+        await host.Client.SendAsync(new OrderShipped(2), cancellationToken: TestCancellationToken);
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await host.Client.PublishAsync(new OrderShipped(3), cancellationToken: TestCancellationToken);
+
+        var warning = Assert.Single(Log.LogEntries, e => e.LogLevel == Microsoft.Extensions.Logging.LogLevel.Warning);
+        Assert.StartsWith($"{QueueName<OrderShipped>()} was sent with SendAsync", warning.Message);
+        Assert.Contains("publish events with PublishAsync", warning.Message);
+    }
+
+    [Fact]
+    public async Task Publish_OfATypeThisAppOnlyConsumes_WarnsOnceSuggestingSend()
+    {
+        await using var host = await StartAsync(m => m
+            .AddConsumer<PlaceOrder>((_, _, _) => Task.CompletedTask)
+            .AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask));
+
+        await host.Client.PublishAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await host.Client.PublishAsync(new PlaceOrder(2), cancellationToken: TestCancellationToken);
+        await host.Client.PublishAsync(new OrderShipped(1), cancellationToken: TestCancellationToken);
+        await host.Client.SendAsync(new PlaceOrder(3), cancellationToken: TestCancellationToken);
+
+        var warning = Assert.Single(Log.LogEntries, e => e.LogLevel == Microsoft.Extensions.Logging.LogLevel.Warning);
+        Assert.StartsWith($"{QueueName<PlaceOrder>()} was published with PublishAsync", warning.Message);
+        Assert.Contains("send commands with SendAsync", warning.Message);
+    }
+
+    [Fact]
     public void AddConsumer_OfAHandlerWithAMissingDependency_FailsWhenTheHostIsBuiltWithValidateOnBuild()
     {
         var services = new ServiceCollection();
