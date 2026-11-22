@@ -415,6 +415,53 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task JobRun_TagsItsSpanAndRecordsItsDurationInSeconds()
+    {
+        var stopped = new ConcurrentQueue<Activity>();
+        var foundatio = FoundatioDiagnostics.ActivitySource;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s == foundatio,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Enqueue
+        };
+        ActivitySource.AddActivityListener(listener);
+        var durations = new ConcurrentQueue<(string? Unit, double Value, string? Name, string? Outcome)>();
+        using var meterListener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == FoundatioDiagnostics.Meter.Name && instrument.Name == "foundatio.jobs.duration")
+                    l.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+        {
+            string? name = null, outcome = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "foundatio.job.name")
+                    name = tag.Value as string;
+                else if (tag.Key == "foundatio.outcome")
+                    outcome = tag.Value as string;
+            }
+
+            durations.Enqueue((instrument.Unit, value, name, outcome));
+        });
+        meterListener.Start();
+        await using var host = await StartAsync(j => j.AddJob<TracedJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<TracedJob>(new EnqueueOptions { CorrelationId = "c-1" }, TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        var span = Assert.Single(stopped, a => (string?)a.GetTagItem("foundatio.job.id") == job.Id);
+        Assert.Equal(($"job {job.Name}", job.Name, "c-1"), (span.OperationName, (string?)span.GetTagItem("foundatio.job.name"), (string?)span.GetTagItem("messaging.message.conversation_id")));
+        var duration = Assert.Single(durations, d => d.Name == job.Name);
+        Assert.Equal(("s", "succeeded"), (duration.Unit, duration.Outcome));
+        Assert.InRange(duration.Value, 0, 5);
+    }
+
+    [Fact]
     public async Task EnqueueAsync_WithHeaders_KeepsThemAndATraceParentTheCallerSet()
     {
         await using var host = await StartAsync(_ => { });

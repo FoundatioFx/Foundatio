@@ -21,6 +21,7 @@ internal sealed class MessageClient : IMessageClient
 
     private readonly MessagingRuntime _runtime;
     private readonly ILogger _logger;
+    private readonly string _system;
     private readonly IReadOnlyList<MessageHandlerRegistration> _handlers;
     private readonly ConcurrentDictionary<string, byte> _reportedUnsupportedOptions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Type, byte> _checkedSends = new();
@@ -33,6 +34,7 @@ internal sealed class MessageClient : IMessageClient
         _runtime = runtime;
         _handlers = handlers ?? [];
         _logger = runtime.LoggerFactory.CreateLogger<MessageClient>();
+        _system = MessagingInstruments.GetSystemName(runtime.Transport);
     }
 
     public Task<string> SendAsync<T>(T message, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -193,8 +195,9 @@ internal sealed class MessageClient : IMessageClient
         TransportCapabilities capabilities, CancellationToken cancellationToken) where T : class
     {
         var destination = kind == MessageDestinationKind.Queue ? MessageDestination.Queue(destinationName) : MessageDestination.Topic(destinationName);
+        string operation = kind == MessageDestinationKind.Queue ? "send" : "publish";
         var source = FoundatioDiagnostics.ActivitySource;
-        using var activity = source.HasListeners() ? source.StartActivity($"{(kind == MessageDestinationKind.Queue ? "send" : "publish")} {destinationName}", ActivityKind.Producer) : null;
+        using var activity = source.HasListeners() ? source.StartActivity(String.Concat(operation, " ", destinationName), ActivityKind.Producer) : null;
         var current = activity ?? Activity.Current;
         string? traceParent = current?.Id;
         string? traceState = current?.TraceStateString;
@@ -236,25 +239,83 @@ internal sealed class MessageClient : IMessageClient
             });
         }
 
+        if (activity is { IsAllDataRequested: true })
+            TagProducerActivity(activity, operation, destinationName, outgoing, headersRoute, batch.HeaderValues.CorrelationId);
+
         int batchSize = Math.Max(1, capabilities.MaxSendBatchSize);
-        if (outgoing.Count <= batchSize)
+        int sent = 0;
+        try
         {
-            await _runtime.Transport.SendAsync(destination, outgoing, cancellationToken).AnyContext();
+            if (outgoing.Count <= batchSize)
+            {
+                await _runtime.Transport.SendAsync(destination, outgoing, cancellationToken).AnyContext();
+            }
+            else
+            {
+                for (; sent < outgoing.Count; sent += batchSize)
+                    await _runtime.Transport.SendAsync(destination, outgoing.GetRange(sent, Math.Min(batchSize, outgoing.Count - sent)), cancellationToken).AnyContext();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            for (int i = 0; i < outgoing.Count; i += batchSize)
-                await _runtime.Transport.SendAsync(destination, outgoing.GetRange(i, Math.Min(batchSize, outgoing.Count - i)), cancellationToken).AnyContext();
+            string errorType = ex.GetType().FullName ?? ex.GetType().Name;
+            if (activity is not null)
+            {
+                activity.SetTag(MessagingInstruments.ErrorType, errorType);
+                activity.SetErrorStatus(ex);
+            }
+
+            if (sent > 0)
+                RecordSent(operation, destinationName, sent, null);
+            RecordSent(operation, destinationName, outgoing.Count - sent, errorType);
+            throw;
         }
 
-        if (MessagingInstruments.Sent.Enabled)
-            MessagingInstruments.Sent.Add(outgoing.Count, new KeyValuePair<string, object?>("messaging.destination", destination.ToString()));
+        RecordSent(operation, destinationName, outgoing.Count, null);
 
         if (_runtime.Observer is { } observer)
         {
             for (int i = 0; i < indices.Count; i++)
                 observer.OnSent(destination, batch.Items[indices[i]], outgoing[i]);
         }
+    }
+
+    private void RecordSent(string operation, string destinationName, int count, string? errorType)
+    {
+        if (!MessagingInstruments.Sent.Enabled)
+            return;
+
+        var tags = new TagList
+        {
+            { MessagingInstruments.System, _system },
+            { MessagingInstruments.OperationName, operation },
+            { MessagingInstruments.DestinationName, destinationName }
+        };
+        if (errorType is not null)
+            tags.Add(MessagingInstruments.ErrorType, errorType);
+
+        MessagingInstruments.Sent.Add(count, tags);
+    }
+
+    /// <summary>Adds the OpenTelemetry messaging attributes to a producer span.</summary>
+    private void TagProducerActivity(Activity activity, string operation, string destinationName, List<OutgoingMessage> outgoing, MessageRoute? lastRoute, string? correlationId)
+    {
+        activity.SetTag(MessagingInstruments.System, _system);
+        activity.SetTag(MessagingInstruments.OperationType, "send");
+        activity.SetTag(MessagingInstruments.OperationName, operation);
+        activity.SetTag(MessagingInstruments.DestinationName, destinationName);
+        if (outgoing.Count == 1)
+        {
+            activity.SetTag(MessagingInstruments.MessageId, outgoing[0].MessageId);
+            activity.SetTag(MessagingInstruments.MessageType, lastRoute?.Name);
+        }
+        else
+        {
+            activity.SetTag(MessagingInstruments.BatchMessageCount, outgoing.Count);
+        }
+
+        if (correlationId is not null)
+            activity.SetTag(MessagingInstruments.ConversationId, correlationId);
     }
 
     /// <summary>The messages of one send and what they share, so each destination's group can pick its messages by index.</summary>

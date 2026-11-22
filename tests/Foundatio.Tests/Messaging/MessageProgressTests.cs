@@ -23,7 +23,7 @@ public class MessageProgressTests : TestWithLoggingBase
     {
         string name = $"tests.progress-{Guid.NewGuid():N}";
         var stopped = new ConcurrentQueue<Activity>();
-        using var listener = ListenToHandlerActivities($"handle {name}", stopped);
+        using var listener = ListenToHandlerActivities($"process {name}", stopped);
         var handled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var host = await MessagingTestHost.StartAsync(_transport, Log, "tests", m => m
             .MapMessage<Work>(name)

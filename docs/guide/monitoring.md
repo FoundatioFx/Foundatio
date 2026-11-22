@@ -161,6 +161,59 @@ Instance subscriptions are not counted. A broker that cannot tell two states apa
 | Kafka | Consumer group lag, read without joining the group: the records after the group's committed offsets on the source's topic (and a subscription's own topic). A received message counts as queued until its offset is committed, about a second after it is settled. `InFlight` and `Delayed` are null: receivers' holdings aren't visible across processes, and delayed messages wait in delay topics that all sources share. `DeadLettered` counts the dead letters not yet replayed. |
 | RabbitMQ | Passive declares of the source's queue and its dead-letter queue: their ready messages, current at the moment of the call. AMQP does not report unacknowledged messages, so `InFlight` is null and a received message that is not settled is counted nowhere, unless `ManagementEndpoint` is set: the management API then counts them as in flight, and every count lags by up to its statistics interval (5 seconds). `Delayed` is null: delayed messages wait in delay queues that all sources share. |
 
+## Tracing and metrics
+
+Messages and durable jobs emit OpenTelemetry spans and metrics from the `Foundatio` activity source and meter, following the [messaging semantic conventions](https://opentelemetry.io/docs/specs/semconv/messaging/) where one applies. Attributes without a convention are prefixed `foundatio.`.
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddSource(FoundatioDiagnostics.ActivitySource.Name))
+    .WithMetrics(m => m.AddMeter(FoundatioDiagnostics.Meter.Name));
+```
+
+With nothing listening, no span is started and no attribute is formatted.
+
+### Spans
+
+| Span | Kind | When |
+|---|---|---|
+| `send {queue}`, `publish {topic}` | Producer | One per destination of each `SendAsync`, `PublishAsync` or batch call. |
+| `process {queue or topic}` | Consumer | One per delivery a handler runs for, in the trace the message was sent in. |
+| `job {name}` | Consumer | One per durable job run, in the trace it was enqueued in. |
+
+| Attribute | On | Value |
+|---|---|---|
+| `messaging.system` | send, process | The transport: `kafka`, `rabbitmq`, `aws_sqs`, `servicebus`, `redis`, `inmemory`, or another transport's class name without `MessageTransport`, lowercased. |
+| `messaging.operation.type` | send, process | `send` or `process`. |
+| `messaging.operation.name` | send, process | `send`, `publish` or `process`. |
+| `messaging.destination.name` | send, process | The queue or topic name. |
+| `messaging.destination.subscription.name`, `messaging.consumer.group.name` | process | The durable subscription's name (usually the service name). |
+| `messaging.message.id` | send (one message), process | The message id. |
+| `messaging.batch.message_count` | send (a batch) | How many messages the span sent. |
+| `messaging.message.conversation_id` | send, process, job | The correlation id, when there is one. |
+| `foundatio.message.type` | send (one message), process | The message type's wire name. |
+| `foundatio.source.kind` | process | `queue`, `subscription` or `instance`. |
+| `foundatio.job.id`, `foundatio.job.name` | job | The job's id and name. |
+| `error.type` | all | The exception's full type name, when the send, handler or job failed. The span's status is then `Error`, with an exception event. |
+
+Handlers' and jobs' progress reports add `progress` events to their span.
+
+### Metrics
+
+| Instrument | Type | Unit | Attributes |
+|---|---|---|---|
+| `messaging.client.sent.messages` | counter | `{message}` | `messaging.system`, `messaging.operation.name` (`send`, `publish`), `messaging.destination.name`, `error.type` when the send failed |
+| `messaging.process.duration` | histogram | `s` | `messaging.system`, `messaging.operation.name` (`process`), `messaging.destination.name`, `messaging.destination.subscription.name`, `foundatio.source.kind`, `foundatio.message.type`, `foundatio.outcome`, `error.type` when the handler threw |
+| `foundatio.messaging.handled` | counter | `{message}` | as `messaging.process.duration` |
+| `foundatio.messaging.dead_lettered` | counter | `{message}` | `messaging.system`, `messaging.destination.name`, `messaging.destination.subscription.name`, `foundatio.message.type` |
+| `foundatio.messaging.unmatched` | counter | `{message}` | as `dead_lettered`; messages no handler here takes |
+| `foundatio.messaging.discarded` | counter | `{message}` | as `dead_lettered`; messages whose time to live passed |
+| `foundatio.jobs.enqueued` | counter | `{job}` | `foundatio.job.name` |
+| `foundatio.jobs.completed` | counter | `{run}` | `foundatio.job.name`, `foundatio.outcome` |
+| `foundatio.jobs.duration` | histogram | `s` | as `foundatio.jobs.completed` |
+
+`foundatio.outcome` for messages is `success`, `retry`, `dead-lettered`, `lease-lost`, `cancelled`, `settle-failed` or `dead-letter-failed`; for jobs, `succeeded`, `failed`, `cancelled`, `retry`, `released` (stopped by shutdown, to run again) or `lost` (the lease ran out). A subscription's metrics carry its name, so two services' subscriptions to one topic count apart.
+
 ## Cost
 
 - **Per message or job**: following one costs about 90 nanoseconds and allocates nothing: a few interlocked updates and two uncontended locks. The tracking fields live in the handler's context, which is allocated anyway; it grew by about 64 bytes. On the in-memory transport with a no-op handler, throughput with tracking was within measurement noise of throughput without it.

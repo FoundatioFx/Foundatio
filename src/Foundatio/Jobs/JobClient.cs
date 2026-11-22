@@ -135,7 +135,7 @@ internal sealed class JobClient : IJobClient
 
         if (created)
         {
-            JobsInstruments.Enqueued.Add(1, new System.Collections.Generic.KeyValuePair<string, object?>("job.name", name));
+            JobsInstruments.Enqueued.Add(1, new System.Collections.Generic.KeyValuePair<string, object?>(JobsInstruments.JobName, name));
             _runtime.SignalWorkAvailable();
         }
 

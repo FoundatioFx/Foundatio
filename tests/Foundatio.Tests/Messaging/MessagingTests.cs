@@ -250,6 +250,88 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Telemetry_TagsSpansAndMetricsWithTheOpenTelemetryMessagingAttributes()
+    {
+        string queue = $"tests.telemetry-{Guid.NewGuid():N}";
+        string topic = $"tests.telemetry-event-{Guid.NewGuid():N}";
+        var activities = new ConcurrentQueue<Activity>();
+        var foundatio = FoundatioDiagnostics.ActivitySource;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s == foundatio,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activities.Enqueue
+        };
+        ActivitySource.AddActivityListener(listener);
+        var measurements = new ConcurrentQueue<(string Instrument, string? Unit, double Value, Dictionary<string, object?> Tags)>();
+        using var meterListener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == FoundatioDiagnostics.Meter.Name)
+                    l.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<long>((instrument, value, tags, _) => measurements.Enqueue((instrument.Name, instrument.Unit, value, ToDictionary(tags))));
+        meterListener.SetMeasurementEventCallback<double>((instrument, value, tags, _) => measurements.Enqueue((instrument.Name, instrument.Unit, value, ToDictionary(tags))));
+        meterListener.Start();
+
+        int handled = 0;
+        await using var host = await StartAsync(m => m
+            .MapMessage<PlaceOrder>(queue)
+            .MapMessage<OrderShipped>(topic)
+            .AddConsumer<PlaceOrder>((message, _, _) =>
+            {
+                Interlocked.Increment(ref handled);
+                return message.OrderId == 2 ? throw new InvalidOperationException("boom") : Task.CompletedTask;
+            }, new HandlerOptions { RetryPolicy = RetryPolicy.None })
+            .AddSubscriber<OrderShipped>((_, _, _) => { Interlocked.Increment(ref handled); return Task.CompletedTask; }));
+
+        string id = await host.Client.SendAsync(new PlaceOrder(1), new SendOptions { CorrelationId = "c-1" }, TestCancellationToken);
+        await host.Client.SendAsync(new PlaceOrder(2), cancellationToken: TestCancellationToken);
+        await host.Client.PublishAsync(new OrderShipped(3), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 3 && activities.Count(a => a.OperationName.EndsWith(queue) || a.OperationName.EndsWith(topic)) == 6);
+        meterListener.RecordObservableInstruments();
+
+        var send = Assert.Single(activities, a => a.OperationName == $"send {queue}" && (string?)a.GetTagItem("messaging.message.id") == id);
+        Assert.Equal(ActivityKind.Producer, send.Kind);
+        Assert.Equal(("inmemory", "send", "send", queue, "c-1", queue), ((string?)send.GetTagItem("messaging.system"), (string?)send.GetTagItem("messaging.operation.type"),
+            (string?)send.GetTagItem("messaging.operation.name"), (string?)send.GetTagItem("messaging.destination.name"), (string?)send.GetTagItem("messaging.message.conversation_id"),
+            (string?)send.GetTagItem("foundatio.message.type")));
+        var process = Assert.Single(activities, a => a.OperationName == $"process {queue}" && (string?)a.GetTagItem("messaging.message.id") == id);
+        Assert.Equal(ActivityKind.Consumer, process.Kind);
+        Assert.Equal(send.TraceId, process.TraceId);
+        Assert.Equal(("process", queue, "c-1", "queue"), ((string?)process.GetTagItem("messaging.operation.type"), (string?)process.GetTagItem("messaging.destination.name"),
+            (string?)process.GetTagItem("messaging.message.conversation_id"), (string?)process.GetTagItem("foundatio.source.kind")));
+        var failed = Assert.Single(activities, a => a.OperationName == $"process {queue}" && a.Status == ActivityStatusCode.Error);
+        Assert.Equal(typeof(InvalidOperationException).FullName, failed.GetTagItem("error.type"));
+        var subscribed = Assert.Single(activities, a => a.OperationName == $"process {topic}");
+        Assert.Equal(("tests", "tests"), ((string?)subscribed.GetTagItem("messaging.destination.subscription.name"), (string?)subscribed.GetTagItem("messaging.consumer.group.name")));
+        Assert.Equal("publish", Assert.Single(activities, a => a.OperationName == $"publish {topic}").GetTagItem("messaging.operation.name"));
+
+        var sent = measurements.Where(m => m.Instrument == "messaging.client.sent.messages" && Equals(m.Tags.GetValueOrDefault("messaging.destination.name"), queue)).ToList();
+        Assert.Equal(2, sent.Sum(m => m.Value));
+        Assert.All(sent, m => Assert.Equal(("{message}", "inmemory", "send"), (m.Unit, m.Tags["messaging.system"], m.Tags["messaging.operation.name"])));
+        var durations = measurements.Where(m => m.Instrument == "messaging.process.duration" && Equals(m.Tags.GetValueOrDefault("messaging.destination.name"), queue)).ToList();
+        Assert.Equal(2, durations.Count);
+        Assert.All(durations, m => Assert.Equal(("s", "process", queue), (m.Unit, m.Tags["messaging.operation.name"], m.Tags["foundatio.message.type"])));
+        Assert.All(durations, m => Assert.InRange(m.Value, 0, 5));
+        var handledCounts = measurements.Where(m => m.Instrument == "foundatio.messaging.handled" && Equals(m.Tags.GetValueOrDefault("messaging.destination.name"), queue)).ToList();
+        Assert.Equal(["dead-lettered", "success"], handledCounts.Select(m => (string?)m.Tags["foundatio.outcome"]).Order());
+        Assert.Equal(typeof(InvalidOperationException).FullName, Assert.Single(handledCounts, m => m.Tags.ContainsKey("error.type")).Tags["error.type"]);
+        Assert.Equal("tests", Assert.Single(measurements, m => m.Instrument == "foundatio.messaging.handled" && Equals(m.Tags.GetValueOrDefault("messaging.destination.name"), topic))
+            .Tags["messaging.destination.subscription.name"]);
+    }
+
+    private static Dictionary<string, object?> ToDictionary(ReadOnlySpan<KeyValuePair<string, object?>> tags)
+    {
+        var result = new Dictionary<string, object?>(tags.Length);
+        foreach (var tag in tags)
+            result[tag.Key] = tag.Value;
+        return result;
+    }
+
+    [Fact]
     public async Task SubscribeAsync_UnderAnActivity_DoesNotRunHandlersInTheSubscribersContext()
     {
         using var source = new ActivitySource("Foundatio.Tests.SubscriberContext");

@@ -328,8 +328,12 @@ internal sealed class JobWorker
         if (JobsInstruments.Completed.Enabled || JobsInstruments.Duration.Enabled)
             RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
         _runtime.Tracker.Complete(context, ToWorkOutcome(completion), DescribeError(completion));
-        if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt)
-            activity?.SetErrorStatus(error, completion.Error);
+        if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt && activity is not null)
+        {
+            if (error is not null)
+                activity.SetTag(MessagingInstruments.ErrorType, error.GetType().FullName ?? error.GetType().Name);
+            activity.SetErrorStatus(error, completion.Error);
+        }
     }
 
     /// <summary>The job's span, continuing the trace it was enqueued under; null, without parsing or naming it, when nothing listens.</summary>
@@ -340,8 +344,13 @@ internal sealed class JobWorker
 
         ActivityContext.TryParse(job.Headers.GetValueOrDefault(KnownHeaders.TraceParent), job.Headers.GetValueOrDefault(KnownHeaders.TraceState), out var parent);
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"job {job.Name}", ActivityKind.Consumer, parent);
-        activity?.SetTag("job.id", job.Id);
-        activity?.SetTag("job.name", job.Name);
+        if (activity is not { IsAllDataRequested: true })
+            return activity;
+
+        activity.SetTag(JobsInstruments.JobId, job.Id);
+        activity.SetTag(JobsInstruments.JobName, job.Name);
+        if (job.CorrelationId is not null)
+            activity.SetTag(MessagingInstruments.ConversationId, job.CorrelationId);
         return activity;
     }
 
@@ -370,9 +379,9 @@ internal sealed class JobWorker
 
     private static void RecordRun(JobInfo job, string outcome, long started)
     {
-        var tags = new TagList { { "job.name", job.Name }, { "outcome", outcome } };
+        var tags = new TagList { { JobsInstruments.JobName, job.Name }, { MessagingInstruments.Outcome, outcome } };
         JobsInstruments.Completed.Add(1, tags);
-        JobsInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, tags);
+        JobsInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
     }
 
     /// <summary>Legacy <see cref="JobAttribute"/> settings for hosted jobs have no effect on durable jobs; say so instead of ignoring them silently.</summary>

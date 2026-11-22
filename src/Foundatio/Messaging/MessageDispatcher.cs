@@ -30,6 +30,11 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private readonly MessagingRuntime _runtime;
     private readonly MessageSource _source;
     private readonly string _sourceName;
+    private readonly string _system;
+    private readonly string _destinationName;
+    private readonly string? _subscriptionName;
+    private readonly string _sourceKind;
+    private readonly string _activityName;
     private readonly IReadOnlyList<MessageHandlerRegistration> _handlers;
     private readonly ProcessingStatusTracker _status;
     private readonly ILogger _logger;
@@ -44,6 +49,11 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         _runtime = runtime;
         _source = source;
         _sourceName = source.ToString();
+        _system = MessagingInstruments.GetSystemName(runtime.Transport);
+        _destinationName = source.Topic ?? source.Name;
+        _subscriptionName = source.Kind == MessageSourceKind.Subscription ? source.Name : null;
+        _sourceKind = MessagingInstruments.GetSourceKind(source);
+        _activityName = String.Concat("process ", _destinationName);
         _handlers = handlers;
         _status = status;
         _logger = runtime.LoggerFactory.CreateLogger<MessageProcessor>();
@@ -61,7 +71,8 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         if (TryGetTime(headers, KnownHeaders.ExpiresAt) is { } expiresAt && expiresAt <= now)
         {
             _logger.LogInformation("Discarding expired message {MessageId} from {Source}", message.MessageId, _source);
-            MessagingInstruments.Discarded.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
+            if (MessagingInstruments.Discarded.Enabled)
+                MessagingInstruments.Discarded.Add(1, CreateTags(messageType));
             bool removed = await CompleteAsync(delivery).AnyContext();
             _runtime.Observer?.OnHandled(_source, message, null, "expired", null, null);
             if (removed)
@@ -105,7 +116,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             return deserializeOutcome == "dead-lettered";
         }
 
-        using var activity = StartActivity(messageType, headers);
+        using var activity = StartActivity(message, messageType);
         var context = new MessageContext
         {
             MessageId = message.MessageId,
@@ -171,14 +182,24 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         _runtime.Observer?.OnHandled(_source, message, payloads[0].Payload, outcome, context.DeadLetterReason, error ?? settleError, context);
         _runtime.Tracker.Complete(context, ToWorkOutcome(outcome), DescribeError(outcome, context, error));
 
+        bool failed = error is not null && outcome != "cancelled";
         if (MessagingInstruments.Handled.Enabled || MessagingInstruments.Duration.Enabled)
         {
-            var tags = new TagList { { "messaging.message.type", messageType }, { "messaging.source", _source.Kind.ToString() }, { "outcome", outcome } };
+            var tags = CreateTags(messageType);
+            tags.Add(MessagingInstruments.OperationName, "process");
+            tags.Add(MessagingInstruments.SourceKind, _sourceKind);
+            tags.Add(MessagingInstruments.Outcome, outcome);
+            if (failed)
+                tags.Add(MessagingInstruments.ErrorType, GetErrorType(error!));
+
             MessagingInstruments.Handled.Add(1, tags);
-            MessagingInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, tags);
+            MessagingInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
         }
-        if (error is not null && outcome != "cancelled")
-            activity?.SetErrorStatus(error);
+        if (failed && activity is not null)
+        {
+            activity.SetTag(MessagingInstruments.ErrorType, GetErrorType(error!));
+            activity.SetErrorStatus(error);
+        }
 
         return outcome is "success" or "dead-lettered";
     }
@@ -328,7 +349,8 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private async Task<bool> HandleUnmatchedAsync(MessageDelivery delivery, WorkCounter counter, string messageType, bool unresolved, CancellationToken abortToken)
     {
         var message = delivery.Message;
-        MessagingInstruments.Unmatched.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
+        if (MessagingInstruments.Unmatched.Enabled)
+            MessagingInstruments.Unmatched.Add(1, CreateTags(messageType));
 
         // Topics carry many message types; a subscriber ignores the ones it does not handle.
         if (_source.Kind is MessageSourceKind.Subscription or MessageSourceKind.InstanceSubscription)
@@ -405,7 +427,8 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private async ValueTask<(string Outcome, Exception? Error)> DeadLetterOrDropAsync(MessageDelivery delivery, string reason, CancellationToken abortToken)
     {
         var message = delivery.Message;
-        MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("messaging.message.type", message.Headers.GetValueOrDefault(KnownHeaders.MessageType)));
+        if (MessagingInstruments.DeadLettered.Enabled)
+            MessagingInstruments.DeadLettered.Add(1, CreateTags(message.Headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty));
 
         // Instance subscriptions are best effort and have no dead-letter queue.
         if (_source.Kind == MessageSourceKind.InstanceSubscription)
@@ -513,17 +536,52 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         return null;
     }
 
-    private static Activity? StartActivity(string messageType, IReadOnlyDictionary<string, string> headers)
+    private Activity? StartActivity(IncomingMessage message, string messageType)
     {
-        // Without a listener no activity starts, so skip parsing the parent and formatting the name.
+        // Without a listener no activity starts, so skip parsing the parent.
         if (!FoundatioDiagnostics.ActivitySource.HasListeners())
             return null;
 
+        var headers = message.Headers;
         ActivityContext.TryParse(headers.GetValueOrDefault(KnownHeaders.TraceParent), headers.GetValueOrDefault(KnownHeaders.TraceState), out var parent);
-        var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"handle {messageType}", ActivityKind.Consumer, parent);
-        activity?.SetTag("messaging.message.type", messageType);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity(_activityName, ActivityKind.Consumer, parent);
+        if (activity is not { IsAllDataRequested: true })
+            return activity;
+
+        activity.SetTag(MessagingInstruments.System, _system);
+        activity.SetTag(MessagingInstruments.OperationType, "process");
+        activity.SetTag(MessagingInstruments.OperationName, "process");
+        activity.SetTag(MessagingInstruments.DestinationName, _destinationName);
+        if (_subscriptionName is not null)
+        {
+            activity.SetTag(MessagingInstruments.SubscriptionName, _subscriptionName);
+            activity.SetTag(MessagingInstruments.ConsumerGroupName, _subscriptionName);
+        }
+
+        activity.SetTag(MessagingInstruments.MessageId, message.MessageId);
+        if (headers.GetValueOrDefault(KnownHeaders.CorrelationId) is { } correlationId)
+            activity.SetTag(MessagingInstruments.ConversationId, correlationId);
+        activity.SetTag(MessagingInstruments.MessageType, messageType);
+        activity.SetTag(MessagingInstruments.SourceKind, _sourceKind);
         return activity;
     }
+
+    /// <summary>The metric attributes every messaging instrument of this source shares.</summary>
+    private TagList CreateTags(string messageType)
+    {
+        var tags = new TagList
+        {
+            { MessagingInstruments.System, _system },
+            { MessagingInstruments.DestinationName, _destinationName },
+            { MessagingInstruments.MessageType, messageType }
+        };
+        if (_subscriptionName is not null)
+            tags.Add(MessagingInstruments.SubscriptionName, _subscriptionName);
+
+        return tags;
+    }
+
+    private static string GetErrorType(Exception error) => error.GetType().FullName ?? error.GetType().Name;
 
     /// <summary>The counter for <paramref name="messageType"/> on this source, cached like the handler matches.</summary>
     private WorkCounter GetCounter(string messageType)
