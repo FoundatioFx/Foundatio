@@ -258,6 +258,8 @@ await admin.DeleteAsync(MessageSource.Subscription("orders.order-placed", "retir
 
 Replayed messages keep their id, body and headers and are handled as new deliveries; the dead-letter reason, delay and expiry are dropped.
 
+Dead-lettering is at least once, like delivery: on transports that move a message by copying it to the dead-letter queue and then removing the original (RabbitMQ, SQS and Kafka), a connection or lease lost in between delivers the original again, and it can be dead-lettered a second time. A dead-letter queue may then hold two entries with the same message id, which a replay sends twice; replayed handlers should be idempotent too.
+
 ## Options when sending
 
 ```csharp
