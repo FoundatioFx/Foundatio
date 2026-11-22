@@ -39,6 +39,9 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>How far a <see cref="IncomingMessage.LeaseExpiresAt"/> may be off, for clocks and round trips.</summary>
     private static readonly TimeSpan LeaseClockTolerance = TimeSpan.FromSeconds(1);
 
+    /// <summary>How far a broker's <see cref="IncomingMessage.EnqueuedAt"/> may be off, for its clock.</summary>
+    private static readonly TimeSpan EnqueuedAtTolerance = TimeSpan.FromMinutes(1);
+
     private readonly List<IMessageTransport> _transports = [];
     private readonly ConcurrentDictionary<string, MessageSource> _createdSources = new();
     private IMessageTransport? _transport;
@@ -97,13 +100,17 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>A transport from <see cref="CreatePeerTransport"/>: another process connected to the same broker.</summary>
     protected IMessageTransport PeerTransport => _peerTransport ??= Track(CreatePeerTransport());
 
-    /// <summary>A sent message is received with the same id, body, headers and group key, and a delivery count of 1.</summary>
+    /// <summary>
+    /// A sent message is received with the same id, body, headers and group key, a delivery count of 1 and, when the
+    /// broker records it, an <see cref="IncomingMessage.EnqueuedAt"/> of when it was sent.
+    /// </summary>
     [Fact]
     public async Task SendThenReceive_RoundTripsIdBodyAndHeaders()
     {
         var source = MessageSource.Queue(NewName("roundtrip"));
         await using var receiver = await CreateReceiverAsync(source);
         var headers = new Dictionary<string, string> { ["message-type"] = "conformance.test", ["unicode"] = "héllo wörld ✓", ["empty"] = "", ["X-Tenant"] = "Mixed Case" };
+        var sending = DateTimeOffset.UtcNow;
 
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("payload", "id-1", headers) with { GroupKey = "group-1" }], TestCancellationToken);
 
@@ -114,6 +121,11 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(1, message.DeliveryCount);
         foreach (var (key, value) in headers)
             Assert.True(message.Headers.TryGetValue(key, out string? received) && received == value, $"Header {key} came back as {received ?? "(missing)"}, not {value}.");
+        if (message.EnqueuedAt is { } enqueuedAt)
+        {
+            Assert.True(enqueuedAt >= sending - EnqueuedAtTolerance && enqueuedAt <= DateTimeOffset.UtcNow + EnqueuedAtTolerance,
+                $"EnqueuedAt was {enqueuedAt:O}, not when the message was sent ({sending:O}).");
+        }
 
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
