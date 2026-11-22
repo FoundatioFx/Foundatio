@@ -71,6 +71,14 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>The longest a test waits for <see cref="IMessageTransport.GetStatsAsync"/> to reflect sends and settlements, which it may lag.</summary>
     protected virtual TimeSpan StatsTimeout => TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// True when the broker cannot tell a stale receipt from the current one, so a <see cref="IMessageReceiver.CompleteAsync"/>
+    /// through a delivery whose lease was lost may remove the message instead of throwing
+    /// <see cref="MessageLeaseLostException"/> (an SQS receipt handle). False by default: a stale complete must throw and
+    /// leave the newer delivery alone.
+    /// </summary>
+    protected virtual bool StaleCompleteMayRemoveTheMessage => false;
+
     /// <summary>The transport under test, created by <see cref="CreateTransport"/> on first use and disposed after the test.</summary>
     protected IMessageTransport Transport => _transport ??= Track(CreateTransport());
 
@@ -1727,6 +1735,9 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertLeaseLostAsync(() => staleReceiver.AbandonAsync(stale, TimeSpan.Zero, TestCancellationToken), receiverDisposed);
         await AssertLeaseLostAsync(() => staleReceiver.DeadLetterAsync(stale, "stale", TestCancellationToken), receiverDisposed);
         bool staleCompleteFailed = await TryAssertLeaseLostAsync(() => staleReceiver.CompleteAsync(stale, TestCancellationToken), receiverDisposed);
+        Assert.True(staleCompleteFailed || StaleCompleteMayRemoveTheMessage,
+            "Completing a delivery whose lease was lost succeeded instead of throwing MessageLeaseLostException. Only a transport whose broker " +
+            "cannot tell a stale receipt from the current one may accept it; such a transport's tests override StaleCompleteMayRemoveTheMessage.");
 
         // The stale abandon must not have released the newer delivery: a message sent afterwards arrives alone.
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("canary", "canary")], TestCancellationToken);

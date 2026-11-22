@@ -45,6 +45,9 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
 
     protected override IMessageTransport CreateTransport() => new SqsMessageTransport(CreateOptions());
 
+    /// <summary>SQS deletes a message by an old receipt handle without telling it apart from the current one.</summary>
+    protected override bool StaleCompleteMayRemoveTheMessage => true;
+
     [Fact]
     public async Task Names_ThatOnlyDifferInPunctuationOrPastTheLengthLimit_DoNotCollide()
     {
