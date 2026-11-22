@@ -28,6 +28,16 @@ public interface IJobStore
     /// </summary>
     Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Adds a new job as <see cref="CreateAsync(JobInfo, CancellationToken)"/> does, except that it becomes available
+    /// <paramref name="availableAfter"/> after now on the store's own clock instead of at <see cref="JobInfo.AvailableAt"/>,
+    /// which comes from the caller's clock; when <see cref="JobInfo.ScheduledFor"/> is <c>default</c>, it is set to that
+    /// time too. Clients use this for immediate and delayed jobs, so a producer whose clock is ahead of the store's
+    /// doesn't hold its jobs back, and one behind it doesn't run them early. The default creates the job at
+    /// <see cref="JobInfo.AvailableAt"/>, for stores that have no clock of their own.
+    /// </summary>
+    Task<bool> CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken = default) => CreateAsync(job, cancellationToken);
+
     /// <summary>Returns the job, or null when it does not exist or its retention has passed.</summary>
     Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default);
 

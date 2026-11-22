@@ -141,6 +141,8 @@ j.AddCronJob<SyncJob>("*/30 * * * * *", new CronJobOptions              // six f
 
 Every instance runs the scheduler, and each occurrence becomes exactly one job, so there is no leader to elect. Schedules live in code: change or remove a line and redeploy.
 
+An immediate job, or one with a `Delay`, becomes available by the job store's clock (Redis's, for the Redis store), so a producer whose clock is off neither holds its jobs back nor runs them early. `RunAt` and CRON occurrences are absolute times.
+
 A CRON job's `context.ScheduledFor` is the occurrence it runs for, even when it runs late after a misfire, a retry or a shutdown that interrupted it. Use it, not the clock, to choose the window to process, and as the key that makes a repeated run safe. `JobDetails.ScheduledFor` shows the same time; `JobDetails.AvailableAt` is when the job can run next, which a retry moves.
 
 ## Existing IJob and JobBase jobs

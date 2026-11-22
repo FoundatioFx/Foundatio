@@ -77,7 +77,15 @@ public sealed class RedisJobStore : IJobStore
     private IDatabase Database => _connection.GetDatabase(_options.Database);
 
     /// <inheritdoc />
-    public async Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default)
+    public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => CreateAsync(job, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<bool> CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken = default) => CreateAsync(job, (TimeSpan?)availableAfter, cancellationToken);
+
+    /// <param name="job">The job to add.</param>
+    /// <param name="availableAfter">When set, the job becomes available this long after now on the Redis clock, instead of at <see cref="JobInfo.AvailableAt"/>.</param>
+    /// <param name="cancellationToken">Checked before the job is sent.</param>
+    private async Task<bool> CreateAsync(JobInfo job, TimeSpan? availableAfter, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentException.ThrowIfNullOrWhiteSpace(job.Id);
@@ -85,8 +93,12 @@ public sealed class RedisJobStore : IJobStore
         cancellationToken.ThrowIfCancellationRequested();
 
         string member = $"{job.CreatedAt.UtcTicks:x16}|{job.Id}";
-        var values = new List<RedisValue> { job.Id, job.Name, ToMicroseconds(job.AvailableAt), member };
-        values.AddRange(["payload", job.Payload, "created", ToMicroseconds(job.CreatedAt), "scheduled", ToMicroseconds(job.ScheduledFor == default ? job.AvailableAt : job.ScheduledFor)]);
+        var values = availableAfter is { } after
+            ? new List<RedisValue> { job.Id, job.Name, ToMicroseconds(after), "1", member }
+            : [job.Id, job.Name, ToMicroseconds(job.AvailableAt), "0", member];
+        values.AddRange(["payload", job.Payload, "created", ToMicroseconds(job.CreatedAt)]);
+        if (job.ScheduledFor != default || availableAfter is null)
+            values.AddRange(["scheduled", ToMicroseconds(job.ScheduledFor == default ? job.AvailableAt : job.ScheduledFor)]);
         AddIfPresent(values, "correlation", job.CorrelationId);
         AddIfPresent(values, "schedule", job.ScheduleName);
         AddIfPresent(values, "started", job.StartedAt);

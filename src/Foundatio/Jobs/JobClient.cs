@@ -89,7 +89,9 @@ internal sealed class JobClient : IJobClient
             ArgumentException.ThrowIfNullOrWhiteSpace(requestedId, nameof(options));
 
         var now = _runtime.TimeProvider.GetUtcNow();
-        var availableAt = options?.RunAt ?? (options?.Delay is { } delay ? now.Add(delay) : now);
+        var runAt = options?.RunAt;
+        var availableAfter = options?.Delay ?? TimeSpan.Zero;
+        var availableAt = runAt ?? now.Add(availableAfter);
         var job = new JobInfo
         {
             Id = options?.JobId ?? Guid.NewGuid().ToString("N"),
@@ -101,10 +103,13 @@ internal sealed class JobClient : IJobClient
             CreatedAt = now,
             UpdatedAt = now,
             AvailableAt = availableAt,
-            ScheduledFor = availableAt
+            ScheduledFor = runAt ?? default
         };
 
-        bool created = await _runtime.Store.CreateAsync(job, cancellationToken).AnyContext();
+        // An immediate or delayed job is timed by the store's clock; this process's may be off it.
+        bool created = runAt is not null
+            ? await _runtime.Store.CreateAsync(job, cancellationToken).AnyContext()
+            : await _runtime.Store.CreateAsync(job, availableAfter, cancellationToken).AnyContext();
         if (!created && options?.JobId is null)
             throw new InvalidOperationException($"A job with the generated id {job.Id} already exists.");
 

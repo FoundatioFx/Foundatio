@@ -31,7 +31,12 @@ public sealed class InMemoryJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default)
+    public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => CreateAsync(job, null);
+
+    /// <inheritdoc />
+    public Task<bool> CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken = default) => CreateAsync(job, (TimeSpan?)availableAfter);
+
+    private Task<bool> CreateAsync(JobInfo job, TimeSpan? availableAfter)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentException.ThrowIfNullOrWhiteSpace(job.Id);
@@ -42,6 +47,9 @@ public sealed class InMemoryJobStore : IJobStore
             var now = RemoveExpired();
             if (_jobs.ContainsKey(job.Id))
                 return Task.FromResult(false);
+
+            if (availableAfter is { } after)
+                job = job with { AvailableAt = now.Add(after) };
 
             var entry = new Entry(job with
             {

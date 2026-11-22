@@ -457,6 +457,28 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal(6, _probe.PeakConcurrency);
     }
 
+    [Theory]
+    [InlineData(30)]
+    [InlineData(-30)]
+    public async Task EnqueueAsync_FromAProducerWhoseClockIsOff_UsesTheStoresClockForAvailability(int skewSeconds)
+    {
+        // The store keeps the real time; the producer's (and worker's) clock is 30 s off it.
+        var skewed = new SkewedTimeProvider(TimeSpan.FromSeconds(skewSeconds));
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), s => s.AddSingleton<TimeProvider>(skewed));
+        var enqueued = DateTimeOffset.UtcNow;
+
+        var immediate = await host.Jobs.EnqueueAsync(new ResizeImage("now.png", 1), cancellationToken: TestCancellationToken);
+        var delayed = await host.Jobs.EnqueueAsync(new ResizeImage("soon.png", 1), new EnqueueOptions { Delay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+
+        var now = await immediate.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        var soon = await delayed.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(JobState.Succeeded, now.State);
+        Assert.Equal(JobState.Succeeded, soon.State);
+        Assert.True(soon.StartedAt - enqueued >= TimeSpan.FromSeconds(0.9), $"The delayed job started {soon.StartedAt - enqueued} after it was enqueued.");
+        Assert.InRange(now.ScheduledFor, enqueued.AddSeconds(-1), enqueued.AddSeconds(2));
+        Assert.InRange(soon.ScheduledFor, enqueued.AddSeconds(0.9), enqueued.AddSeconds(3));
+    }
+
     [Fact]
     public async Task JobTypeMaxConcurrency_LimitsRunningJobsOfThatType()
     {
@@ -937,6 +959,12 @@ public class DurableJobsTests : TestWithLoggingBase
     public sealed class IntervalJob : IJob
     {
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.Success);
+    }
+
+    /// <summary>The system clock moved by <paramref name="skew"/>; timers and timestamps are the system's.</summary>
+    private sealed class SkewedTimeProvider(TimeSpan skew) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + skew;
     }
 
     /// <summary>A store that fails on demand: <see cref="ProgressFailures"/> progress reports, or every call once <see cref="Partitioned"/>.</summary>

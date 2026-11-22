@@ -99,6 +99,32 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
     }
 
+    /// <summary>
+    /// A job created to be available after a delay is timed by the store's clock, whatever <see cref="JobInfo.AvailableAt"/>
+    /// the caller's clock gave it, and is scheduled for when it became available unless the caller set <see cref="JobInfo.ScheduledFor"/>.
+    /// </summary>
+    [Fact]
+    public async Task CreateWithAvailableAfter_UsesTheStoresClockInsteadOfAvailableAt()
+    {
+        var aheadOfTheStore = DateTimeOffset.UtcNow.AddHours(1);
+        var immediate = NewJob() with { AvailableAt = aheadOfTheStore };
+        var delayed = NewJob() with { AvailableAt = DateTimeOffset.UtcNow.AddHours(-1) };
+        var scheduled = NewJob() with { AvailableAt = aheadOfTheStore, ScheduledFor = aheadOfTheStore };
+
+        Assert.True(await Store.CreateAsync(immediate, TimeSpan.Zero, TestCancellationToken));
+        Assert.True(await Store.CreateAsync(delayed, TimeSpan.FromHours(1), TestCancellationToken));
+        Assert.True(await Store.CreateAsync(scheduled, TimeSpan.Zero, TestCancellationToken));
+        Assert.False(await Store.CreateAsync(immediate, TimeSpan.Zero, TestCancellationToken));
+
+        var claimed = await Store.ClaimAsync(Claim(immediate.Name), TestCancellationToken);
+        Assert.NotNull(claimed);
+        Assert.True(claimed.AvailableAt < aheadOfTheStore.AddMinutes(-30), $"The job was created available at {claimed.AvailableAt}, from the caller's clock.");
+        Assert.Equal(claimed.AvailableAt, claimed.ScheduledFor);
+        Assert.Null(await Store.ClaimAsync(Claim(delayed.Name), TestCancellationToken));
+        Assert.True((await Store.GetAsync(delayed.Id, TestCancellationToken))!.AvailableAt > DateTimeOffset.UtcNow.AddMinutes(30));
+        Assert.Equal(aheadOfTheStore.UtcTicks / TimeSpan.TicksPerMillisecond, (await Store.ClaimAsync(Claim(scheduled.Name), TestCancellationToken))!.ScheduledFor.UtcTicks / TimeSpan.TicksPerMillisecond);
+    }
+
     /// <summary>A claim skips jobs that are not due yet and jobs with names it did not ask for.</summary>
     [Fact]
     public async Task Claim_IgnoresJobsThatAreNotDueOrNotRequested()
