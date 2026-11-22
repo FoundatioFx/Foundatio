@@ -20,18 +20,18 @@ features:
   - icon: 🚀
     title: Caching
     details: Fast, consistent caching with InMemory, Redis, and Hybrid implementations. Includes scoped cache support.
-  - icon: 📬
-    title: Queues
-    details: FIFO message delivery with InMemory, Redis, Azure Service Bus, Azure Storage, and AWS SQS implementations.
+  - icon: 📡
+    title: Messaging
+    details: Commands and events with handler classes, retries, dead letters and durable subscriptions on InMemory, Redis, AWS SQS/SNS, Kafka, Azure Service Bus and RabbitMQ.
   - icon: 🔒
     title: Locks
     details: Distributed locking with cache-based and throttling implementations for cross-machine coordination.
-  - icon: 📡
-    title: Messaging
-    details: Pub/sub messaging with InMemory, Redis, RabbitMQ, Kafka, and Azure Service Bus implementations.
   - icon: 💼
-    title: Jobs
-    details: Long-running process management with queue processor jobs and work item handlers.
+    title: Durable Jobs
+    details: Stored background jobs with arguments, progress, cancellation, retries and CRON schedules, on InMemory or Redis.
+  - icon: 📬
+    title: Queues and Message Bus
+    details: The original IQueue<T>, IMessageBus and hosted jobs, still supported, with InMemory, Redis, Azure, AWS, Kafka and RabbitMQ implementations.
   - icon: 📁
     title: File Storage
     details: Abstracted file storage with InMemory, Folder, Azure Blob, S3, Redis, and more.
@@ -69,18 +69,51 @@ var value = await cache.GetAsync<int>("test");
 
 [Learn more about Caching →](./guide/caching)
 
-### Queues
+### Messaging
 
 ```csharp
-using Foundatio.Queues;
+using Foundatio.Messaging;
 
-IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
+builder.Services.AddFoundatioMessaging(m => m
+    .UseInMemory()                       // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...), UseRabbitMQ(...)
+    .AddConsumer<SendReceiptHandler>());
 
-await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
-var workItem = await queue.DequeueAsync();
+public record SendReceipt(int OrderId);
+
+public class SendReceiptHandler : IMessageHandler<SendReceipt>
+{
+    // Retried when it throws, dead-lettered when the retries run out
+    public Task HandleAsync(SendReceipt message, IMessageContext context, CancellationToken ct) => Task.CompletedTask;
+}
+
+// Anywhere, with IMessageClient from DI
+await messages.SendAsync(new SendReceipt(42));
 ```
 
-[Learn more about Queues →](./guide/queues)
+[Learn more about Messaging →](./guide/messaging)
+
+### Durable Jobs
+
+```csharp
+using Foundatio.Jobs;
+
+builder.Services.AddFoundatioJobs(j => j
+    .UseInMemory()                       // or UseRedis()
+    .AddJob<GenerateReportJob>());
+
+public record GenerateReport(string Format);
+
+public class GenerateReportJob : IJobHandler<GenerateReport>
+{
+    public Task HandleAsync(GenerateReport args, IJobContext context, CancellationToken ct)
+        => context.ReportProgressAsync(100, $"Generated {args.Format}", ct);
+}
+
+// Anywhere, with IJobClient from DI
+var job = await jobs.EnqueueAsync(new GenerateReport("pdf"));
+```
+
+[Learn more about Durable Jobs →](./guide/durable-jobs)
 
 ### Locks
 
@@ -102,20 +135,20 @@ await ProcessAsync();
 
 [Learn more about Locks →](./guide/locks)
 
-### Messaging
+### Queues and Message Bus (legacy)
+
+The original `IQueue<T>` and `IMessageBus` remain supported:
 
 ```csharp
-using Foundatio.Messaging;
+IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
+await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
 
 IMessageBus messageBus = new InMemoryMessageBus();
-await messageBus.SubscribeAsync<SimpleMessage>(msg => {
-  // Got message
-});
-
+await messageBus.SubscribeAsync<SimpleMessage>(msg => { /* Got message */ });
 await messageBus.PublishAsync(new SimpleMessage { Data = "Hello" });
 ```
 
-[Learn more about Messaging →](./guide/messaging)
+[Queues (legacy) →](./guide/queues) · [Message Bus (legacy) →](./guide/message-bus) · [Migrating →](./guide/migrating-to-messaging)
 
 ### File Storage
 

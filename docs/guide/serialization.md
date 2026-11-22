@@ -333,5 +333,5 @@ If different applications use different serializers on the same topic, deseriali
 
 - [Caching](/guide/caching) - Cache-specific serialization patterns
 - [Queues](/guide/queues) - Queue serialization and message size considerations
-- [Messaging](/guide/messaging) - Message bus serialization and shared topics
+- [Message Bus (legacy)](/guide/message-bus) - Message bus serialization and shared topics
 - [Resilience](/guide/resilience) - Configure resilience policies

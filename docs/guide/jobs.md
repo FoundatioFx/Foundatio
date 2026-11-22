@@ -1,4 +1,8 @@
-# Jobs
+# Hosted Jobs (IJob)
+
+::: tip Durable jobs
+This page covers `IJob` and its base classes, hosted with `services.AddJob<T>()`, which remain the way to run a continuous loop. For stored jobs you enqueue or schedule, with arguments, progress, cancellation, retries and CRON, see [Durable Jobs](./durable-jobs); queue jobs (`QueueJobBase<T>`) become [message handlers](./messaging). To move existing jobs, see [Migrating](./migrating-to-messaging).
+:::
 
 Jobs allow you to run long-running processes without worrying about them being terminated prematurely. Foundatio provides several base classes that handle the boilerplate of continuous execution, cancellation, locking, queue processing, and hosting integration — so you focus on your business logic.
 

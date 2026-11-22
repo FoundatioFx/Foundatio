@@ -10,7 +10,7 @@ Foundatio provides Redis implementations for caching, queues, messaging, locks, 
 | `RedisHybridCacheClient` | `ICacheClient` | Foundatio.Redis |
 | `RedisQueue<T>` | `IQueue<T>` | Foundatio.Redis |
 | `RedisMessageBus` | `IMessageBus` | Foundatio.Redis |
-| `RedisMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.Redis |
+| `RedisMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.Redis |
 | `RedisJobStore` | `IJobStore` ([Durable Jobs](/guide/durable-jobs)) | Foundatio.Redis |
 | `RedisFileStorage` | `IFileStorage` | Foundatio.Redis |
 | `CacheLockProvider` | `ILockProvider` | Foundatio (with Redis cache) |
@@ -169,7 +169,7 @@ Combines Redis (L2 distributed cache) with a local in-memory cache (L1) for opti
 - **Full flush**: `RemoveAllAsync()` with no keys clears entire L1 cache on all instances.
 
 ::: warning Shared Message Bus Topic
-By default, all instances share the same Redis pub/sub topic for invalidation. In high-write scenarios, consider using separate topics per feature area. See the [Caching Guide](/guide/caching#hybrid-cache-invalidation-traffic) for details.
+By default, all instances share the same Redis pub/sub topic for invalidation. In high-write scenarios, consider using separate topics per feature area. See [Hybrid Cache - Performance Considerations](/guide/implementations/hybrid-cache#performance-considerations) for details.
 :::
 
 ### Basic Usage
@@ -326,7 +326,7 @@ await messageBus.SubscribeAsync<OrderCreatedEvent>(HandleOrder);
 
 ## Messages and Durable Jobs
 
-`RedisMessageTransport` runs [Messages and Events](/guide/messages) on Redis Streams, and `RedisJobStore` stores [Durable Jobs](/guide/durable-jobs). Register both with `UseRedis`, which uses the `IConnectionMultiplexer` registered in DI:
+`RedisMessageTransport` runs [Messaging](/guide/messaging) on Redis Streams, and `RedisJobStore` stores [Durable Jobs](/guide/durable-jobs). Register both with `UseRedis`, which uses the `IConnectionMultiplexer` registered in DI:
 
 ```csharp
 builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
@@ -338,7 +338,7 @@ builder.Services.AddFoundatioJobs(j => j
     .AddJob<GenerateReportJob>());
 ```
 
-See [Using Redis](/guide/messages#using-redis) for messaging, [Using Redis](/guide/durable-jobs#using-redis) for jobs, and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport) for every option.
+See [Using Redis](/guide/messaging#using-redis) for messaging, [Using Redis](/guide/durable-jobs#using-redis) for jobs, and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport) for every option.
 
 ### Monitoring Messages
 

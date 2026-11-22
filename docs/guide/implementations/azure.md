@@ -10,7 +10,7 @@ Foundatio provides Azure implementations for storage, queuing, and messaging usi
 | `AzureStorageQueue<T>` | `IQueue<T>` | Foundatio.AzureStorage |
 | `AzureServiceBusQueue<T>` | `IQueue<T>` | Foundatio.AzureServiceBus |
 | `AzureServiceBusMessageBus` | `IMessageBus` | Foundatio.AzureServiceBus |
-| `AzureServiceBusMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.AzureServiceBus |
+| `AzureServiceBusMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.AzureServiceBus |
 
 ## Installation
 
@@ -133,7 +133,7 @@ For additional options, see [AzureServiceBusMessageBusOptions source](https://gi
 
 ## Messages and Events
 
-`AzureServiceBusMessageTransport` runs [Messages and Events](/guide/messages) on Service Bus queues, topics and subscriptions. Register it with `UseAzureServiceBus`:
+`AzureServiceBusMessageTransport` runs [Messaging](/guide/messaging) on Service Bus queues, topics and subscriptions. Register it with `UseAzureServiceBus`:
 
 ```csharp
 builder.Services.AddFoundatioMessaging(m => m
@@ -146,7 +146,7 @@ builder.Services.AddFoundatioMessaging(m => m
 - `RequiresSession = true` orders groups with sessions; `RequiresDuplicateDetection = true` drops repeated deduplication ids.
 - `CreateEntities = false` uses entities created ahead of time, for applications without Manage rights.
 
-See [Using Azure Service Bus](/guide/messages#using-azure-service-bus) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for the mapping, sessions, sizes and limits.
+See [Using Azure Service Bus](/guide/messaging#using-azure-service-bus) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for the mapping, sessions, sizes and limits.
 
 ### Monitoring Messages
 
@@ -174,5 +174,6 @@ The tests read their connection string from `ConnectionStrings:AzureServiceBusCo
 
 - [File Storage Guide](/guide/storage) - Usage patterns
 - [Queues Guide](/guide/queues) - Queue processing patterns
-- [Messaging Guide](/guide/messaging) - Pub/sub patterns
+- [Messaging Guide](/guide/messaging) - Commands and events on this transport
+- [Message Bus Guide](/guide/message-bus) - `IMessageBus` pub/sub (legacy)
 - [Serialization](/guide/serialization) - Configure serialization

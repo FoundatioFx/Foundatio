@@ -17,11 +17,11 @@ The original queue, message bus and job APIs keep working alongside the new ones
 | `IJob` / `JobBase` run continuously with `services.AddJob<T>()` | Unchanged: keep `services.AddJob<T>()`. Durable jobs only run when enqueued or scheduled |
 | Queue behaviors, duplicate detection | `SendOptions.DeduplicationId` where the transport supports it (elsewhere a warning is logged); otherwise idempotent handlers |
 | `QueueEntryOptions.GroupId` | `SendOptions.GroupKey` |
-| Tests that call `job.RunAsync()` / `RunUntilEmptyAsync()` and assert queue stats between steps | `AddFoundatioTestHarness(o => o.StartPaused = true)`, then `harness.ProcessPendingAsync<T>()`; see [running work step by step](./messages#running-work-step-by-step) |
+| Tests that call `job.RunAsync()` / `RunUntilEmptyAsync()` and assert queue stats between steps | `AddFoundatioTestHarness(o => o.StartPaused = true)`, then `harness.ProcessPendingAsync<T>()`; see [running work step by step](./messaging#running-work-step-by-step) |
 
 ## Step by step
 
-1. Add `AddFoundatioMessaging(m => m.UseRedis())` next to your existing registrations. It uses the `IConnectionMultiplexer` you already register for Redis; for SQS or Kafka, see [Transports](./messages#transports).
+1. Add `AddFoundatioMessaging(m => m.UseRedis())` next to your existing registrations. It uses the `IConnectionMultiplexer` you already register for Redis; for SQS or Kafka, see [Transports](./messaging#transports).
 2. Keep your existing `IMessageBus` registration, such as `RedisMessageBus`, while you migrate. It runs side by side with the new messaging, and `HybridCacheClient`, `CacheLockProvider` and your subscribers keep using it unchanged. See [Moving IMessageBus to the new transport](#moving-imessagebus-to-the-new-transport) for the last step.
 3. Move a queue: change its producers to `SendAsync`, turn its `QueueJobBase<T>` into an `IMessageHandler<T>`, and register it with `AddConsumer`. Drain the old queue before removing its job.
 4. Move scheduled jobs: convert each to `IJobHandler` and replace `services.AddCronJob<T>(...)` with `j.AddCronJob<T>(...)`, or schedule it unchanged with `j.AddCronJob<LegacyJob<T>>(...)`. Give each job a stable `[Job(Name = "...")]`. Leave jobs that run continuously on `services.AddJob<T>()`.

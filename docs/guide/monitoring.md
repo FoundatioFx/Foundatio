@@ -108,7 +108,7 @@ public class ImportCatalogHandler(ICatalog catalog) : IMessageHandler<ImportCata
 - Percent is 0 to 100; anything else throws `ArgumentOutOfRangeException`. Pass null to keep the previous value, for example to change only the message.
 - Reporting makes the work show as active at once, even below `ActiveThreshold`, and keeps it in recent work when it finishes.
 - It is cheap to call in a loop: the monitor always sees the latest values, and the rest is throttled to about four times a second.
-- For a message, a report also adds a `progress` event to the handler's trace span and logs at Debug. It never calls the transport: the message's lease is renewed automatically either way. For a job, it is also saved to the job, where `IJobClient.GetAsync` reads it. See [messages](./messages#reporting-progress) and [jobs](./durable-jobs#reporting-progress).
+- For a message, a report also adds a `progress` event to the handler's trace span and logs at Debug. It never calls the transport: the message's lease is renewed automatically either way. For a job, it is also saved to the job, where `IJobClient.GetAsync` reads it. See [messages](./messaging#reporting-progress) and [jobs](./durable-jobs#reporting-progress).
 
 ## Reading the monitor
 

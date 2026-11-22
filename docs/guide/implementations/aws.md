@@ -9,7 +9,7 @@ Foundatio provides AWS implementations for file storage, queuing, and messaging 
 | `S3FileStorage` | `IFileStorage` | Foundatio.AWS |
 | `SQSMessageBus` | `IMessageBus` | Foundatio.AWS |
 | `SQSQueue<T>` | `IQueue<T>` | Foundatio.AWS |
-| `SqsMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.AWS |
+| `SqsMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.AWS |
 
 ## Installation
 
@@ -181,7 +181,7 @@ Deleting a queue takes up to 60 seconds in SQS, and a send during that window ca
 
 ## Messages and Events
 
-`SqsMessageTransport` runs [Messages and Events](/guide/messages) on SQS queues and SNS topics. Register it with `UseSqs`:
+`SqsMessageTransport` runs [Messaging](/guide/messaging) on SQS queues and SNS topics. Register it with `UseSqs`:
 
 ```csharp
 builder.Services.AddFoundatioMessaging(m => m
@@ -194,7 +194,7 @@ builder.Services.AddFoundatioMessaging(m => m
 - **Receives**: a receive long-polls for up to 20 seconds and returns at most 10 messages, so a receiver takes up to 16 receives at once (`MaxConcurrentReceives`) to keep handlers busy, and Foundatio receives ahead of free handler slots (`ReceiveAhead`): messages wait, leased and renewed, until a handler is free. While the queue is drained, only one receive long-polls; each that returns a full batch lets one more poll. The 16 receives and reading ahead were measured on the Floci emulator, not yet on real AWS, which may return short batches from a backlog and so park receives sooner. SQS hands each message, and each FIFO group with a message in flight, to one receive at a time. The early messages a receive gets are hidden with one `ChangeMessageVisibilityBatch` call, or sent again with one `SendMessageBatch` and one `DeleteMessageBatch`.
 - **Settlement**: completions, renewals and abandons are sent as batch calls of up to 10 messages, as a group commit: at once while no call is in flight, otherwise with the next call.
 
-See [Using SQS](/guide/messages#using-sqs) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for options, delays, quotas and IAM actions.
+See [Using SQS](/guide/messaging#using-sqs) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for options, delays, quotas and IAM actions.
 
 ### Monitoring Messages
 
@@ -222,5 +222,6 @@ The SQS message bus tests read their connection string from `ConnectionStrings:S
 
 - [File Storage Guide](/guide/storage) - Usage patterns
 - [Queues Guide](/guide/queues) - Queue processing patterns
-- [Messaging Guide](/guide/messaging) - Pub/sub patterns and best practices
+- [Messaging Guide](/guide/messaging) - Commands and events on this transport
+- [Message Bus Guide](/guide/message-bus) - `IMessageBus` pub/sub (legacy)
 - [Serialization](/guide/serialization) - Configure serialization

@@ -5,7 +5,7 @@ export default defineConfig({
   title: 'Foundatio',
   description: 'Pluggable foundation blocks for building loosely coupled distributed apps',
   base: '/',
-  ignoreDeadLinks: true,
+  ignoreDeadLinks: false,
   vite: {
     plugins: [
       llmstxt({
@@ -40,24 +40,29 @@ export default defineConfig({
           ]
         },
         {
-          text: 'Core Abstractions',
+          text: 'Messaging & Jobs',
           items: [
-            { text: 'Caching', link: '/guide/caching' },
-            { text: 'Queues', link: '/guide/queues' },
-            { text: 'Locks', link: '/guide/locks' },
             { text: 'Messaging', link: '/guide/messaging' },
-            { text: 'File Storage', link: '/guide/storage' },
-            { text: 'Jobs', link: '/guide/jobs' }
+            { text: 'Durable Jobs', link: '/guide/durable-jobs' },
+            { text: 'Monitoring', link: '/guide/monitoring' },
+            { text: 'Migrating from Queues, Message Bus and Jobs', link: '/guide/migrating-to-messaging' },
+            { text: 'Building a Transport or Job Store', link: '/guide/implementing-providers' }
           ]
         },
         {
-          text: 'Messaging & Jobs',
+          text: 'Core Abstractions',
           items: [
-            { text: 'Messages and Events', link: '/guide/messages' },
-            { text: 'Durable Jobs', link: '/guide/durable-jobs' },
-            { text: 'Monitoring', link: '/guide/monitoring' },
-            { text: 'Migrating', link: '/guide/migrating-to-messaging' },
-            { text: 'Building a Transport or Job Store', link: '/guide/implementing-providers' }
+            { text: 'Caching', link: '/guide/caching' },
+            { text: 'Locks', link: '/guide/locks' },
+            { text: 'File Storage', link: '/guide/storage' },
+            { text: 'Hosted Jobs (IJob)', link: '/guide/jobs' }
+          ]
+        },
+        {
+          text: 'Legacy APIs',
+          items: [
+            { text: 'Queues (IQueue)', link: '/guide/queues' },
+            { text: 'Message Bus (IMessageBus)', link: '/guide/message-bus' }
           ]
         },
         {

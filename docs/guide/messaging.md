@@ -1,1059 +1,434 @@
+---
+head:
+  - - script
+    - {}
+    - "addEventListener('DOMContentLoaded', () => { const id = decodeURIComponent(location.hash.slice(1)); if (id && !document.getElementById(id)) location.replace('/guide/message-bus' + location.hash) })"
+---
+
 # Messaging
 
-Messaging allows you to publish and subscribe to messages flowing through your application using pub/sub patterns. Foundatio provides multiple message bus implementations through the `IMessageBus` interface.
+Send commands to one consumer, or publish events to every interested service. Handlers are plain classes resolved from DI; Foundatio takes care of serialization, retries, dead letters, concurrency, lease renewal and graceful shutdown.
 
-::: tip New code
-For commands and events with handler classes, retries, dead letters and durable subscriptions, use `IMessageClient`; see [Messages and Events](./messages). This page covers the original `IMessageBus`, which remains supported.
-:::
+> This replaces `IQueue<T>` and `IMessageBus` for new code. Both remain available, documented under [Queues (legacy)](./queues) and [Message Bus (legacy)](./message-bus); see [Migrating](./migrating-to-messaging) to move existing code, or to [use both APIs side by side](./migrating-to-messaging#mixing-imessagebus-and-imessageclient).
 
-## The IMessageBus Interface
-
-[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Messaging/IMessageBus.cs)
+## Quick start
 
 ```csharp
-public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable, IAsyncDisposable
+// Contracts: plain records with stable names
+[Message("orders.order-placed")] public record OrderPlaced(int OrderId, string Email);
+[Message("orders.send-receipt")] public record SendReceipt(int OrderId, string Email);
+
+// Handlers
+public class OrderPlacedHandler(IMessageClient messages) : IMessageHandler<OrderPlaced>
 {
+    public Task HandleAsync(OrderPlaced order, IMessageContext context, CancellationToken ct)
+        => messages.SendAsync(new SendReceipt(order.OrderId, order.Email), cancellationToken: ct);
 }
 
-public interface IMessagePublisher
+public class SendReceiptHandler(IEmailSender email) : IMessageHandler<SendReceipt>
 {
-    Task PublishAsync(Type messageType, object message,
-                      MessageOptions? options = null,
-                      CancellationToken cancellationToken = default);
+    public Task HandleAsync(SendReceipt receipt, IMessageContext context, CancellationToken ct)
+        => email.SendReceiptAsync(receipt.Email, receipt.OrderId, ct);
 }
 
-public interface IMessageSubscriber
-{
-    Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler,
-                           CancellationToken cancellationToken = default) where T : class;
-}
+// Registration
+builder.Services.AddFoundatioMessaging(m => m
+    .UseServiceName("orders")             // names this service's subscriptions
+    .UseInMemory()                        // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...) or UseRabbitMQ(...); see Transports
+    .AddSubscriber<OrderPlacedHandler>()  // events
+    .AddConsumer<SendReceiptHandler>());  // commands
+
+// Anywhere
+app.MapPost("/orders", (IMessageClient messages) => messages.PublishAsync(new OrderPlaced(1, "a@b.com")));
 ```
 
-## Implementations
+Registered handlers start receiving when the host starts. A process that registers no handlers only sends.
 
-### InMemoryMessageBus
+## Transports
 
-An in-memory message bus for development and testing:
+`UseInMemory()` keeps messages in the process, which suits tests and a single instance. To run several instances, use a broker. Each provider package adds a `Use...` method to the builder, with no extra `using`; the options types are in `Foundatio.Messaging.Transport`.
 
-[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Messaging/InMemoryMessageBus.cs)
+- The service provider creates the transport and disposes it when the host shuts down.
+- `LoggerFactory` and `TimeProvider` come from the service provider unless the options set them.
+- Each method takes the options, or a `Func<IServiceProvider, TOptions>` that builds them, for example from configuration.
+
+### Using Redis
+
+`dotnet add package Foundatio.Redis`. The transport uses Redis Streams. It needs Redis 6.2 or later, or Valkey, on a single server, Sentinel or a cluster.
 
 ```csharp
-using Foundatio.Messaging;
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioMessaging(m => m
+    .UseRedis(new RedisMessageTransportOptions { Prefix = "myapp:messaging" })   // or UseRedis() for the defaults
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+```
 
-var messageBus = new InMemoryMessageBus();
+- `UseRedis()` uses the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. To use another connection, call `UseRedis(connection, options)`. Either way the connection stays yours; the transport doesn't close it.
+- It orders groups, honors `DeduplicationId`, and delays messages for any length of time.
+- Messages live in Redis memory. Set `maxmemory-policy noeviction`, and bound dead letters with `DeadLetterMaxLength` or `DeadLetterRetention`.
+- See the [Redis README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport) for every option, memory use and latency.
 
-// Subscribe to messages
-await messageBus.SubscribeAsync<OrderCreated>(async msg =>
+### Using SQS
+
+`dotnet add package Foundatio.AWS`. Queues are SQS queues; topics are SNS topics, and each subscription is an SQS queue subscribed to its topic.
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseSqs(new SqsMessageTransportOptions { ConnectionString = "Region=us-east-1", Prefix = "prod-" })
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or build the options from configuration
+m.UseSqs(sp => new SqsMessageTransportOptions
 {
-    Console.WriteLine($"Order created: {msg.OrderId}");
+    ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("Sqs"),
+    Prefix = "prod-"
 });
-
-// Publish a message
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 ```
 
-### AzureServiceBusMessageBus
+- Without a connection string (`UseSqs()`), the default AWS credential and region resolution is used, such as an IAM role.
+- Standard queues neither order groups nor deduplicate. Set `Fifo = true` for both, at lower throughput.
+- An empty `Prefix` shares queue names with `SQSQueue<T>` and `SQSMessageBus`. Use a prefix while they run side by side.
+- See the [AWS README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for delays, quotas and the IAM actions the transport needs.
 
-Messaging using Azure Service Bus (separate package):
+### Using Kafka
 
-[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs)
+`dotnet add package Foundatio.Kafka`. Queues and topics are Kafka topics, and each queue and durable subscription reads its topic as a consumer group.
 
 ```csharp
-// dotnet add package Foundatio.AzureServiceBus
+builder.Services.AddFoundatioMessaging(m => m
+    .UseKafka("localhost:9092")
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
 
-using Foundatio.Messaging;
-
-var messageBus = new AzureServiceBusMessageBus(o => o
-    .ConnectionString("...")
-    .Topic("events"));
+// Or with options
+m.UseKafka(new KafkaMessageTransportOptions { BootstrapServers = "broker:9092", Partitions = 6, ReplicationFactor = 3 });
 ```
 
-### KafkaMessageBus
+- It orders groups and delays messages through delay topics. It doesn't deduplicate, and leases never expire.
+- Competing instances share a topic's partitions, so create topics with at least as many partitions as you run instances.
+- A consumer that crashes keeps its partitions until the group's session timeout ends (45 seconds by default), so their messages wait that long; the README says how to shorten it.
+- See the [Kafka README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for how it maps to Kafka, retention and limits.
 
-Messaging using Apache Kafka (separate package):
+### Using Azure Service Bus
 
-[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBus.cs)
-
-```csharp
-// dotnet add package Foundatio.Kafka
-
-using Foundatio.Messaging;
-
-var messageBus = new KafkaMessageBus(o => o.BootstrapServers("localhost:9092"));
-```
-
-### RabbitMQMessageBus
-
-Messaging using RabbitMQ (separate package):
-
-[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+`dotnet add package Foundatio.AzureServiceBus`. Queues are Service Bus queues, topics are topics, and each subscription is a topic subscription.
 
 ```csharp
-// dotnet add package Foundatio.RabbitMQ
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureServiceBus(builder.Configuration.GetConnectionString("ServiceBus")!)
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
 
-using Foundatio.Messaging;
-
-var messageBus = new RabbitMQMessageBus(o => o.ConnectionString("amqp://guest:guest@localhost:5672"));
-```
-
-### RedisMessageBus
-
-Distributed messaging using Redis pub/sub (separate package):
-
-[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Redis/Messaging/RedisMessageBus.cs)
-
-```csharp
-// dotnet add package Foundatio.Redis
-
-using Foundatio.Messaging;
-using StackExchange.Redis;
-
-var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
-var messageBus = new RedisMessageBus(o => o.Subscriber(redis.GetSubscriber()));
-```
-
-### SQSMessageBus
-
-Messaging using AWS SNS/SQS (separate package):
-
-[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AWS/Messaging/SQSMessageBus.cs)
-
-```csharp
-// dotnet add package Foundatio.AWS
-
-using Foundatio.Messaging;
-
-var messageBus = new SQSMessageBus(o => o
-    .ConnectionString(connectionString)
-    .Topic("events")
-    // Optional: name the queue for durable subscriptions
-    .SubscriptionQueueName("my-service-queue"));
-```
-
-## Basic Usage
-
-### Publishing Messages
-
-```csharp
-var messageBus = new InMemoryMessageBus();
-
-// Simple publish
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-
-// With options
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, new MessageOptions
+// Or with options, for example Microsoft Entra ID and sessions
+m.UseAzureServiceBus(new AzureServiceBusMessageTransportOptions
 {
-    CorrelationId = "request-abc",
-    DeliveryDelay = TimeSpan.FromSeconds(30),
-    Properties = new Dictionary<string, string>
+    FullyQualifiedNamespace = "my-namespace.servicebus.windows.net",
+    Credential = new DefaultAzureCredential(),
+    RequiresSession = true
+});
+```
+
+- Without a connection in the options (`UseAzureServiceBus()`), it uses the `ServiceBusClient` and `ServiceBusAdministrationClient` registered in DI, which stay yours.
+- Without options it neither orders groups nor deduplicates. `RequiresSession = true` orders groups with sessions and `RequiresDuplicateDetection = true` deduplicates; entities must be created in the same mode.
+- Delays are scheduled messages, for any length of time. Leases follow each entity's lock duration (1 minute by default, at most 5), renewed by Foundatio.
+- The transport creates queues, topics and subscriptions as it needs them. Set `CreateEntities = false` when they are provisioned for you.
+- See the [Azure Service Bus README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for names, sessions, sizes and the emulator.
+
+### Using RabbitMQ
+
+`dotnet add package Foundatio.RabbitMQ`. It needs RabbitMQ 4. Queues and subscriptions are quorum queues; topics are fanout exchanges, and each durable subscription is a queue bound to its topic's exchange.
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseRabbitMQ("amqp://guest:guest@localhost:5672")
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or with options, on the IConnection registered in DI (for example by Aspire's AddRabbitMQClient)
+m.UseRabbitMQ(new RabbitMQMessageTransportOptions { Prefix = "myapp" });
+```
+
+- Without a `ConnectionString`, `UseRabbitMQ` uses the `IConnection` registered in DI, and the host fails to start without one; that connection stays yours. With one, the transport opens and closes its own connections.
+- It delays messages for up to about 8.5 years, in whole seconds, through delay queues on the broker that need no plugin and survive restarts. It doesn't order groups or deduplicate, and leases never expire.
+- A handler that holds a message longer than the broker's `consumer_timeout` (30 minutes by default) loses its channel, and the message is delivered again; raise it for long handlers, or use jobs.
+- Sends wait for the broker's confirms for at most `PublishTimeout` (30 seconds), then throw `MessageBusException`. `Hosts` lists nodes to fail over between. On a cluster, set `cluster_partition_handling = pause_minority`: with the default, a node cut off from the others keeps its clients, whose sends time out and whose receivers get nothing for about a minute.
+- See the [RabbitMQ README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ#message-transport-preview) for how it maps to RabbitMQ, headers, counts and limits.
+
+## Send or publish?
+
+| | `SendAsync` (command) | `PublishAsync` (event) |
+|---|---|---|
+| Who gets it | One consumer | Every subscribing service |
+| Register with | `AddConsumer<THandler>()` | `AddSubscriber<THandler>()` |
+| Replicas of one service | Compete | Compete for the service's copy |
+| While no one is listening | Waits in the queue | Copies wait in each existing subscription; with no subscriptions it is dropped |
+
+Mixing them up delivers nothing, and only your app's own handlers are known to it: the first time a type is sent that your app only subscribes to, or published that it only consumes, a warning is logged suggesting the other call. A mix-up between services is not detected.
+
+For "every running instance" (local caches, pushing to WebSocket clients) use an instance-scoped subscriber:
+
+```csharp
+m.AddSubscriber<InvalidateLocalCache>(new SubscriptionOptions { Scope = SubscriptionScope.Instance });
+
+// or at runtime, until disposed
+await using var subscription = await messages.SubscribeAsync<OrderPlaced>((order, context, ct) => hub.NotifyAsync(order, ct));
+```
+
+### Service names and shared subscriptions
+
+A service's subscription to a topic is named after the service, set with `m.UseServiceName("billing")`. The broker keeps the subscription under that name, so choose it deliberately: two services with the same name split each other's events, and renaming a service starts new subscriptions that receive events published from then on, leaving the old ones' backlog behind. On every transport except the in-memory one, the host fails to start when a service-scoped subscriber has no name to use. Only the in-memory transport, and so the test harness, defaults it to the host's application name.
+
+All subscribers of one topic in a service share that subscription, so they share each delivery:
+
+- If one handler throws, every handler of that event runs again on the retry, so keep them all idempotent.
+- They run with one `RetryPolicy`, `LeaseDuration` and `MaxConcurrency`. The host fails to start when handlers that share a subscription set different values. A value set on one handler and left unset on the other counts as different. Policies compare by value: two built the same way with `RetryPolicy.Exponential`, `Fixed` and `DoNotRetry` are equal, but two with `Delay` or `ShouldRetry` delegates you wrote yourself differ unless they share the instance.
+
+To retry a handler on its own, with its own settings, give it a subscription of its own:
+
+```csharp
+m.AddSubscriber<SendWelcomeEmail>()   // subscription "billing"
+ .AddSubscriber<SyncToCrm>(new SubscriptionOptions { Name = "billing-crm", RetryPolicy = RetryPolicy.None });
+```
+
+Moving a handler to a new subscription name, or renaming one, starts that subscription with events published from then on: events still waiting in the old subscription reach only the handlers left on it. A subscription that no handler uses any more keeps collecting copies until you delete it with `IMessageAdmin.DeleteAsync`. The same rules apply to instance subscribers of one topic, and to consumers of message types that you route to one queue.
+
+## Handling outcomes
+
+- **Return** to complete the message.
+- **Throw** to retry. The default policy makes 5 attempts, waiting about 1s, 4s, 16s and 64s; then the message is dead-lettered.
+- **Decide without throwing**: `context.DeadLetter("invalid sku")` or `context.Retry(TimeSpan.FromMinutes(1))`.
+
+```csharp
+m.AddConsumer<ImportHandler>(new HandlerOptions
+{
+    MaxConcurrency = 4,                                  // per instance; default: processor count
+    LeaseDuration = TimeSpan.FromMinutes(5),             // renewed automatically while handling
+    RetryPolicy = RetryPolicy.Default.DoNotRetry<ValidationException>()
+});
+```
+
+A retry waits on the broker when it can delay it. When it can't (Kafka or RabbitMQ without delayed delivery, or a delay under the transport's `MinRetryDelay`, such as SQS's whole seconds), Foundatio holds the message in-process for the backoff. The message stays leased, and other messages use its handler slot meanwhile. At most 10 × `MaxConcurrency` messages per handler are held that way; further retries keep their slots until the backoff ends. A delay within 20% of `MinRetryDelay` is lengthened to it instead, so the default policy's first retry (about 1s) waits on the broker. Stopping the host releases held messages at once.
+
+Settling doesn't keep a handler slot waiting on the broker: once a handler returns, the complete, abandon or dead-letter runs while the slot takes the next message. The message stays in flight until the settlement finishes, and only then is its outcome reported and shutdown done waiting for it. Up to 2 × `MaxConcurrency` settlements per handler run that way; past that a settlement keeps its slot until it finishes. In an ordered group, the group's next message still waits for the previous one to settle.
+
+On SQS, Redis and Service Bus without sessions, receiving doesn't wait for a free handler slot either: while the handlers are busy, Foundatio receives full batches ahead of them, and the messages wait, leased and renewed, until a slot frees. How far it reads ahead adapts to how long your handlers and the broker's receives take, so a buffered message normally waits less than a second (or a quarter of the lease, if that's shorter); it doesn't read ahead for handlers that take longer than that, and reads ahead only as many messages as keep the buffered bodies within 16 MiB at their recent size. While the source is drained, only one receive long-polls. Buffered messages count as unsettled on the broker (in flight on SQS and Redis, queued on Service Bus), show in `MessagingStatus` as `Buffered` rather than `Active`, and hold back their group's later messages. Stopping the host handles them within the shutdown drain; any still buffered when it times out, or when a failed receiver is replaced, are released without running their handlers and delivered again.
+
+To read handler options from configuration bound after your registrations, pass a factory: `m.AddConsumer<ImportHandler>(sp => new HandlerOptions { MaxConcurrency = sp.GetRequiredService<IOptions<ImportSettings>>().Value.Workers })`, or `AddSubscriber<THandler>(sp => new SubscriptionOptions { ... })`. It runs when the host starts. A consumer has no subscription, so passing `SubscriptionOptions` with a `Name` or `Scope` to `AddConsumer` throws.
+
+`MessagingOptions`, which `m.Configure(...)` changes, is a standard options class: `services.Configure<MessagingOptions>(...)` and binding it from configuration work too, applied in the order they were registered.
+
+Stopping the host doesn't cancel handlers at once. As soon as the host begins stopping, every handler stops receiving, and the job worker stops claiming, so nothing new starts during shutdown. Foundatio then waits up to `MessagingOptions.ShutdownTimeout` (20 seconds, set with `m.Configure(o => o.ShutdownTimeout = ...)`) for in-flight messages to finish, then fires their cancellation token and gives the handlers 5 more seconds; those messages are delivered again. Messaging and jobs drain at the same time, so keep each `ShutdownTimeout` plus 5 seconds under the host's `HostOptions.ShutdownTimeout` (30 seconds by default) and your orchestrator's grace period (30 seconds on Kubernetes).
+
+Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent.
+
+When the broker can't be reached to renew a lease (SQS, Redis, Service Bus), Foundatio cancels the handler's `CancellationToken` shortly before the lease ends (a quarter of the lease before, at most 5 seconds) and leaves the message unsettled, as the job worker does with a job's lease, so it doesn't keep running while the broker gives the message to another consumer. Pass the token on to whatever the handler awaits. Kafka and RabbitMQ leases don't expire, so failed renewals there never cancel a handler.
+
+## Reporting progress
+
+A long-running handler can report how far it has got, so it shows in the [monitor](./monitoring) with its progress:
+
+```csharp
+public class ImportCatalogHandler(ICatalog catalog) : IMessageHandler<ImportCatalog>
+{
+    public async Task HandleAsync(ImportCatalog message, IMessageContext context, CancellationToken ct)
     {
-        ["source"] = "order-service"
-    }
-});
-
-// Delayed publish (extension method)
-await messageBus.PublishAsync(
-    new OrderReminder { OrderId = 123 },
-    TimeSpan.FromHours(1)
-);
-```
-
-### Subscribing to Messages
-
-```csharp
-var messageBus = new InMemoryMessageBus();
-
-// Simple subscription
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    Console.WriteLine($"Processing order: {order.OrderId}");
-});
-
-// With cancellation token
-await messageBus.SubscribeAsync<OrderCreated>(
-    async (order, ct) =>
-    {
-        await ProcessOrderAsync(order, ct);
-    },
-    cancellationToken
-);
-
-// Synchronous handler
-await messageBus.SubscribeAsync<OrderCreated>(order =>
-{
-    Console.WriteLine($"Order: {order.OrderId}");
-});
-```
-
-### Multiple Subscribers
-
-Each subscriber receives every message:
-
-```csharp
-var messageBus = new InMemoryMessageBus();
-
-// Handler 1: Logging
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    _logger.LogInformation("Order {OrderId} created", order.OrderId);
-});
-
-// Handler 2: Notification
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    await _notificationService.SendAsync(order.CustomerId, "Order placed!");
-});
-
-// Handler 3: Analytics
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    await _analytics.TrackAsync("order_created", order.OrderId);
-});
-
-// All three handlers receive this message
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-```
-
-## Message Types
-
-### Define Your Messages
-
-```csharp
-// Simple message
-public record OrderCreated
-{
-    public int OrderId { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public string CustomerId { get; init; }
-}
-
-// Message with interface for grouping
-public interface IOrderEvent { int OrderId { get; } }
-
-public record OrderShipped : IOrderEvent
-{
-    public int OrderId { get; init; }
-    public string TrackingNumber { get; init; }
-}
-
-public record OrderDelivered : IOrderEvent
-{
-    public int OrderId { get; init; }
-    public DateTime DeliveredAt { get; init; }
-}
-```
-
-### Subscribe to Interface
-
-Subscribe to all messages implementing an interface:
-
-```csharp
-// Receives OrderShipped, OrderDelivered, and any other IOrderEvent
-await messageBus.SubscribeAsync<IOrderEvent>(async orderEvent =>
-{
-    _logger.LogInformation("Order event: {Type} for {OrderId}",
-        orderEvent.GetType().Name, orderEvent.OrderId);
-});
-```
-
-### IMessage Interface
-
-Use the built-in `IMessage` interface for raw message access:
-
-```csharp
-await messageBus.SubscribeAsync(async (IMessage message, CancellationToken ct) =>
-{
-    Console.WriteLine($"Type: {message.Type}");
-    Console.WriteLine($"Correlation ID: {message.CorrelationId}");
-
-    // Deserialize the data
-    var order = message.GetBody<OrderCreated>();
-});
-```
-
-#### Breaking change: `IMessage.Data` is now `ReadOnlyMemory<byte>`
-
-`IMessage.Data` exposes the raw payload as `ReadOnlyMemory<byte>` instead of `byte[]`. This lets memory-backed transports such as Azure Service Bus and RabbitMQ expose the payload without copying it into a new array. Since it is a struct, follow these patterns:
-
-- Check for an empty payload with `message.Data.IsEmpty` (not `== null`)
-- Read the bytes directly via `message.Data.Span`
-- Call `message.Data.ToArray()` only when you need a `byte[]`
-
-**Buffer validity:** `Data` is only guaranteed valid for the duration of message handling. Some providers (such as RabbitMQ) expose a pooled transport buffer that is reclaimed once your handler returns, so the framework deserializes the body within the handler. If you need to retain the raw payload beyond the current handler invocation, copy it with `message.Data.ToArray()`.
-
-Most code that uses `GetBody()` / `Body` is unaffected. When constructing a `Message`, you can still pass a `byte[]`; it converts implicitly to `ReadOnlyMemory<byte>`.
-
-## Common Patterns
-
-### Event-Driven Architecture
-
-Decouple services with events:
-
-```csharp
-// Order Service
-public class OrderService
-{
-    private readonly IMessageBus _messageBus;
-
-    public async Task CreateOrderAsync(CreateOrderRequest request)
-    {
-        var order = await _repository.CreateAsync(request);
-
-        // Publish event for other services
-        await _messageBus.PublishAsync(new OrderCreated
+        var pages = await catalog.GetPagesAsync(message.Url, ct);
+        for (int i = 0; i < pages.Count; i++)
         {
-            OrderId = order.Id,
-            CustomerId = request.CustomerId,
-            CreatedAt = DateTime.UtcNow
-        });
-    }
-}
-
-// Inventory Service (separate process/service)
-public class InventoryService
-{
-    public InventoryService(IMessageBus messageBus)
-    {
-        messageBus.SubscribeAsync<OrderCreated>(async order =>
-        {
-            await ReserveInventoryAsync(order.OrderId);
-        });
-    }
-}
-
-// Notification Service (separate process/service)
-public class NotificationService
-{
-    public NotificationService(IMessageBus messageBus)
-    {
-        messageBus.SubscribeAsync<OrderCreated>(async order =>
-        {
-            await SendConfirmationEmailAsync(order.CustomerId);
-        });
+            await catalog.ImportAsync(pages[i], ct);
+            await context.ReportProgressAsync((i + 1) * 100 / pages.Count, $"Page {i + 1} of {pages.Count}", ct);
+        }
     }
 }
 ```
 
-### Cache Invalidation
+- Percent is 0 to 100, or null to keep the last value; anything else throws `ArgumentOutOfRangeException`. A null message keeps the last message too.
+- A handler that reports progress shows as active at once, even if it finishes in a few milliseconds. One that doesn't shows after it has run for a second.
+- Each report updates the monitor, adds a `progress` event to the handler's trace span and logs at Debug. Events and logs are throttled to about four a second, apart from 100 percent, so calling it in a tight loop is cheap.
+- It never calls the transport. The message's lease is renewed automatically while the handler runs, whether or not it reports progress.
 
-Coordinate cache across instances:
+`ReportProgressAsync`, `Attempt`, `CorrelationId` and `Headers` come from `IHandlerContext` in the `Foundatio` namespace, which [jobs](./durable-jobs#reporting-progress) share, so a helper that takes an `IHandlerContext` works for both.
+
+## Dead letters
+
+Every queue and durable subscription has a dead-letter queue. Count, inspect and replay it with `IMessageAdmin`, on any transport. `MessageSource` and `MessageSourceStats` are in the `Foundatio.Messaging.Transport` namespace:
 
 ```csharp
-public class CacheInvalidationService
-{
-    private readonly IMessageBus _messageBus;
-    private readonly ICacheClient _localCache;
+var source = MessageSource.Subscription("orders.order-placed", "billing");   // or MessageSource.Queue("orders.send-receipt")
 
-    public CacheInvalidationService(IMessageBus messageBus, ICacheClient localCache)
-    {
-        _messageBus = messageBus;
-        _localCache = localCache;
-
-        // Listen for invalidation messages
-        _messageBus.SubscribeAsync<CacheInvalidated>(async msg =>
-        {
-            await _localCache.RemoveAsync(msg.Key);
-        });
-    }
-
-    public async Task InvalidateAsync(string key)
-    {
-        // Remove locally
-        await _localCache.RemoveAsync(key);
-
-        // Notify other instances
-        await _messageBus.PublishAsync(new CacheInvalidated { Key = key });
-    }
-}
-
-public record CacheInvalidated { public string Key { get; init; } }
+MessageSourceStats? counts = await admin.GetStatsAsync(source);   // Queued, Delayed, InFlight, DeadLettered; null where the transport can't tell
+IReadOnlyList<DeadLetterMessage> failed = await admin.PeekDeadLettersAsync(source);   // Reason, MessageType, Message (deserialized), Headers
+int replayed = await admin.ReplayDeadLettersAsync(source);   // back to that queue or subscription only
+await admin.PurgeDeadLettersAsync(source);
+await admin.DeleteAsync(MessageSource.Subscription("orders.order-placed", "retired-service"));   // stop collecting copies for a removed service
 ```
 
-### Real-Time Updates
+Replayed messages keep their id, body and headers and are handled as new deliveries; the dead-letter reason, delay and expiry are dropped.
 
-Push updates to clients:
+Dead-lettering is at least once, like delivery: on transports that move a message by copying it to the dead-letter queue and then removing the original (RabbitMQ, SQS and Kafka), a connection or lease lost in between delivers the original again, and it can be dead-lettered a second time. A dead-letter queue may then hold two entries with the same message id, which a replay sends twice; replayed handlers should be idempotent too.
+
+## Options when sending
 
 ```csharp
-// Server-side
-public class NotificationHub
+await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 {
-    private readonly IMessageBus _messageBus;
-
-    public NotificationHub(IMessageBus messageBus)
-    {
-        _messageBus = messageBus;
-
-        // Forward bus messages to SignalR/WebSocket
-        _messageBus.SubscribeAsync<UserNotification>(async notification =>
-        {
-            await _hubContext.Clients
-                .User(notification.UserId)
-                .SendAsync("notification", notification);
-        });
-    }
-}
-
-// When something happens
-await messageBus.PublishAsync(new UserNotification
-{
-    UserId = "user-123",
-    Message = "Your order has shipped!"
+    Delay = TimeSpan.FromMinutes(10),   // or DeliverAt
+    TimeToLive = TimeSpan.FromHours(1), // discard if not handled by then
+    GroupKey = "customer-42",           // ordered delivery where the transport supports it (ids and keys: up to 128 characters)
+    DeduplicationId = "receipt-1",      // dropped if seen recently, where the transport supports it
+    CorrelationId = "order-1",          // defaults to the message or job being handled
 });
 ```
 
-### Saga/Process Manager
+Delays longer than the transport supports are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
 
-Coordinate multi-step processes:
+`GroupKey` and `DeduplicationId` only guarantee something on transports that declare `OrderedGroups` and `Deduplication` in their `TransportCapabilities`. On other transports the message is still sent, and Foundatio logs a warning once per message type:
+
+- Without ordered groups, messages of one group may be handled concurrently and out of order. SQS standard queues still send the key as the `MessageGroupId` of fair queues.
+- Without deduplication (Kafka, RabbitMQ and SQS standard queues), a repeated `DeduplicationId` is delivered again.
+
+To throw `MessageBusException` instead of sending, set `m.Configure(o => o.RequireTransportCapabilities = true)`.
+
+With `GroupKey` on a transport that orders groups, messages of one group are handled one at a time, in order. When one is retried, the group's later messages wait for it, and each of them counts that as a delivery attempt. On SQS FIFO, a long-delayed message at the head of a group also adds an attempt to the messages behind it for about every 11 hours of its delay.
+
+## Message names and routing
+
+A message's name identifies it on the wire. By default it is the type's full name; set a stable one with `[Message("orders.order-placed")]` or `m.MapMessage<OrderPlaced>("orders.order-placed")`. By default a command goes to a queue, and an event to a topic, named after the message. Several types can share a topic:
 
 ```csharp
-public class OrderSaga
-{
-    private readonly IMessageBus _messageBus;
-
-    public OrderSaga(IMessageBus messageBus)
-    {
-        _messageBus = messageBus;
-
-        // Step 1: Order created -> Reserve inventory
-        _messageBus.SubscribeAsync<OrderCreated>(async order =>
-        {
-            await ReserveInventoryAsync(order.OrderId);
-            await _messageBus.PublishAsync(new InventoryReserved { OrderId = order.OrderId });
-        });
-
-        // Step 2: Inventory reserved -> Process payment
-        _messageBus.SubscribeAsync<InventoryReserved>(async evt =>
-        {
-            await ProcessPaymentAsync(evt.OrderId);
-            await _messageBus.PublishAsync(new PaymentProcessed { OrderId = evt.OrderId });
-        });
-
-        // Step 3: Payment processed -> Ship order
-        _messageBus.SubscribeAsync<PaymentProcessed>(async evt =>
-        {
-            await ShipOrderAsync(evt.OrderId);
-        });
-    }
-}
+[Message("orders.shipped", Topic = "orders")] public record OrderShipped(int OrderId);
+[Message("orders.cancelled", Topic = "orders")] public record OrderCancelled(int OrderId);
 ```
 
-## Message Options
+A subscriber ignores types on its topic that it has no handler for. A handler for a base type or interface also receives derived types:
 
-Configure message delivery:
+- **Derived types in the base type's assembly** arrive as themselves, with all their fields, even from another service. At startup Foundatio learns every concrete type in the assembly of each handled type, so keep events next to their base type in a contracts assembly both services share. A type whose name another type already has, such as one you mapped explicitly, is left out.
+- **Derived types this service can't load,** defined only in the publisher, arrive as the most derived concrete base type the handler accepts, without the fields that type lacks.
+- **When every base type the handler accepts is abstract or an interface,** there is nothing to deserialize such a message as. On a topic the handler misses it, and Foundatio logs a warning once per type; on a queue it is retried, then dead-lettered. Move the type into the base type's assembly, or map a concrete type to its name with `MapMessage<T>("name")`.
+
+## Testing
+
+Unit test a handler with `TestMessageContext`. It records the outcome the handler chose and the progress it reported:
 
 ```csharp
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, new MessageOptions
+var context = new TestMessageContext();
+await new SendReceiptHandler(fakeEmail).HandleAsync(new SendReceipt(1, "a@b.com"), context, CancellationToken.None);
+Assert.Null(context.DeadLetterReason);
+Assert.Empty(context.ProgressReports);   // every report, in order; Progress and ProgressMessage hold the last values
+```
+
+To test your real registrations end to end, add `AddFoundatioTestHarness()` (namespace `Foundatio.Testing`), before or after them. It runs your messaging and jobs on an in-memory transport and job store and records what happens, so a test acts, waits for the outcome and asserts, with no sleeps. It owns the transport and store whatever the order: a `UseRedis()`, `UseSqs()` or `UseTransport()` call, yours or a provider's, is ignored while the harness is registered, so a test never reaches a real broker. The app needs only the `Foundatio` package for this; the `Foundatio.TestHarness` package holds the conformance suites for transport authors.
+
+```csharp
+var builder = Host.CreateApplicationBuilder();
+builder.Services.AddOrdersApp();               // your AddFoundatioMessaging and AddFoundatioJobs calls
+builder.Services.AddFoundatioTestHarness(o => o.RetryDelay = TimeSpan.FromMilliseconds(10));
+using var host = builder.Build();
+await host.StartAsync();
+var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+var messages = host.Services.GetRequiredService<IMessageClient>();
+
+await messages.PublishAsync(new OrderPlaced(1, "a@b.com"));
+await harness.WaitForIdleAsync();
+
+Assert.Equal(1, Assert.Single(harness.Sent<SendReceipt>()).OrderId);
+Assert.All(harness.HandledMessages, m => Assert.Equal(MessageOutcome.Completed, m.Outcome));
+
+await messages.SendAsync(new SendReceipt(2, "bounce@b.com"));
+var deadLetter = Assert.Single(await harness.WaitForDeadLetteredAsync<SendReceipt>());
+Assert.Equal(5, deadLetter.Attempt);           // the default policy's attempts, 10 ms apart
+```
+
+- `SentMessages`, `PublishedMessages` and `HandledMessages` record each message with its id, correlation id, attempt and headers. Deliveries also record how they ended (`Completed`, `Retried`, `DeadLettered`, `Skipped`, `Expired` or `Released`), the error, the handlers that ran to completion (`Handlers`), and the last `Progress` and `ProgressMessage` the handler reported. `Sent<T>()` and `Published<T>()` return the messages themselves.
+- `WaitForHandledAsync<T>(count)` and `WaitForDeadLetteredAsync<T>(count)` return the deliveries once there are enough. They count deliveries of `T` to each queue or subscription, so two handlers that share a subscription count once; `WaitForHandledByAsync<THandler>(count)` and `HandledBy<THandler>()` count one handler's. On timeout (30 seconds by default) the exception says what happened instead, including "did you mean `PublishAsync`?" when an event was sent to its subscribers.
+- `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored.
+- `Reset()` forgets everything recorded, so counts and waits start again. When tests share a host, call `WaitForIdleAsync()` and then `Reset()` at the start of each test.
+
+### Clocks and retries
+
+The harness runs messaging, jobs, its transport and its store on the system clock, whatever `TimeProvider` your app registers, so a test that moves the app's clock doesn't leave messages leased or retries waiting for the time it moved. Waits always use real time.
+
+- `o.RetryDelay` replaces the delay of every retry policy: the defaults and each handler's and job's own, so a retried message or job runs again after that delay instead of its production backoff. Attempts and `ShouldRetry` are kept.
+- `o.TimeProvider = fakeTimeProvider` runs them on a clock the test moves instead: advance it to make delayed messages, delayed jobs and retries due.
+- Outside the harness, `MessagingOptions.TimeProvider` and `JobWorkerOptions.TimeProvider` (set with `m.Configure(...)` and `j.Configure(...)`) do the same for the app: they default to the registered `TimeProvider`.
+
+### Running work step by step
+
+With processing paused, messages and jobs wait until the test runs them, so it can check what is queued before it is handled, and run a pipeline one step at a time. The work runs through the real dispatcher and worker, so retries, dead letters and settlement behave as in production. This replaces calling a legacy job's `RunAsync()` or `RunUntilEmptyAsync()` in a test.
+
+```csharp
+builder.Services.AddFoundatioTestHarness(o =>
 {
-    // Unique message identifier
-    UniqueId = Guid.NewGuid().ToString(),
+    o.StartPaused = true;                // or call harness.PauseProcessingAsync() later
+    o.RetryDelay = TimeSpan.Zero;        // retries and dead letters run within one ProcessPendingAsync call
+});
 
-    // For tracing across services
-    CorrelationId = Activity.Current?.Id,
+await messages.PublishAsync(new OrderPlaced(1, "a@b.com"));
+Assert.Empty(harness.HandledMessages);   // queued, not handled yet
 
-    // Delayed delivery
-    DeliveryDelay = TimeSpan.FromMinutes(5),
+var placed = await harness.ProcessPendingAsync<OrderPlaced>();        // only OrderPlaced's subscription
+Assert.Single(harness.Sent<SendReceipt>());                          // sent, still waiting
 
-    // Custom properties
-    Properties = new Dictionary<string, string>
-    {
-        ["source"] = "order-service",
-        ["version"] = "1.0"
-    }
+await harness.ProcessPendingAsync<SendReceipt>();                     // the receipt queue
+var rest = await harness.ProcessPendingAsync();                       // everything else that is due, jobs included
+Assert.Equal(JobState.Succeeded, Assert.Single(rest.JobRuns).State);
+```
+
+- `ProcessPendingAsync()` runs what is due until nothing is left, including what the handlers send and enqueue, and returns the deliveries and job runs it saw. `ProcessPendingAsync<T>()` runs only the queues and subscriptions that deliver `T` to your handlers (everything due in them), and the jobs that take `T` as arguments or are the job class `T`; what they send elsewhere stays pending.
+- Delayed messages and jobs, and retries waiting out their delay, are not due: set `RetryDelay`, or advance a fake `TimeProvider`, then call it again.
+- While paused, receivers stay open, so subscriptions, instance subscriptions included, keep receiving what is published. `WaitForIdleAsync()` times out, saying processing is paused. `ResumeProcessing()` lets everything run on its own again.
+
+### Several hosts on one transport
+
+To test several instances of an app, or several services, against one broker, give each host's harness the same transport and store. Each harness records what its host does:
+
+```csharp
+await using var transport = new InMemoryMessageTransport();
+var store = new InMemoryJobStore();
+// for each host
+builder.Services.AddFoundatioTestHarness(o => { o.Transport = transport; o.JobStore = store; });
+```
+
+You create and dispose them, and the transport keeps its own clock. Pausing isn't supported on a shared transport, because it would pause every host.
+
+### Test against your production transport's guarantees
+
+The harness's in-memory transport supports everything: ordered groups, deduplication, unlimited delays and any message size. Give it your production transport's capabilities so a test sees what production would do:
+
+```csharp
+builder.Services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities
+{
+    // Like an SQS standard queue: no ordered groups or deduplication, and its limits
+    MaxDelay = TimeSpan.FromDays(13),
+    MaxPublishDelay = TimeSpan.FromDays(13),
+    MaxRetryDelay = TimeSpan.FromHours(12),
+    MaxMessageSize = 256 * 1024
 });
 ```
 
-## Delayed Message Delivery
+A group's messages then run concurrently and out of order, a repeated `DeduplicationId` is delivered again, and an oversized message throws `MessageTooLargeException`. Outside the harness, `new InMemoryMessageTransport(capabilities)` does the same.
 
-The `DeliveryDelay` option schedules messages for future delivery. This is useful for scenarios like:
+### Catching mistakes at startup
 
-- **Eventual consistency** - Wait for data to propagate before processing
-- **Scheduled reminders** - Send notifications after a delay
-- **Retry with backoff** - Republish failed messages with increasing delays
+Handler and job classes are registered in DI as scoped services (unless you register them yourself), so with `ValidateOnBuild`, which `Host.CreateApplicationBuilder()` and `WebApplication` turn on in Development, building the host fails when a handler or job needs a service that isn't registered, naming both.
 
-### Basic Usage
+Jobs are recorded too; see [testing jobs](./durable-jobs#testing).
 
-```csharp
-// Using MessageOptions
-await messageBus.PublishAsync(new OrderReminder { OrderId = 123 }, new MessageOptions
-{
-    DeliveryDelay = TimeSpan.FromMinutes(30)
-});
+## Health checks
 
-// Using extension method
-await messageBus.PublishAsync(new OrderReminder { OrderId = 123 }, TimeSpan.FromMinutes(30));
-```
+With Foundatio.Extensions.Hosting, `builder.Services.AddHealthChecks().AddFoundatioMessaging()` reports each source your handlers receive from. Receive errors, and dead letters the transport refuses, report Degraded while they are retried; a processor that stopped, or one whose errors have lasted 5 minutes, reports Unhealthy. A receiver that fails five times in a row, or that its transport reports dead, is replaced at once; the failed one is closed after its in-flight messages finish (up to `ShutdownTimeout`). The host fails to start if you add the check without `AddFoundatioMessaging`.
 
-### Provider Support
-
-Different providers handle delayed delivery differently:
-
-| Provider | Implementation | Persistence | Survives Restart |
-|----------|---------------|-------------|------------------|
-| **InMemoryMessageBus** | In-memory timer | None | No |
-| **AzureServiceBusMessageBus** | Native `ScheduledEnqueueTime` | Azure | Yes |
-| **KafkaMessageBus** | In-memory timer | None | No |
-| **RabbitMQMessageBus** | Plugin or fallback | Plugin: Yes, Fallback: No | Plugin: Yes, Fallback: No |
-| **RedisMessageBus** | In-memory timer | None | No |
-| **SQSMessageBus** | In-memory timer | None | No |
-
-### Native vs Fallback Implementation
-
-**Native implementations** (Azure Service Bus, RabbitMQ with plugin) persist the delayed message in the broker. The message survives application restarts and is delivered reliably.
-
-**Fallback implementations** hold the message in memory using a timer. This has important limitations:
-
-::: warning Fallback Limitations
-- **Messages are lost on restart** - If your application restarts before the delay expires, the message is permanently lost
-- **Messages are discarded on disposal** - During graceful shutdown, pending delayed messages are discarded
-- **Best-effort delivery** - No guarantee the message will be delivered
-:::
-
-### RabbitMQ Plugin
-
-RabbitMQ requires the `rabbitmq_delayed_message_exchange` plugin for native delayed delivery:
-
-```bash
-# Enable the plugin
-rabbitmq-plugins enable rabbitmq_delayed_message_exchange
-```
-
-The `RabbitMQMessageBus` automatically detects if the plugin is available and uses it when present. Otherwise, it falls back to the in-memory timer.
-
-### When to Use Delayed Delivery
-
-**Appropriate use cases (fallback is acceptable):**
-
-- Cache invalidation
-- Non-critical notifications
-- Eventual consistency delays (e.g., waiting for Elasticsearch to refresh)
-
-**NOT appropriate for fallback:**
-
-- Financial transactions
-- Order processing
-- Any message where loss is unacceptable
-
-For guaranteed delayed delivery, use:
-- Azure Service Bus (native support)
-- RabbitMQ with the delayed message plugin
-- `IQueue<T>` with `DeliveryDelay` for work items that must be processed
-
-## Distributed Tracing
-
-Foundatio automatically integrates with .NET's distributed tracing infrastructure (`System.Diagnostics.Activity`) to enable end-to-end request tracing across services.
-
-### Automatic CorrelationId Injection
-
-When you publish a message, Foundatio automatically captures the current trace context:
+Errors that last minutes are almost always a broker outage, and restarting the process does not fix one. Use the check for readiness, so an instance stops taking traffic until it can process again:
 
 ```csharp
-// If Activity.Current exists, its ID is automatically used as CorrelationId
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-
-// The message will have:
-// - CorrelationId = Activity.Current?.Id
-// - Properties["TraceState"] = Activity.Current?.TraceStateString (if present)
+builder.Services.AddHealthChecks().AddFoundatioMessaging(tags: ["ready"]);
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 ```
 
-### Manual CorrelationId
+If a liveness probe uses it, pass `failureStatus: HealthStatus.Degraded`, so an outage doesn't restart every instance. See [health checks](./durable-jobs#health-checks) for the jobs check and the states each check reports.
 
-You can also set the `CorrelationId` explicitly:
+## Existing code using `IMessageBus`
 
-```csharp
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, new MessageOptions
-{
-    CorrelationId = "my-custom-correlation-id"
-});
-```
-
-When you provide a `CorrelationId`, the automatic injection is skipped.
-
-### Trace Propagation
-
-When a subscriber receives a message, Foundatio:
-
-1. Creates a new `Activity` with the message's `CorrelationId` as the parent
-2. Restores the `TraceState` from message properties
-3. Adds the `CorrelationId` to the logging scope
-
-This enables distributed tracing tools (like Application Insights, Jaeger, or Zipkin) to correlate requests across services.
-
-### Accessing Trace Information
-
-In your subscriber, you can access the trace context:
-
-```csharp
-await messageBus.SubscribeAsync<IMessage>(async (message, ct) =>
-{
-    // Access correlation ID
-    var correlationId = message.CorrelationId;
-
-    // Access custom properties
-    var traceState = message.Properties.GetValueOrDefault("TraceState");
-
-    // Activity.Current is automatically set with the message's trace context
-    _logger.LogInformation("Processing message with trace {TraceId}", Activity.Current?.TraceId);
-});
-```
-
-### Integration with OpenTelemetry
-
-Foundatio's tracing integrates seamlessly with OpenTelemetry:
-
-```csharp
-services.AddOpenTelemetry()
-    .WithTracing(builder =>
-    {
-        builder.AddSource(FoundatioDiagnostics.ActivitySource.Name);
-        // ... other configuration
-    });
-```
-
-## Dependency Injection
-
-### Basic Registration
-
-```csharp
-// In-memory (development)
-services.AddSingleton<IMessageBus, InMemoryMessageBus>();
-
-// Redis (production)
-services.AddSingleton<IMessageBus>(sp =>
-{
-    var redis = sp.GetRequiredService<IConnectionMultiplexer>();
-    return new RedisMessageBus(o => o.Subscriber(redis.GetSubscriber()));
-});
-```
-
-### Subscribe at Startup
-
-```csharp
-public class MessageSubscriber : IHostedService
-{
-    private readonly IMessageBus _messageBus;
-    private readonly IServiceProvider _services;
-
-    public MessageSubscriber(IMessageBus messageBus, IServiceProvider services)
-    {
-        _messageBus = messageBus;
-        _services = services;
-    }
-
-    public async Task StartAsync(CancellationToken cancellationToken)
-    {
-        await _messageBus.SubscribeAsync<OrderCreated>(async (msg, ct) =>
-        {
-            using var scope = _services.CreateScope();
-            var handler = scope.ServiceProvider.GetRequiredService<IOrderHandler>();
-            await handler.HandleAsync(msg, ct);
-        }, cancellationToken);
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-}
-
-// Register
-services.AddHostedService<MessageSubscriber>();
-```
-
-## Error Handling
-
-### MessageBusException
-
-All message bus implementations throw `MessageBusException` for transport-level errors. This provides a consistent exception type regardless of the underlying provider:
-
-```csharp
-try
-{
-    await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-}
-catch (MessageBusException ex)
-{
-    _logger.LogError(ex, "Failed to publish message: {Message}", ex.Message);
-    // Handle transport error (network, broker unavailable, etc.)
-}
-catch (OperationCanceledException)
-{
-    // Handle cancellation
-}
-```
-
-**Exception Behavior:**
-
-| Scenario | Exception Type | Notes |
-|----------|---------------|-------|
-| Transport error (network, broker) | `MessageBusException` | Wraps underlying exception |
-| Null message/type | `ArgumentNullException` | Thrown immediately |
-| Cancellation requested | `OperationCanceledException` | Passed through unchanged |
-| Serialization error | `MessageBusException` | Wraps serialization exception |
-
-### Subscriber Error Handling
-
-**Important:** Subscriber errors do NOT propagate to the publisher. This behavior is consistent across ALL implementations, including `InMemoryMessageBus`. This design ensures:
-
-1. **Consistent behavior** - Code that works with `InMemoryMessageBus` in tests will behave the same with distributed buses in production
-2. **Matches distributed reality** - In distributed systems, publishers and subscribers run in separate processes; publisher cannot see subscriber errors
-3. **Predictable error handling** - Subscribers are responsible for handling their own errors
-
-```csharp
-// Publisher - will NOT see subscriber errors
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-// Returns successfully even if a subscriber throws
-
-// Subscriber - handle your own errors
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    try
-    {
-        await ProcessOrderAsync(order);
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Failed to process order {OrderId}", order.OrderId);
-        // Optionally publish failure event, retry, etc.
-    }
-});
-```
-
-### Provider Behavior Summary
-
-| Provider | Publish Errors | Subscriber Errors | Redelivery on Failure |
-|----------|---------------|-------------------|----------------------|
-| **InMemoryMessageBus** | Throws `MessageBusException` | Logged, swallowed | No |
-| **AzureServiceBusMessageBus** | Throws `MessageBusException` | Logged, SDK handles | Yes (`MaxDeliveryCount`) |
-| **KafkaMessageBus** | Fire-and-forget with callback | Logged, offset not committed | Yes (redelivered) |
-| **RabbitMQMessageBus** | Throws `MessageBusException` | Logged, nack/requeue | Yes (`DeliveryLimit`) |
-| **RedisMessageBus** | Throws `MessageBusException` | Logged, swallowed | No (pub/sub has no ack) |
-| **SQSMessageBus** | Throws `MessageBusException` | Logged, message not deleted | Yes (redelivered) |
-
-::: tip Logging
-All errors are logged at `Error` level. Subscriber errors are logged exactly once by the base class.
-:::
-
-### In Subscribers
-
-```csharp
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    try
-    {
-        await ProcessOrderAsync(order);
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Failed to process order {OrderId}", order.OrderId);
-
-        // Optionally publish failure event
-        await _messageBus.PublishAsync(new OrderProcessingFailed
-        {
-            OrderId = order.OrderId,
-            Error = ex.Message
-        });
-    }
-});
-```
-
-### With Retry
-
-```csharp
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    await _resiliencePolicy.ExecuteAsync(async ct =>
-    {
-        await ProcessOrderAsync(order, ct);
-    });
-});
-```
-
-## Cancellation Token Behavior
-
-Understanding how cancellation tokens are handled internally is important for building reliable publishers and subscribers.
-
-### Resource Creation Uses Disposal Token
-
-When you call `PublishAsync` or `SubscribeAsync`, the message bus may need to create infrastructure (e.g., Azure Service Bus topics, RabbitMQ exchanges, SQS topics). These setup operations use an internal disposal token — **not** the caller's cancellation token. This means:
-
-- **Topic and subscription creation only abort when the message bus is disposed**, never because a single caller cancelled their operation.
-- A cancelled publish will not leave topic infrastructure in a half-created state.
-- Multiple concurrent publishers/subscribers cannot interfere with each other's setup.
-
-### Linked Cancellation for Publish
-
-The caller's cancellation token is combined with the disposal token into a linked token for the actual publish operation. This means:
-
-- Publish cancels when **either** the caller cancels **or** the message bus is disposed.
-- Graceful shutdown via `Dispose()` cancels all in-flight publishes promptly.
-
-```csharp
-// Topic creation always completes (unless disposed), even if the publish is cancelled
-using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, cancellationToken: cts.Token);
-```
-
-### For Implementation Authors
-
-If you are writing a custom `IMessageBus` implementation by extending `MessageBusBase<TOptions>`:
-
-- **`EnsureTopicCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.).
-- **`EnsureTopicSubscriptionAsync`** always receives `DisposedCancellationToken`. Use it for subscription infrastructure setup.
-- **`PublishImplAsync`** receives a linked token (caller + disposal). Respect it for the actual message send.
-
-## Best Practices
-
-### 1. Use Immutable Messages
-
-```csharp
-// ✅ Good: Immutable record
-public record OrderCreated
-{
-    public int OrderId { get; init; }
-    public required string CustomerId { get; init; }
-}
-
-// ❌ Bad: Mutable class
-public class OrderCreated
-{
-    public int OrderId { get; set; }
-    public string CustomerId { get; set; }
-}
-```
-
-### 2. Include Timestamp and Correlation
-
-```csharp
-public record OrderCreated
-{
-    public int OrderId { get; init; }
-    public DateTime OccurredAt { get; init; } = DateTime.UtcNow;
-    public string CorrelationId { get; init; } = Activity.Current?.Id;
-}
-```
-
-### 3. Handle Idempotency
-
-```csharp
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    // Check if already processed
-    if (await _processedEvents.ContainsAsync(order.EventId))
-    {
-        _logger.LogDebug("Already processed {EventId}", order.EventId);
-        return;
-    }
-
-    await ProcessOrderAsync(order);
-    await _processedEvents.AddAsync(order.EventId);
-});
-```
-
-### 4. Use Specific Message Types
-
-```csharp
-// ✅ Good: Specific, intentional messages
-public record OrderCreated { ... }
-public record OrderShipped { ... }
-public record OrderCancelled { ... }
-
-// ❌ Bad: Generic, multi-purpose messages
-public record OrderEvent { public string Action { get; set; } }
-```
-
-### 5. Keep Messages Small
-
-Messages should contain identifiers and essential data only, not full entity payloads.
-
-```csharp
-// ✅ Good: Just identifiers
-public record OrderCreated
-{
-    public int OrderId { get; init; }
-}
-
-// ❌ Bad: Full entity in message
-public record OrderCreated
-{
-    public Order FullOrderWithAllDetails { get; init; }
-}
-```
-
-## Message Size Limits
-
-Different message bus implementations have different size limits. Understanding these limits is essential for reliable messaging.
-
-| Provider | Max Message Size | Notes |
-|----------|------------------|-------|
-| InMemoryMessageBus | Limited by available memory | No practical limit |
-| AzureServiceBusMessageBus | 256 KB (Standard) / 100 MB (Premium) | Use claim check for large payloads |
-| KafkaMessageBus | 1 MB (default) | Configurable via `message.max.bytes` |
-| RabbitMQMessageBus | 128 MB (default) | Configurable, but keep small |
-| RedisMessageBus | 512 MB (Redis limit) | Recommended: < 1 MB for performance |
-| SQSMessageBus | 256 KB | Use claim check for large payloads |
-
-### Claim Check Pattern for Large Payloads
-
-For large data, store it externally and pass a reference (also known as the Claim Check Pattern):
-
-```csharp
-// Instead of embedding large data
-public record DocumentProcessed
-{
-    public string DocumentId { get; init; }
-    public string BlobPath { get; init; }  // Reference to storage
-    public long SizeBytes { get; init; }
-}
-
-// Subscriber retrieves from storage
-await messageBus.SubscribeAsync<DocumentProcessed>(async msg =>
-{
-    var document = await _fileStorage.GetObjectAsync<Document>(msg.BlobPath);
-    await ProcessDocumentAsync(document);
-});
-```
-
-## Notification Patterns
-
-### Real-Time Notifications with SignalR
-
-```csharp
-public class NotificationService : IHostedService
-{
-    private readonly IMessageBus _messageBus;
-    private readonly IHubContext<NotificationHub> _hubContext;
-
-    public NotificationService(IMessageBus messageBus, IHubContext<NotificationHub> hubContext)
-    {
-        _messageBus = messageBus;
-        _hubContext = hubContext;
-    }
-
-    public async Task StartAsync(CancellationToken ct)
-    {
-        // Bridge message bus to SignalR
-        await _messageBus.SubscribeAsync<UserNotification>(async (msg, ct) =>
-        {
-            await _hubContext.Clients
-                .User(msg.UserId)
-                .SendAsync("Notification", msg.Title, msg.Body, ct);
-        }, ct);
-
-        // Broadcast to all users
-        await _messageBus.SubscribeAsync<SystemAnnouncement>(async (msg, ct) =>
-        {
-            await _hubContext.Clients.All
-                .SendAsync("Announcement", msg.Message, ct);
-        }, ct);
-    }
-
-    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
-}
-```
-
-### Delayed Notifications
-
-```csharp
-// Schedule a reminder
-await messageBus.PublishAsync(new ReminderNotification
-{
-    UserId = "user-123",
-    Message = "Don't forget to complete your order!"
-}, new MessageOptions
-{
-    DeliveryDelay = TimeSpan.FromHours(24)
-});
-```
-
-### Fan-Out Pattern
-
-Publish once, process in multiple ways:
-
-```csharp
-// Single publish
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-
-// Multiple subscribers handle different concerns
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    await _emailService.SendConfirmationAsync(order.OrderId);
-});
-
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    await _inventoryService.ReserveAsync(order.OrderId);
-});
-
-await messageBus.SubscribeAsync<OrderCreated>(async order =>
-{
-    await _analyticsService.TrackAsync("order_created", order.OrderId);
-});
-```
-
-## Resource Management
-
-### Disposal Lifecycle
-
-Message buses implement both `IDisposable` and `IAsyncDisposable`. Prefer `await using` (or `DisposeAsync()`) for clean shutdown:
-
-```csharp
-// Preferred: async disposal
-await using var messageBus = new InMemoryMessageBus();
-await messageBus.SubscribeAsync<MyEvent>(async e => { /* ... */ });
-// DisposeAsync is called when scope ends
-
-// DI container manages lifetime automatically
-services.AddSingleton<IMessageBus, InMemoryMessageBus>();
-```
-
-Disposal follows a **two-phase** sequence to prevent message loss in durable providers:
-
-1. **Graceful drain** — In-flight handlers finish executing while subscribers and the internal cancellation token are still active. Providers that support processor-level draining (e.g., Azure Service Bus `StopProcessingAsync`) execute it here via `ShutdownAsync`.
-2. **Teardown** — The internal cancellation token is cancelled, all subscribers are cleared, and transport infrastructure (connections, channels, clients) is closed and disposed via `CleanupAsync`.
-
-> **Note:** The base `MessageBusBase` implementation does not guarantee that all active subscriber callbacks have completed before `DisposeAsync` returns. Provider-specific draining behavior (such as Azure Service Bus `StopProcessingAsync`) is implemented in provider overrides of `ShutdownAsync`.
-
-### Message Durability During Shutdown
-
-What happens to messages that arrive while the bus is disposing depends on the provider:
-
-| Provider | In-Flight Messages | Arriving During Dispose | After Dispose |
-|---|---|---|---|
-| **InMemoryMessageBus** | Completed normally | Dropped (no persistence) | Lost |
-| **AzureServiceBusMessageBus** | Completed; abandoned if bus disposes mid-handler (PeekLock) | Remain in topic for other subscribers | Persisted in Azure |
-| **KafkaMessageBus** | Completed; offset not committed if bus disposes mid-handler | Remain in partition (uncommitted offset) | Persisted in Kafka |
-| **RabbitMQMessageBus** | Completed; requeued if bus disposes mid-handler | Remain in queue | Persisted in RabbitMQ |
-| **RedisMessageBus** | Completed normally | Dropped (pub/sub has no persistence) | Lost |
-| **SQSMessageBus** | Completed; message not deleted if bus disposes mid-handler | Remain in SQS queue | Persisted in SQS |
-
-::: tip Fire-and-Forget Providers
-`InMemoryMessageBus` and `RedisMessageBus` use fire-and-forget delivery. Messages that arrive when no subscriber is listening are permanently lost. This is by design — if you need guaranteed delivery, use a durable provider or `IQueue<T>`.
-:::
-
-### Writing Custom Providers
-
-If you are extending `MessageBusBase<TOptions>` with a custom provider, override the lifecycle hooks:
-
-- **`ShutdownAsync()`** — Called *before* the cancellation token is cancelled and *before* subscribers are cleared. Use this to gracefully drain your transport (e.g., stop a processor, close a consumer group). Subscribers are still active and can finish processing.
-- **`CleanupAsync()`** — Called *after* the cancellation token is cancelled and *after* subscribers are cleared. Use this to tear down transport infrastructure (close connections, dispose clients, await background tasks).
-
-```csharp
-public class MyMessageBus : MessageBusBase<MyOptions>
-{
-    // Phase 1: Stop accepting new messages, drain in-flight work.
-    // When the body is a single call, return the Task directly (no extra async state machine).
-    protected override Task ShutdownAsync() => _processor.StopAsync();
-
-    protected override async Task CleanupAsync()
-    {
-        // Phase 2: Close connections, dispose clients — ConfigureAwait(false) in library overrides
-        await _connection.CloseAsync().ConfigureAwait(false);
-        _client.Dispose();
-    }
-}
-```
-
-If `ShutdownAsync` needs multiple steps, use `async`/`await` and apply `.ConfigureAwait(false)` to each await (within Foundatio provider projects, the same pattern uses the internal `AnyContext()` helper).
-
-## Next Steps
-
-- [Queues](./queues) - For guaranteed delivery with acknowledgment
-- [Caching](./caching) - Cache invalidation with messaging
-- [Jobs](./jobs) - Background processing triggered by messages
+`m.AddLegacyMessageBus()` provides the original `IMessageBus` on the configured transport, so `HybridCacheClient`, `CacheLockProvider` and your existing subscribers keep working with the same semantics: each process handles messages one at a time in arrival order, never calls a subscriber concurrently with itself, and runs a message's subscribers concurrently. It receives up to 100 messages at a time (the transport's batch limit when lower) and completes each one while the next is handled. It doesn't talk to the original buses, such as `RedisMessageBus`, so switch every process that shares a bus in the same deployment. See [Moving IMessageBus to the new transport](./migrating-to-messaging#moving-imessagebus-to-the-new-transport).

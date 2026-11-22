@@ -137,9 +137,9 @@ builder.Services.AddFoundatioJobs(j => j
     .AddJob<GenerateReportJob>());          // an IJobHandler<GenerateReport>
 ```
 
-See [Messages and Events](./messages) and [Durable Jobs](./durable-jobs). The `IQueue<T>` and `IMessageBus` APIs below remain supported; see [Migrating](./migrating-to-messaging) to move existing code.
+See [Messaging](./messaging) and [Durable Jobs](./durable-jobs). The `IQueue<T>` and `IMessageBus` APIs below remain supported; see [Migrating](./migrating-to-messaging) to move existing code.
 
-To test them, add `services.AddFoundatioTestHarness()` in your test host, before or after these registrations. It runs messaging and jobs in memory, whatever transport and store the app configures, and lets a test wait for outcomes or run pending work step by step; see [Testing](./messages#testing).
+To test them, add `services.AddFoundatioTestHarness()` in your test host, before or after these registrations. It runs messaging and jobs in memory, whatever transport and store the app configures, and lets a test wait for outcomes or run pending work step by step; see [Testing](./messaging#testing).
 
 ## Switching to Production Implementations
 
@@ -267,8 +267,7 @@ Now that you have the basics working, explore more advanced features:
 - [Caching](./caching) - Deep dive into caching patterns
 - [Queues](./queues) - Queue processing and behaviors
 - [Locks](./locks) - Distributed locking strategies
-- [Messaging](./messaging) - Pub/sub patterns
-- [Messages and Events](./messages) - Commands and events with handlers, retries and dead letters, for new code
+- [Messaging](./messaging) - Commands and events with handlers, retries and dead letters, for new code
 - [Durable Jobs](./durable-jobs) - Stored jobs with arguments, progress, cancellation and CRON schedules
 - [Storage](./storage) - File storage operations
 - [Jobs](./jobs) - Background job processing

@@ -2,7 +2,7 @@
 
 Background work you can track: arguments, progress, cancellation, retries, delays and CRON schedules. Jobs are stored, so they survive restarts and run on whichever instance is free.
 
-Use a job when you need status, progress, cancellation or a schedule. Otherwise a [message](./messages) is simpler.
+Use a job when you need status, progress, cancellation or a schedule. Otherwise a [message](./messaging) is simpler.
 
 ## Quick start
 
@@ -100,7 +100,7 @@ Set a job's options once. Registering a job again is fine, and options given lat
 - The last message stays as the job's `Message` after it succeeds, so a job can report its result, such as a file name.
 - A job that reports progress shows as active in the monitor at once; one that doesn't shows after it has run for a second.
 
-`ReportProgressAsync`, `Attempt`, `CorrelationId` and `Headers` come from `IHandlerContext` in the `Foundatio` namespace, which [message handlers](./messages#reporting-progress) share.
+`ReportProgressAsync`, `Attempt`, `CorrelationId` and `Headers` come from `IHandlerContext` in the `Foundatio` namespace, which [message handlers](./messaging#reporting-progress) share.
 
 ## Enqueue options
 
@@ -219,7 +219,7 @@ await new GenerateReportJob(fakeReports).HandleAsync(new GenerateReport("pdf", 2
 Assert.Equal(100, context.Progress);
 ```
 
-With [`AddFoundatioTestHarness()`](./messages#testing), jobs your app enqueues run on an in-memory store, and every finished run is recorded with its arguments, status, attempt, error, message and `Progress`:
+With [`AddFoundatioTestHarness()`](./messaging#testing), jobs your app enqueues run on an in-memory store, and every finished run is recorded with its arguments, status, attempt, error, message and `Progress`:
 
 ```csharp
 await jobs.EnqueueAsync(new GenerateReport("pdf", 2));
@@ -231,7 +231,7 @@ await harness.TriggerCronJobAsync<CleanupJob>();
 Assert.Equal(JobState.Succeeded, Assert.Single(await harness.WaitForJobAsync<CleanupJob>()).State);
 ```
 
-To check a job is queued before it runs, or to run a chain of jobs one step at a time, pause processing and run what is pending, as the [message testing guide](./messages#running-work-step-by-step) shows:
+To check a job is queued before it runs, or to run a chain of jobs one step at a time, pause processing and run what is pending, as the [message testing guide](./messaging#running-work-step-by-step) shows:
 
 ```csharp
 builder.Services.AddFoundatioTestHarness(o => { o.StartPaused = true; o.RetryDelay = TimeSpan.Zero; });

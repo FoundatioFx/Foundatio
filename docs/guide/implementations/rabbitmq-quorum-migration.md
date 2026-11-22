@@ -156,5 +156,5 @@ rabbitmqctl list_queues name type leader members
 ## Next Steps
 
 - [RabbitMQ Implementation](/guide/implementations/rabbitmq) - Full configuration reference
-- [Messaging Guide](/guide/messaging) - Pub/sub patterns and best practices
+- [Message Bus Guide](/guide/message-bus) - `IMessageBus` pub/sub patterns and best practices
 - [RabbitMQ Quorum Queue Documentation](https://www.rabbitmq.com/docs/quorum-queues) - Official reference

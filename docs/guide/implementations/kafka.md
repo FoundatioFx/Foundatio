@@ -7,7 +7,7 @@ Foundatio provides Apache Kafka messaging for high-throughput event streaming. [
 | Implementation | Interface | Package |
 |----------------|-----------|---------|
 | `KafkaMessageBus` | `IMessageBus` | Foundatio.Kafka |
-| `KafkaMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.Kafka |
+| `KafkaMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.Kafka |
 
 ## Installation
 
@@ -50,7 +50,7 @@ For additional options, see [KafkaMessageBusOptions source](https://github.com/F
 
 ## Messages and Events
 
-`KafkaMessageTransport` runs [Messages and Events](/guide/messages) on Kafka. Register it with `UseKafka`:
+`KafkaMessageTransport` runs [Messaging](/guide/messaging) on Kafka. Register it with `UseKafka`:
 
 ```csharp
 builder.Services.AddFoundatioMessaging(m => m
@@ -58,7 +58,7 @@ builder.Services.AddFoundatioMessaging(m => m
     .AddConsumer<SendReceiptHandler>());
 ```
 
-See [Using Kafka](/guide/messages#using-kafka) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for options, topics and limits.
+See [Using Kafka](/guide/messaging#using-kafka) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for options, topics and limits.
 
 ### Ordered groups and partitions
 
@@ -93,5 +93,6 @@ dotnet test --project tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj
 
 ## Next Steps
 
-- [Messaging Guide](/guide/messaging) - Pub/sub patterns and best practices
+- [Messaging Guide](/guide/messaging) - Commands and events on this transport
+- [Message Bus Guide](/guide/message-bus) - `IMessageBus` pub/sub (legacy)
 - [Serialization](/guide/serialization) - Configure serialization
