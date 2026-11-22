@@ -10,7 +10,6 @@ Check these first; work that depends on them stays on the original APIs for now:
 - **Per-key job concurrency.** `WorkItemHandlerBase.GetWorkItemLockAsync` (one reset per project at a time) has no durable-job equivalent. For messages, a `SendOptions.GroupKey` handles one message of each key at a time on transports that order groups (in-memory, Redis, Kafka, SQS FIFO, Service Bus with sessions). For jobs, take an `ILockProvider` lock in the handler and throw when it is held, which spends an attempt, or keep the work item on `IQueue<WorkItemData>`.
 - **Deduplicate while queued.** `DuplicateDetectionQueueBehavior` rejects an item only while one with the same id is queued, and allows it again once it is dequeued. `EnqueueOptions.JobId` returns the existing job for as long as the job is retained (a day after it succeeds, by default), and `SendOptions.DeduplicationId` drops repeats within the transport's own window, on transports that deduplicate (in-memory, Redis, SQS FIFO, Service Bus with duplicate detection).
 - **Retention per schedule.** Every CRON occurrence is a stored job, and `JobWorkerOptions.RetainSucceededFor` applies to all of them. A job that runs every few seconds stores thousands of records a day, so keep it on `services.AddJob<T>()` with its interval.
-- **Azure Storage Queues.** There is no Storage Queues transport. On Azure, use the Service Bus transport, or keep `AzureStorageQueue<T>`.
 - **One transport per app.** Every queue and topic uses the transport you choose with `Use...()`, and `AddLegacyMessageBus()` runs on it too. You can't keep queues on one broker and pub/sub on another.
 - **Run once and exit.** There is no "run this job, then stop the process" mode for a Kubernetes CronJob. Host the schedule with `AddCronJob` in a long-running process instead.
 
@@ -19,6 +18,7 @@ Check these first; work that depends on them stays on the original APIs for now:
 | You have | Move to |
 |---|---|
 | `IQueue<T>.EnqueueAsync(item)` | `IMessageClient.SendAsync(item)` |
+| `AzureStorageQueue<T>` (Foundatio.AzureStorage) | `UseAzureStorageQueues()`. It uses its own queues and message format, so drain the legacy queue before you move its consumers, or run both until it is empty |
 | `QueueJobBase<T>` / `IQueueJob<T>` | `IMessageHandler<T>` + `AddConsumer<THandler>()` |
 | `entry.CompleteAsync()` / `AbandonAsync()` | Return, or throw to retry; see [queue job outcomes](#queue-job-outcomes) |
 | `entry.RenewLockAsync()` | Automatic while the handler runs |

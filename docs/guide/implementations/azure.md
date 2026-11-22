@@ -8,6 +8,7 @@ Foundatio provides Azure implementations for storage, queuing, and messaging usi
 |----------------|-----------|---------|
 | `AzureFileStorage` | `IFileStorage` | Foundatio.AzureStorage |
 | `AzureStorageQueue<T>` | `IQueue<T>` | Foundatio.AzureStorage |
+| `AzureStorageQueueMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.AzureStorage |
 | `AzureServiceBusQueue<T>` | `IQueue<T>` | Foundatio.AzureServiceBus |
 | `AzureServiceBusMessageBus` | `IMessageBus` | Foundatio.AzureServiceBus |
 | `AzureServiceBusMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.AzureServiceBus |
@@ -158,6 +159,24 @@ The transport's `GetStatsAsync` reads the queue's or subscription's runtime prop
 - **DeadLettered**: `DeadLetterMessageCount`.
 
 Instance subscriptions are not counted (null), and a source that does not exist counts as empty. The emulator reports zero for every count, so on it the transport returns null.
+
+### On Azure Storage Queues
+
+`AzureStorageQueueMessageTransport` runs [Messaging](/guide/messaging) on Storage queues. Register it with `UseAzureStorageQueues`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions { ConnectionString = connectionString, Prefix = "prod-" })
+    .AddConsumer<SendReceiptHandler>());
+```
+
+- Storage has no topics: each durable or instance subscription is a queue named after its topic, and a publish lists them and sends a copy to each. Dead letters go to the source's queue name plus `-poison`.
+- Leases, delays and retries are visibility timeouts, of up to 7 days. Messages never expire unless `MessageTimeToLive` is set.
+- Receivers poll, since Storage can't long-poll, backing off to `MaxPollInterval` (2 seconds) while the queue is empty.
+- Messages can be 46 KiB with their headers. It doesn't order groups or deduplicate.
+- `GetStatsAsync` reports Storage's approximate count as `Queued`, which includes messages being handled and delayed ones, and the `-poison` queue's as `DeadLettered`.
+
+See [Using Azure Storage Queues](/guide/messaging#using-azure-storage-queues) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureStorage#message-transport-preview) for names, polling cost and limits.
 
 ## Running the Tests
 

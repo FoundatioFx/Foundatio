@@ -34,7 +34,7 @@ public class SendReceiptHandler(IEmailSender email) : IMessageHandler<SendReceip
 // Registration
 builder.Services.AddFoundatioMessaging(m => m
     .UseServiceName("orders")             // names this service's subscriptions
-    .UseInMemory()                        // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...) or UseRabbitMQ(...); see Transports
+    .UseInMemory()                        // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...), UseAzureStorageQueues(...) or UseRabbitMQ(...); see Transports
     .AddSubscriber<OrderPlacedHandler>()  // events
     .AddConsumer<SendReceiptHandler>());  // commands
 
@@ -139,6 +139,31 @@ m.UseAzureServiceBus(new AzureServiceBusMessageTransportOptions
 - Delays are scheduled messages, for any length of time. Leases follow each entity's lock duration (1 minute by default, at most 5), renewed by Foundatio.
 - The transport creates queues, topics and subscriptions as it needs them. Set `CreateEntities = false` when they are provisioned for you.
 - See the [Azure Service Bus README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for names, sessions, sizes and the emulator.
+
+### Using Azure Storage Queues
+
+`dotnet add package Foundatio.AzureStorage`. Queues are Storage queues. Storage has no topics, so each durable subscription is a queue of its own, and a publish sends a copy to each of its topic's subscription queues.
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureStorageQueues(builder.Configuration.GetConnectionString("AzureStorage")!)
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or with options, for example Microsoft Entra ID
+m.UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions
+{
+    ServiceUri = new Uri("https://myaccount.queue.core.windows.net"),
+    Credential = new DefaultAzureCredential(),
+    Prefix = "prod-"
+});
+```
+
+- Without a connection in the options (`UseAzureStorageQueues()`), it uses the `QueueServiceClient` registered in DI, which stays yours.
+- It doesn't order groups or deduplicate. Delays and leases are visibility timeouts, of up to 7 days. Messages never expire unless you set `MessageTimeToLive`.
+- Storage can't long-poll, so receivers poll, backing off to `MaxPollInterval` (2 seconds) while the queue is empty: a message sent from another process can wait that long, and each idle receiver makes a billed request every 2 seconds. Sends through the same process wake its receivers at once.
+- Messages can be 46 KiB with their headers; store larger payloads with `IFileStorage` and send a reference. Dead letters go to a `-poison` queue.
+- See the [Azure Storage README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureStorage#message-transport-preview) for names, polling cost, counts and Azurite.
 
 ### Using RabbitMQ
 

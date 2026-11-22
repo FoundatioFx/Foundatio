@@ -69,6 +69,7 @@ What the in-repo transports declare:
 | Redis | unlimited | — | 1 | yes | yes | yes | yes |
 | SQS | 13 days, 13 days, 12 hours | 1 s | 16 | yes | yes | FIFO queues | FIFO queues |
 | Service Bus | unlimited | 1 s | 4, 1 with sessions | without sessions | yes | with sessions | with duplicate detection |
+| Storage Queues | 7 days | 1 s | 8 | yes | yes | no | no |
 | Kafka | unlimited with `DelayedDelivery`, else none | 1 s | 1 | no | no | yes | no |
 | RabbitMQ | about 8.5 years with `DelayedDelivery`, else none | 1 s | 1 | no | no | no | no |
 

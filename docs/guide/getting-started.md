@@ -129,7 +129,7 @@ For new code, send commands and publish events with `IMessageClient` and handler
 ```csharp
 builder.Services.AddFoundatioMessaging(m => m
     .UseServiceName("orders")
-    .UseInMemory()                          // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...), UseRabbitMQ(...)
+    .UseInMemory()                          // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...), UseAzureStorageQueues(...), UseRabbitMQ(...)
     .AddSubscriber<OrderPlacedHandler>());  // an IMessageHandler<OrderPlaced>
 
 builder.Services.AddFoundatioJobs(j => j

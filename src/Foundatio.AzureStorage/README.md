@@ -48,6 +48,61 @@ IFileStorage storage = new AzureFileStorage(o => o
 await storage.SaveFileAsync("docs/readme.txt", "Hello World");
 ```
 
+### Message transport (preview)
+
+`AzureStorageQueueMessageTransport` plugs Azure Storage Queues into Foundatio's newer messaging (`IMessageClient`, `AddConsumer`, `AddSubscriber`) and supports queues, topics with durable and per-instance subscriptions, dead letters and delays of up to 7 days. It doesn't order groups or deduplicate.
+
+```csharp
+services.AddFoundatioMessaging(m => m
+    .UseAzureStorageQueues(builder.Configuration.GetConnectionString("AzureStorage")!)
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or with options, for example Microsoft Entra ID
+m.UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions
+{
+    ServiceUri = new Uri("https://myaccount.queue.core.windows.net"),
+    Credential = new DefaultAzureCredential(),
+    Prefix = "prod-"
+});
+```
+
+- `UseAzureStorageQueues("UseDevelopmentStorage=true")` connects to Azurite. With `ServiceUri` and `Credential`, the identity needs the Storage Queue Data Contributor role. A `ServiceUri` with a SAS token works without a credential.
+- `UseAzureStorageQueues()`, with no connection in the options, uses the `QueueServiceClient` registered in DI (for example by `AddAzureClients`), which stays yours. Its clients must keep the default `MessageEncoding` (`None`): the transport encodes messages itself.
+- `UseAzureStorageQueues(sp => new AzureStorageQueueMessageTransportOptions { ... })` builds the options from the service provider, for example from configuration.
+- `LoggerFactory` and `TimeProvider` come from DI unless the options set them; the clock is `MessagingOptions.TimeProvider` when that is set.
+
+How it maps to Storage Queues:
+
+- **Queue**: a Storage queue. Storage has no topics, so a **durable subscription** is a queue of its own, named after its topic, and a **publish** lists the topic's subscription queues (one `List Queues` call, not cached, so a subscription another process just opened gets every later publish) and sends a copy to each. An **instance subscription** is a queue per receiver, deleted with it, or by a later publish or instance receiver of the topic once its heartbeat (queue metadata, updated every third of `InstanceSubscriptionTimeout`, 5 minutes by default) has lapsed. Every queue and durable subscription has a dead-letter queue: its name plus `-poison`.
+- **Names**: Storage queue names are 3 to 63 lowercase letters, digits and hyphens, so a queue is named by a readable, shortened form of the source's names and a hash of the exact names, for example `prod-orders-1a2b3c4d`, and its dead letters go to `prod-orders-1a2b3c4d-poison`. Names that differ only in case or punctuation get their own queues. `Prefix` is at most 16 lowercase letters, digits and single hyphens.
+- **Leases** are visibility timeouts, of up to 7 days. A renewal or abandon updates the message, which gives it a new pop receipt; each delivery's settlements run one at a time so the next one uses it. A settlement Storage rejects for its pop receipt (the message was received again, or cleared) throws `MessageLeaseLostException`.
+- **Delays**: sends, publishes and retries are delayed natively with a visibility timeout, in whole seconds, for up to 7 days; Foundatio sends longer delays again. `DeliveryCount` is Storage's dequeue count.
+- **Retention**: messages never expire by default. Storage's own default is 7 days, which would silently drop a backlog nobody received; set `MessageTimeToLive` to bound it (delays are then limited to less than it).
+- **Receives**: Storage cannot long-poll. A receive polls, and each empty poll doubles the wait before the next, from `MinPollInterval` (50 ms) to `MaxPollInterval` (2 s); a message received resets it. The wait carries over between receives, so an idle receiver polls every 2 seconds: about 43,000 billed transactions a day per receiver, and a message from another process waits up to about 2 seconds. Sends and retries through the same transport wake its own receivers of that queue at once. A receive returns up to 32 messages, Foundatio runs up to 8 at once on one receiver while there is a backlog, and while the queue is drained only one polls. A cancelled receive lets its request finish and makes what it got visible again at once.
+- **Settlement**: Storage has no batch delete or update, so each complete is a `Delete Message` call and each renewal or abandon an `Update Message` call. A batch send makes up to 32 `Put Message` calls at once.
+- **Size**: Storage takes 64 KiB of message text. The transport writes a binary envelope (id, group key, headers, body) as base64, so binary bodies fit, which leaves 46 KiB for a message as `MessageSize` measures it (body, headers and ids), keeping 2 KiB for framing and the dead-letter reason. A larger message throws `MessageTooLargeException`: store large payloads with `IFileStorage` (for example `AzureFileStorage`) and send a reference.
+- **Other producers**: a message that isn't the transport's envelope, such as one written by Event Grid, Azure Functions or the Storage SDK, is delivered as its body (base64-decoded when it is base64), with Storage's message id and no headers.
+- **Deletion**: `DeleteAsync` clears the queue and its `-poison` queue, delayed and leased messages included, and keeps the queues, since Storage does not let a deleted queue's name be used again for at least 30 seconds. A deleted durable subscription is marked as unsubscribed in its metadata, so publishes skip it until a receiver opens or a message is sent to it. A receiver still open on it checks every 3 seconds while it receives nothing (one `Get Queue Metadata` call) and faults once it was deleted, so Foundatio opens a new receiver, which subscribes again.
+
+Monitoring: `GetStatsAsync` reads the approximate message count Storage keeps for the source's queue and its `-poison` queue, one `Get Queue Metadata` call each.
+
+| Count | On Storage Queues |
+|---|---|
+| `Queued` | `ApproximateMessagesCount`: every message in the queue, including those being handled and delayed ones, since Storage reports one count |
+| `Delayed` | null |
+| `InFlight` | null |
+| `DeadLettered` | `ApproximateMessagesCount` of the `-poison` queue |
+
+- Instance subscriptions are not counted (`GetStatsAsync` returns null), since each has its own queue.
+- A queue that does not exist counts as empty, and nothing is created.
+
+Things to plan for:
+
+- **Throughput**: Storage's scalability target is about 2,000 messages a second per queue, and every message costs at least a send, a delete and part of a receive. Spread heavy traffic over several queues, or use Service Bus.
+- **Azurite**: the tests run on Azurite, which serves requests on one thread (a few hundred messages a second) and does not block a deleted queue's name. Real Azure does both.
+- **The legacy queue**: `AzureStorageQueue<T>` and the transport use different queues and message formats. Drain a legacy queue with `AzureStorageQueue<T>` before you move its consumers.
+
 ## 📦 Provider Implementations
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |
