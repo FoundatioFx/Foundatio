@@ -150,6 +150,18 @@ public sealed class FoundatioMessagingBuilder
         return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, new HandlerOptions(), options).ToList(), typeof(THandler));
     }
 
+    /// <summary>
+    /// Like <see cref="AddConsumer{THandler}(HandlerOptions?)"/>, for only <typeparamref name="TMessage"/> of the message
+    /// types <typeparamref name="THandler"/> handles: for a class that handles a command and also subscribes to an event,
+    /// so the event gets no queue and the command no subscription.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
+    public FoundatioMessagingBuilder AddConsumer<THandler, TMessage>(HandlerOptions? options = null) where THandler : class, IMessageHandler<TMessage> where TMessage : class
+    {
+        var registrations = MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, ValidateConsumer(options));
+        return AddHandlers(registrations.Where(r => r.MessageType == typeof(TMessage)).ToList(), typeof(THandler));
+    }
+
     /// <summary>Handles messages sent with <see cref="IMessageClient.SendAsync{T}"/> using a delegate.</summary>
     /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
     public FoundatioMessagingBuilder AddConsumer<T>(Func<T, IMessageContext, CancellationToken, Task> handler, HandlerOptions? options = null) where T : class
@@ -181,6 +193,17 @@ public sealed class FoundatioMessagingBuilder
     {
         ArgumentNullException.ThrowIfNull(options);
         return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, new SubscriptionOptions(), options).ToList(), typeof(THandler));
+    }
+
+    /// <summary>
+    /// Like <see cref="AddSubscriber{THandler}(SubscriptionOptions?)"/>, for only <typeparamref name="TMessage"/> of the
+    /// message types <typeparamref name="THandler"/> handles: for a class that subscribes to an event and also handles a
+    /// command, so the command gets no subscription and the event no queue.
+    /// </summary>
+    public FoundatioMessagingBuilder AddSubscriber<THandler, TMessage>(SubscriptionOptions? options = null) where THandler : class, IMessageHandler<TMessage> where TMessage : class
+    {
+        var registrations = MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions()));
+        return AddHandlers(registrations.Where(r => r.MessageType == typeof(TMessage)).ToList(), typeof(THandler));
     }
 
     /// <summary>Handles events published with <see cref="IMessageClient.PublishAsync{T}"/> using a delegate.</summary>

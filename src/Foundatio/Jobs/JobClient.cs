@@ -107,6 +107,8 @@ internal sealed class JobClient : IJobClient
     {
         if (options?.JobId is { } requestedId)
             ArgumentException.ThrowIfNullOrWhiteSpace(requestedId, nameof(options));
+        if (options is { Delay: not null, RunAt: not null })
+            throw new ArgumentException("Set Delay or RunAt, not both.", nameof(options));
 
         var now = _runtime.TimeProvider.GetUtcNow();
         var runAt = options?.RunAt;

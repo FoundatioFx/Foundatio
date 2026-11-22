@@ -559,6 +559,52 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task FailingMessage_LogsItsTypeAndSourceOnEachRetryAndSaysItWasDeadLettered()
+    {
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((_, _, _) => throw new InvalidOperationException("broken"),
+            new HandlerOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 2, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(50)) } }));
+        var source = MessageSource.Queue(QueueName<PlaceOrder>());
+
+        string id = await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 1);
+
+        var retry = Assert.Single(Log.LogEntries, e => e.LogLevel == Microsoft.Extensions.Logging.LogLevel.Warning && e.Message.Contains(id));
+        Assert.Equal($"{QueueName<PlaceOrder>()} message {id} from {source} failed on attempt 1 of 2; retrying in 0.05s", retry.Message);
+        var deadLettered = Assert.Single(Log.LogEntries, e => e.LogLevel == Microsoft.Extensions.Logging.LogLevel.Error && e.Message.Contains(id));
+        Assert.Equal($"{QueueName<PlaceOrder>()} message {id} from {source} failed after 2 attempts and is dead-lettered: InvalidOperationException: broken", deadLettered.Message);
+    }
+
+    [Fact]
+    public async Task SendOptions_ThatContradictThemselves_AreRejected()
+    {
+        await using var host = await StartAsync(_ => { });
+
+        var both = new SendOptions { Delay = TimeSpan.FromHours(1), DeliverAt = DateTimeOffset.UtcNow.AddSeconds(1) };
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Client.SendAsync(new PlaceOrder(1), both, TestCancellationToken));
+        var reserved = new PublishOptions { Headers = new Dictionary<string, string> { [KnownHeaders.CorrelationId] = "mine" } };
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => host.Client.PublishAsync(new OrderShipped(1), reserved, TestCancellationToken));
+        Assert.Contains(KnownHeaders.CorrelationId, ex.Message);
+        await host.Client.SendAsync(new PlaceOrder(1), new SendOptions { Headers = new Dictionary<string, string> { ["Correlation-Id"] = "a different header" } }, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task AddConsumerAndAddSubscriber_ForOneMessageTypeOfAHandlerClass_ReceiveOnlyThatType()
+    {
+        await using var host = await StartAsync(m => m
+            .AddConsumer<OrderWorkflowHandler, PlaceOrder>()
+            .AddSubscriber<OrderWorkflowHandler, OrderShipped>(new SubscriptionOptions { Name = "workflow" }), services => services.AddSingleton<Recorder>());
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+
+        Assert.Equal([MessageSource.Queue(QueueName<PlaceOrder>()), MessageSource.Subscription(QueueName<OrderShipped>(), "workflow")], admin.GetSources());
+
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await host.Client.PublishAsync(new OrderShipped(2), cancellationToken: TestCancellationToken);
+        var recorder = host.Services.GetRequiredService<Recorder>();
+        await recorder.WaitForAsync(2);
+        Assert.Equal([1, 2], recorder.Values.Order());
+    }
+
+    [Fact]
     public async Task MessagesSentWhileHandling_InheritTheCorrelationId()
     {
         var correlation = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1564,6 +1610,21 @@ public class MessagingTests : TestWithLoggingBase
                 await Task.Delay(20);
 
             Assert.Equal(count, Values.Count);
+        }
+    }
+
+    public sealed class OrderWorkflowHandler(Recorder recorder) : IMessageHandler<PlaceOrder>, IMessageHandler<OrderShipped>
+    {
+        public Task HandleAsync(PlaceOrder message, IMessageContext context, CancellationToken cancellationToken)
+        {
+            recorder.Values.Add(message.OrderId);
+            return Task.CompletedTask;
+        }
+
+        public Task HandleAsync(OrderShipped message, IMessageContext context, CancellationToken cancellationToken)
+        {
+            recorder.Values.Add(message.OrderId);
+            return Task.CompletedTask;
         }
     }
 

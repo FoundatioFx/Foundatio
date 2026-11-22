@@ -1,6 +1,6 @@
 namespace Foundatio.Messaging;
 
-/// <summary>Header names Foundatio writes. Application headers should not reuse them.</summary>
+/// <summary>Header names Foundatio writes. Sending a message with an application header of one of these names throws.</summary>
 public static class KnownHeaders
 {
     /// <summary>The stable message type name used to pick the handler.</summary>

@@ -267,13 +267,14 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
 
         if (retryIn is { } delay)
         {
-            _logger.LogWarning(error, "Message {MessageId} failed on attempt {Attempt} of {MaxAttempts}; retrying in {Delay}",
-                message.MessageId, context.Attempt, policy.MaxAttempts, delay);
+            _logger.LogWarning(error, "{MessageType} message {MessageId} from {Source} failed on attempt {Attempt} of {MaxAttempts}; retrying in {RetryDelay}",
+                context.MessageType, message.MessageId, _sourceName, context.Attempt, policy.MaxAttempts, FormatDelay(delay));
             await RetryAsync(delivery, delay, abortToken).AnyContext();
             return (delivery.IsLeaseLost ? "lease-lost" : "retry", null);
         }
 
-        _logger.LogError(error, "Message {MessageId} failed after {Attempt} attempts: {Reason}", message.MessageId, context.Attempt, description);
+        _logger.LogError(error, "{MessageType} message {MessageId} from {Source} failed after {Attempt} attempts and is dead-lettered: {Reason}",
+            context.MessageType, message.MessageId, _sourceName, context.Attempt, description);
         return await DeadLetterOrDropAsync(delivery, description, abortToken).AnyContext();
     }
 
@@ -565,6 +566,9 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         activity.SetTag(MessagingInstruments.SourceKind, _sourceKind);
         return activity;
     }
+
+    /// <summary>A retry delay as seconds, such as <c>0.12s</c>, for logs.</summary>
+    private static string FormatDelay(TimeSpan delay) => String.Concat(delay.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture), "s");
 
     /// <summary>The metric attributes every messaging instrument of this source shares.</summary>
     private TagList CreateTags(string messageType)

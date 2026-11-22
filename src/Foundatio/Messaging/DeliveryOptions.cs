@@ -18,7 +18,7 @@ public abstract record DeliveryOptions
     /// <summary>Deliver after this delay.</summary>
     public TimeSpan? Delay { get; init; }
 
-    /// <summary>Deliver at this time. Takes precedence over <see cref="Delay"/>.</summary>
+    /// <summary>Deliver at this time. Set this or <see cref="Delay"/>, not both.</summary>
     public DateTimeOffset? DeliverAt { get; init; }
 
     /// <summary>Discard the message if it has not been handled within this time.</summary>
@@ -37,7 +37,7 @@ public abstract record DeliveryOptions
     /// </summary>
     public string? DeduplicationId { get; init; }
 
-    /// <summary>Application headers delivered with the message.</summary>
+    /// <summary>Application headers delivered with the message. Names Foundatio uses (<see cref="KnownHeaders"/>) are rejected.</summary>
     public IReadOnlyDictionary<string, string>? Headers { get; init; }
 }
 

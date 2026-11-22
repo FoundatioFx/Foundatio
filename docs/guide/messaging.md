@@ -169,7 +169,12 @@ m.UseRabbitMQ(new RabbitMQMessageTransportOptions { Prefix = "myapp" });
 | Replicas of one service | Compete | Compete for the service's copy |
 | While no one is listening | Waits in the queue | Copies wait in each existing subscription; with no subscriptions it is dropped |
 
-`AddConsumer<THandler>()` and `AddSubscriber<THandler>()` register every `IMessageHandler<T>` the class implements. To consume one type and subscribe to another, split the class in two; registering one class both ways gives each of its types a queue and a subscription.
+`AddConsumer<THandler>()` and `AddSubscriber<THandler>()` register every `IMessageHandler<T>` the class implements. For a class that handles a command and subscribes to an event, name the message type, so the command gets only a queue and the event only a subscription:
+
+```csharp
+m.AddConsumer<OrderWorkflowHandler, PlaceOrder>()
+ .AddSubscriber<OrderWorkflowHandler, OrderShipped>();
+```
 
 Mixing them up delivers nothing, and only your app's own handlers are known to it: the first time a type is sent that your app only subscribes to, or published that it only consumes, a warning is logged suggesting the other call. A mix-up between services is not detected.
 
@@ -292,7 +297,7 @@ Dead-lettering is at least once, like delivery: on transports that move a messag
 ```csharp
 string messageId = await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 {
-    Delay = TimeSpan.FromMinutes(10),   // or DeliverAt
+    Delay = TimeSpan.FromMinutes(10),   // or DeliverAt, not both
     TimeToLive = TimeSpan.FromHours(1), // discard if not handled by then
     GroupKey = "customer-42",           // ordered delivery where the transport supports it (ids and keys: up to 128 characters)
     DeduplicationId = "receipt-1",      // dropped if seen recently, where the transport supports it
@@ -300,6 +305,8 @@ string messageId = await messages.SendAsync(new SendReceipt(1, "a@b.com"), new S
     MessageId = "receipt-1",            // your own id, which handlers see as context.MessageId; generated otherwise
 });
 ```
+
+Application `Headers` can't reuse a name in `KnownHeaders` (`correlation-id`, `sent-at` and the others Foundatio writes); sending one throws `ArgumentException`.
 
 Delays longer than the transport supports are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
 

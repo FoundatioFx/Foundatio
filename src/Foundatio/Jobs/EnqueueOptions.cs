@@ -15,7 +15,7 @@ public sealed record EnqueueOptions
     /// <summary>Run after this delay.</summary>
     public TimeSpan? Delay { get; init; }
 
-    /// <summary>Run at this time. Takes precedence over <see cref="Delay"/>.</summary>
+    /// <summary>Run at this time. Set this or <see cref="Delay"/>, not both.</summary>
     public DateTimeOffset? RunAt { get; init; }
 
     /// <summary>

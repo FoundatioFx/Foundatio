@@ -462,6 +462,16 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task EnqueueAsync_WithBothDelayAndRunAt_Throws()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+
+        var options = new EnqueueOptions { Delay = TimeSpan.FromHours(1), RunAt = DateTimeOffset.UtcNow.AddSeconds(1) };
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ResizeImage("cat.png", 64), options, TestCancellationToken));
+        Assert.Equal(0, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
     public async Task EnqueueAsync_WithHeaders_KeepsThemAndATraceParentTheCallerSet()
     {
         await using var host = await StartAsync(_ => { });

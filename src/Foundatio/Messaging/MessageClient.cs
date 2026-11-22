@@ -112,6 +112,11 @@ internal sealed class MessageClient : IMessageClient
         if (isBatch && (options?.MessageId is not null || options?.DeduplicationId is not null))
             throw new ArgumentException("MessageId and DeduplicationId identify a single message and cannot be used for a batch; pass a MessageKeys selector to give each message its own.", nameof(options));
 
+        if (options is { Delay: not null, DeliverAt: not null })
+            throw new ArgumentException("Set Delay or DeliverAt, not both.", nameof(options));
+        if (options?.Headers is { Count: > 0 } applicationHeaders)
+            ValidateApplicationHeaders(applicationHeaders);
+
         ValidateIdLength(options?.MessageId, nameof(DeliveryOptions.MessageId));
         ValidateIdLength(options?.GroupKey, nameof(DeliveryOptions.GroupKey));
         ValidateIdLength(options?.DeduplicationId, nameof(DeliveryOptions.DeduplicationId));
@@ -446,6 +451,21 @@ internal sealed class MessageClient : IMessageClient
 
     private bool ShouldReport(string option, string messageType)
         => _reportedUnsupportedOptions.Count < MaxReportedMessageTypes && _reportedUnsupportedOptions.TryAdd(String.Concat(option, "|", messageType), 0);
+
+    private static void ValidateApplicationHeaders(IReadOnlyDictionary<string, string> headers)
+    {
+        foreach (string name in ReservedHeaders)
+        {
+            if (headers.ContainsKey(name))
+                throw new ArgumentException($"The header {name} is set by Foundatio; use a different name, or the matching option such as CorrelationId or DeliverAt.", "options");
+        }
+    }
+
+    private static readonly string[] ReservedHeaders =
+    [
+        KnownHeaders.MessageType, KnownHeaders.MessageBaseTypes, KnownHeaders.CorrelationId, KnownHeaders.SentAt, KnownHeaders.TraceParent,
+        KnownHeaders.TraceState, KnownHeaders.DeliverAt, KnownHeaders.ExpiresAt, KnownHeaders.DeadLetterReason
+    ];
 
     private static void ValidateIdLength(string? value, string name)
     {
