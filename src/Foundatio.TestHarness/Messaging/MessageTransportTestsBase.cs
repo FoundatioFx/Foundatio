@@ -78,6 +78,12 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     protected virtual TimeSpan StatsTimeout => TimeSpan.FromSeconds(15);
 
     /// <summary>
+    /// How soon a message sent from another process must reach a receive that is already waiting for one. Raise it only
+    /// for a broker that cannot deliver sooner than its own polling interval.
+    /// </summary>
+    protected virtual TimeSpan WakeUpTimeout => TimeSpan.FromSeconds(3);
+
+    /// <summary>
     /// True when the broker cannot tell a stale receipt from the current one, so a <see cref="IMessageReceiver.CompleteAsync"/>
     /// through a delivery whose lease was lost may remove the message instead of throwing
     /// <see cref="MessageLeaseLostException"/> (an SQS receipt handle). False by default: a stale complete must throw and
@@ -91,13 +97,19 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>A transport from <see cref="CreatePeerTransport"/>: another process connected to the same broker.</summary>
     protected IMessageTransport PeerTransport => _peerTransport ??= Track(CreatePeerTransport());
 
-    /// <summary>A sent message is received with the same id, body, headers and group key, and a delivery count of 1.</summary>
+    /// <summary>
+    /// A sent message is received with the same id, body, headers and group key, and a delivery count of 1. Header names
+    /// are case-sensitive: names that differ only in case are distinct headers.
+    /// </summary>
     [Fact]
     public async Task SendThenReceive_RoundTripsIdBodyAndHeaders()
     {
         var source = MessageSource.Queue(NewName("roundtrip"));
         await using var receiver = await CreateReceiverAsync(source);
-        var headers = new Dictionary<string, string> { ["message-type"] = "conformance.test", ["unicode"] = "héllo wörld ✓", ["empty"] = "" };
+        var headers = new Dictionary<string, string>
+        {
+            ["message-type"] = "conformance.test", ["unicode"] = "héllo wörld ✓", ["empty"] = "", ["X-Mixed"] = "upper", ["x-mixed"] = "lower"
+        };
 
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("payload", "id-1", headers) with { GroupKey = "group-1" }], TestCancellationToken);
 
@@ -107,7 +119,8 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal("payload", Encoding.UTF8.GetString(message.Body.Span));
         Assert.Equal(1, message.DeliveryCount);
         foreach (var (key, value) in headers)
-            Assert.Equal(value, message.Headers[key]);
+            Assert.True(message.Headers.TryGetValue(key, out string? received) && received == value, $"Header {key} came back as {received ?? "(missing)"}, not {value}.");
+        Assert.False(message.Headers.ContainsKey("X-MIXED"), "The received headers look names up ignoring case.");
 
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
@@ -132,6 +145,24 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Ids and group keys holding U+0000, which text columns and C strings cannot hold, are received unchanged.</summary>
+    [Fact]
+    public virtual async Task SendThenReceive_IdsAndGroupKeyWithNul_RoundTrip()
+    {
+        const string id = "id\0with nul", groupKey = "group\0with nul";
+        string? deduplicationId = Transport.Capabilities.Deduplication ? "dedup\0with nul" : null;
+        var source = MessageSource.Queue(NewName("nul-ids"));
+        await using var receiver = await CreateReceiverAsync(source);
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            [Message("nul ids", id) with { GroupKey = groupKey, DeduplicationId = deduplicationId }], TestCancellationToken);
+
+        var message = await ReceiveOneAsync(receiver);
+        Assert.Equal(id, message.MessageId);
+        Assert.Equal(groupKey, message.GroupKey);
+        await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
     /// <summary>A receive from an empty source returns an empty list once its maximum wait has passed.</summary>
     [Fact]
     public async Task Receive_WhenEmpty_ReturnsEmptyWithinMaxWait()
@@ -143,6 +174,26 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         Assert.Empty(messages);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1) + TimeSpan.FromSeconds(4), $"ReceiveAsync took {stopwatch.Elapsed} with a 1s maxWait.");
+        Assert.True(stopwatch.Elapsed >= TimeSpan.FromSeconds(0.5), $"ReceiveAsync returned empty after {stopwatch.Elapsed} instead of waiting for its 1s maxWait.");
+    }
+
+    /// <summary>A message sent from another process reaches a receive that is already waiting promptly, not on the next poll.</summary>
+    [Fact]
+    public async Task Receive_WhileWaiting_GetsAMessageSentFromAnotherProcessPromptly()
+    {
+        var source = MessageSource.Queue(NewName("wake"));
+        await using var receiver = await CreateReceiverAsync(source);
+
+        var waiting = receiver.ReceiveAsync(1, WakeUpTimeout + DeliveryTimeout, TestCancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        await PeerTransport.SendAsync(MessageDestination.Queue(source.Name), [Message("wake up", "id-wake")], TestCancellationToken);
+
+        var message = Assert.Single(await waiting);
+        _logger.LogInformation("A waiting receive got a message {Latency} after its send began", stopwatch.Elapsed);
+        Assert.Equal("id-wake", message.MessageId);
+        Assert.True(stopwatch.Elapsed <= WakeUpTimeout, $"A waiting receive got the message {stopwatch.Elapsed} after its send began, later than WakeUpTimeout ({WakeUpTimeout}).");
+        await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
     /// <summary>A cancelled receive throws promptly, and a message sent afterwards is still received.</summary>
@@ -522,20 +573,31 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.All(messages, m => Assert.Equal("id-poison", m.MessageId));
     }
 
-    /// <summary>A message sent with a delivery time is not received before it.</summary>
+    /// <summary>
+    /// A message sent with a delivery time is not received before it, including one an hour out (or
+    /// <see cref="TransportCapabilities.MaxDelay"/>, when that is shorter), which a transport must not cut short.
+    /// </summary>
     [Fact]
     public async Task DeliverAt_DelaysDelivery()
     {
         Assert.SkipWhen(Transport.Capabilities.MaxDelay == TimeSpan.Zero, "The transport does not support delays.");
         var source = MessageSource.Queue(NewName("delay"));
         await using var receiver = await CreateReceiverAsync(source);
+        var longDelay = Transport.Capabilities.MaxDelay is { } maxDelay && maxDelay < TimeSpan.FromHours(1) ? maxDelay : TimeSpan.FromHours(1);
         var stopwatch = Stopwatch.StartNew();
 
-        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("scheduled") with { DeliverAt = DateTimeOffset.UtcNow.Add(ShortDelay) }], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [
+            Message("scheduled", "id-scheduled") with { DeliverAt = DateTimeOffset.UtcNow.Add(ShortDelay) },
+            Message("much later", "id-much-later") with { DeliverAt = DateTimeOffset.UtcNow.Add(longDelay) }
+        ], TestCancellationToken);
 
         var message = await ReceiveOneAsync(receiver, ShortDelay + DeliveryTimeout);
+        Assert.Equal("id-scheduled", message.MessageId);
         Assert.True(stopwatch.Elapsed >= ShortDelay * 0.75, $"Delivered after {stopwatch.Elapsed}, expected at least {ShortDelay}.");
         await receiver.CompleteAsync(message, TestCancellationToken);
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("canary", "canary")], TestCancellationToken);
+        await AssertOnlyReceivedAsync(receiver, "canary");
     }
 
     /// <summary>A message published with a delivery time reaches subscriptions no earlier than it.</summary>
@@ -1259,6 +1321,88 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         Assert.Equal(["a-0", "a-1"], order);
         Assert.True(stopwatch.Elapsed >= ShortDelay * 0.75, $"The group was released after {stopwatch.Elapsed}, before its delayed first message was due.");
+    }
+
+    /// <summary>
+    /// A group belongs to its source: an unsettled message of a group on one queue or subscription does not hold back
+    /// messages of the same group key on another.
+    /// </summary>
+    [Fact]
+    public async Task OrderedGroups_OnOtherSources_AreNotHeldBack()
+    {
+        Assert.SkipUnless(Transport.Capabilities.OrderedGroups, "The transport does not order groups.");
+        string topic = NewName("group-scope");
+        var receivers = new List<IMessageReceiver>();
+        try
+        {
+            foreach (var source in new[] { MessageSource.Queue(NewName("group-scope-a")), MessageSource.Queue(NewName("group-scope-b")),
+                MessageSource.Subscription(topic, "a"), MessageSource.Subscription(topic, "b") })
+            {
+                receivers.Add(await CreateReceiverAsync(source));
+                if (source.Kind == MessageSourceKind.Queue)
+                    await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message(source.Name, source.Name) with { GroupKey = "shared" }], TestCancellationToken);
+            }
+
+            await Transport.SendAsync(MessageDestination.Topic(topic), [Message("published", "id-published") with { GroupKey = "shared" }], TestCancellationToken);
+
+            // Each receive runs while the messages received before it are unsettled.
+            var held = new List<IncomingMessage>();
+            foreach (var receiver in receivers)
+                held.Add(await ReceiveOneAsync(receiver));
+
+            Assert.All(held, m => Assert.Equal("shared", m.GroupKey));
+            for (int i = 0; i < receivers.Count; i++)
+                await receivers[i].CompleteAsync(held[i], TestCancellationToken);
+        }
+        finally
+        {
+            foreach (var receiver in receivers)
+                await receiver.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Senders in several processes sending to one group at once never get two of its messages handed out together,
+    /// and each sender's messages, sent one call after another, arrive in the order it sent them.
+    /// </summary>
+    [Fact]
+    public async Task OrderedGroups_WithConcurrentSenders_HoldTheGroupAndKeepEachSendersOrder()
+    {
+        Assert.SkipUnless(Transport.Capabilities.OrderedGroups, "The transport does not order groups.");
+        const int senders = 4, perSender = 5;
+        var source = MessageSource.Queue(NewName("group-senders"));
+        await using var receiver = await CreateReceiverAsync(source);
+        IMessageTransport[] processes = [Transport, PeerTransport];
+
+        var sending = Task.WhenAll(Enumerable.Range(0, senders).Select(sender => Task.Run(async () =>
+        {
+            for (int i = 0; i < perSender; i++)
+                await processes[sender % processes.Length].SendAsync(MessageDestination.Queue(source.Name), [Message($"s{sender}-{i}", $"s{sender}-{i}") with { GroupKey = "g" }], TestCancellationToken);
+        }, TestCancellationToken)));
+
+        var order = new List<string>();
+        var deadline = DateTime.UtcNow + DeliveryTimeout * 2;
+        while (order.Count < senders * perSender && DateTime.UtcNow < deadline)
+        {
+            var batch = await receiver.ReceiveAsync(10, TimeSpan.FromSeconds(1), TestCancellationToken);
+            if (batch.Count == 0)
+                continue;
+
+            // While the batch is unsettled, no other message of the group may be handed out, even one whose send
+            // committed after the batch was received.
+            var meanwhile = await receiver.ReceiveAsync(10, TimeSpan.FromMilliseconds(100), TestCancellationToken);
+            Assert.True(meanwhile.Count == 0, $"{String.Join(", ", meanwhile.Select(m => m.MessageId))} of group g was handed out while {String.Join(", ", batch.Select(m => m.MessageId))} was unsettled.");
+            foreach (var message in batch)
+            {
+                order.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        await sending;
+        Assert.Equal(senders * perSender, order.Count);
+        for (int sender = 0; sender < senders; sender++)
+            Assert.Equal(Enumerable.Range(0, perSender).Select(i => $"s{sender}-{i}"), order.Where(id => id.StartsWith($"s{sender}-", StringComparison.Ordinal)));
     }
 
     /// <summary>A dead-letter queue does not hold groups back, so all dead letters of one group are received together.</summary>
