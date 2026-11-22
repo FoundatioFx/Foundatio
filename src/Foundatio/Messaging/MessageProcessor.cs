@@ -92,7 +92,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         _renewer = new LeaseRenewer(lease, capabilities.LeaseExpiration, timeProvider, _logger);
         _slots = new SemaphoreSlim(settings.MaxConcurrency, settings.MaxConcurrency);
         _holds = new RetryHolds(settings.MaxConcurrency, timeProvider, _stopReceiving.Token, ReleaseSlots);
-        _settlements = new SettlementSlots(settings.MaxConcurrency, ReleaseSlots);
+        _settlements = new SettlementSlots(settings.MaxConcurrency, Math.Max(1, capabilities.MaxReceiveBatchSize), ReleaseSlots);
         _backoff = new ReceiveBackoff(timeProvider);
 
         // Enough receives to fill every slot, as far as the transport allows: full batches and one for the rest.

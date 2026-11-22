@@ -25,7 +25,7 @@ namespace Foundatio.Messaging.Transport;
 /// 15 minutes instead, since delayed messages do not count toward SQS's in-flight quota. Receives may run concurrently:
 /// SQS hands a message, and a FIFO group with a message in flight, to one of them only, each receive handles the early
 /// and held-back messages it got itself, with batch calls, and they share one reading of the in-flight count.
-/// Completions, renewals and abandons are sent in batches too, as a group commit (<see cref="SqsSettlementBatcher{TEntry}"/>).
+/// Completions, renewals and abandons are sent in batches too, as a group commit (<see cref="SettlementBatcher{TEntry}"/>).
 /// </summary>
 internal sealed class SqsMessageReceiver : IMessageReceiver
 {
@@ -87,8 +87,8 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     private readonly ConcurrentDictionary<string, SqsIncomingMessage> _inFlight = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _disposing = new();
     private readonly SemaphoreSlim _inFlightCheck = new(1, 1);
-    private readonly SqsSettlementBatcher<SqsIncomingMessage> _completions;
-    private readonly SqsSettlementBatcher<(SqsIncomingMessage Delivery, int Seconds)> _visibilityChanges;
+    private readonly SettlementBatcher<SqsIncomingMessage> _completions;
+    private readonly SettlementBatcher<(SqsIncomingMessage Delivery, int Seconds)> _visibilityChanges;
 
     /// <summary>
     /// The receipt handles of the last <see cref="InFlightSlice"/> messages this receiver hid on a standard queue, with
@@ -114,8 +114,8 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         _purgedBefore = purgedBefore;
         _fifo = transport.Options.Fifo;
         _leaseSeconds = ToSeconds(options.LeaseDuration, minimum: 1);
-        _completions = new SqsSettlementBatcher<SqsIncomingMessage>(DeleteDeliveriesAsync);
-        _visibilityChanges = new SqsSettlementBatcher<(SqsIncomingMessage Delivery, int Seconds)>(ChangeDeliveryVisibilityAsync);
+        _completions = new SettlementBatcher<SqsIncomingMessage>(SqsMessageTransport.MaxBatchSize, DeleteDeliveriesAsync);
+        _visibilityChanges = new SettlementBatcher<(SqsIncomingMessage Delivery, int Seconds)>(SqsMessageTransport.MaxBatchSize, ChangeDeliveryVisibilityAsync);
     }
 
     public MessageSource Source { get; }
@@ -713,7 +713,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     }
 
     /// <summary>The settlement batcher's call for completions: deletes up to 10 deliveries and returns each one's error.</summary>
-    private async Task<Exception?[]> DeleteDeliveriesAsync(IReadOnlyList<SqsIncomingMessage> deliveries, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Exception?>?> DeleteDeliveriesAsync(IReadOnlyList<SqsIncomingMessage> deliveries, CancellationToken cancellationToken)
     {
         var errors = await DeleteAsync(deliveries.Select(d => d.ReceiptHandle).ToList(), cancellationToken).AnyContext();
         for (int i = 0; i < errors.Length; i++)
@@ -726,7 +726,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     }
 
     /// <summary>The settlement batcher's call for renewals and abandons: changes the visibility of up to 10 deliveries and returns each one's error.</summary>
-    private async Task<Exception?[]> ChangeDeliveryVisibilityAsync(IReadOnlyList<(SqsIncomingMessage Delivery, int Seconds)> changes, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<Exception?>?> ChangeDeliveryVisibilityAsync(IReadOnlyList<(SqsIncomingMessage Delivery, int Seconds)> changes, CancellationToken cancellationToken)
     {
         var errors = await ChangeVisibilityAsync(changes.Select(c => (c.Delivery.ReceiptHandle, c.Seconds)).ToList(), cancellationToken).AnyContext();
         for (int i = 0; i < errors.Length; i++)

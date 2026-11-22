@@ -504,14 +504,20 @@ public class MessageProcessorTests : TestWithLoggingBase
         await WaitForAsync(() => status.GetProcessors().Single().Active == 0, TimeSpan.FromSeconds(10));
     }
 
-    [Fact]
-    public async Task Settle_WhenTheSettlementsWithoutSlotsAreFull_KeepsFurtherSettlementsInTheirSlots()
+    /// <summary>
+    /// Settlements without their slots are capped at twice the slots, or at a receive batch when that is more, so a
+    /// transport that batches settlements gets a batch's worth together even with one handler.
+    /// </summary>
+    [Theory]
+    [InlineData(2, 1, 4)]
+    [InlineData(1, 10, 10)]
+    public async Task Settle_WhenTheSettlementsWithoutSlotsAreFull_KeepsFurtherSettlementsInTheirSlots(int maxConcurrency, int receiveBatch, int withoutSlots)
     {
-        const int maxConcurrency = 2, count = 20;
-        const int expectedHandled = maxConcurrency * (1 + SettlementSlots.SettlementsPerSlot);
+        const int count = 20;
+        int expectedHandled = maxConcurrency + withoutSlots;
         int settling = 0;
         var finishCompleting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var transport = new InterceptingMessageTransport(_transport)
+        var transport = new InterceptingMessageTransport(_transport, _transport.Capabilities with { MaxReceiveBatchSize = receiveBatch })
         {
             OnSettleAsync = async (_, _) =>
             {

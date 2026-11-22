@@ -7,8 +7,10 @@ namespace Foundatio.Messaging;
 /// Lets one processor's settlements run without their handler slots: once a handler has returned, a complete, abandon
 /// or dead-letter that waits on the broker gives the delivery's slot to the next message, so a slot does not wait out a
 /// round trip. The delivery stays in flight, and its outcome is reported, only once the settlement finishes. At most
-/// <see cref="SettlementsPerSlot"/> settlements per handler slot run without their slots at once; past that a settlement
-/// keeps its slot, so a slow broker cannot make settlements pile up without bound.
+/// <see cref="SettlementsPerSlot"/> settlements per handler slot, or a receive batch when that is more, run without their
+/// slots at once; past that a settlement keeps its slot, so a slow broker cannot make settlements pile up without bound.
+/// The batch lets a transport that sends settlements together as a group commit (see
+/// <see cref="Transport.SettlementBatcher{TEntry}"/>) fill its calls even with one handler.
 /// </summary>
 internal sealed class SettlementSlots
 {
@@ -23,10 +25,11 @@ internal sealed class SettlementSlots
     private int _count;
 
     /// <param name="maxConcurrency">The processor's handler slots.</param>
+    /// <param name="receiveBatchSize">The most messages one receive returns, at most as many settlements as one call settles.</param>
     /// <param name="releaseSlots">Gives the given number of handler slots back to the processor.</param>
-    public SettlementSlots(int maxConcurrency, Action<int> releaseSlots)
+    public SettlementSlots(int maxConcurrency, int receiveBatchSize, Action<int> releaseSlots)
     {
-        _capacity = (long)maxConcurrency * SettlementsPerSlot;
+        _capacity = Math.Max((long)maxConcurrency * SettlementsPerSlot, receiveBatchSize);
         _releaseSlots = releaseSlots;
     }
 

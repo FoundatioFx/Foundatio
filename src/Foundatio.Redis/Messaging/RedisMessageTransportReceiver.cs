@@ -27,9 +27,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private readonly CancellationTokenSource _disposing = new();
     private readonly RedisChannel _wakeChannel;
     private readonly Action<RedisChannel, RedisValue> _onSignal;
-    private readonly object _completionsLock = new();
-    private List<PendingCompletion>? _queuedCompletions;
-    private bool _completing;
+    private readonly SettlementBatcher<RedisIncomingMessage> _completions;
     private TaskCompletionSource _wake = NewWakeSignal();
     private IdleRegistration? _idle;
     private TimeSpan _pollInterval;
@@ -55,6 +53,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         _instance = instance;
         if (source.Kind == MessageSourceKind.Subscription)
             _topicSubscriptions = new RedisTopicKeys(transport.Options.Prefix, source.Topic!).Subscriptions;
+        _completions = new SettlementBatcher<RedisIncomingMessage>(RedisMessageTransport.ScriptBatchSize, CompleteBatchAsync);
         _wakeChannel = transport.WakeChannel(keys.WakeChannelPrefix + _consumer);
         _onSignal = (_, _) =>
         {
@@ -183,26 +182,11 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
 
     /// <summary>
     /// Completes the message. Completes called while another one runs are sent together, as one script call, once it
-    /// ends, so concurrent completes take fewer round trips. Each message's lease is checked on its own; a call that
-    /// fails completes none of its messages, so they are delivered again.
+    /// ends (see <see cref="SettlementBatcher{TEntry}"/>), so concurrent completes take fewer round trips. Each message's
+    /// lease is checked on its own; a call that fails completes none of its messages, so they are delivered again.
     /// </summary>
     public Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default)
-    {
-        var completion = new PendingCompletion(GetDelivery(message));
-        lock (_completionsLock)
-        {
-            if (_completing)
-            {
-                (_queuedCompletions ??= []).Add(completion);
-                return completion.Task;
-            }
-
-            _completing = true;
-        }
-
-        _ = CompleteBatchesAsync([completion]);
-        return completion.Task;
-    }
+        => _completions.SendAsync(GetDelivery(message), cancellationToken);
 
     public async Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
     {
@@ -438,70 +422,44 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         return delivery;
     }
 
-    // Runs one batch, then the completes queued meanwhile, until none are left.
-    private async Task CompleteBatchesAsync(List<PendingCompletion> batch)
+    /// <summary>The settlement batcher's call: completes up to a script batch of deliveries and returns the lease-lost ones' errors.</summary>
+    private async Task<IReadOnlyList<Exception?>?> CompleteBatchAsync(IReadOnlyList<RedisIncomingMessage> batch, CancellationToken cancellationToken)
     {
-        while (true)
+        var values = new List<RedisValue>(4 + batch.Count * 4) { RedisMessageTransport.GroupName, _consumer, _keys.WakeChannelPrefix, _transport.PublishCommand };
+        foreach (var delivery in batch)
         {
-            await CompleteBatchAsync(batch).AnyContext();
-            lock (_completionsLock)
-            {
-                if (_queuedCompletions is not { Count: > 0 } queued)
-                {
-                    _completing = false;
-                    return;
-                }
-
-                int count = Math.Min(queued.Count, RedisMessageTransport.ScriptBatchSize);
-                batch = queued.GetRange(0, count);
-                queued.RemoveRange(0, count);
-            }
+            bool ordered = _keys.OrderedGroups && delivery.GroupKey is not null;
+            values.Add(delivery.EntryId);
+            values.Add(delivery.Deliveries);
+            values.Add(ordered ? 1 : 0);
+            values.Add(ordered ? delivery.GroupKey : String.Empty);
         }
-    }
 
-    private async Task CompleteBatchAsync(List<PendingCompletion> batch)
-    {
+        long[] results;
         try
         {
-            var values = new List<RedisValue>(4 + batch.Count * 4) { RedisMessageTransport.GroupName, _consumer, _keys.WakeChannelPrefix, _transport.PublishCommand };
-            foreach (var completion in batch)
-            {
-                var delivery = completion.Delivery;
-                bool ordered = _keys.OrderedGroups && delivery.GroupKey is not null;
-                values.Add(delivery.EntryId);
-                values.Add(delivery.Deliveries);
-                values.Add(ordered ? 1 : 0);
-                values.Add(ordered ? delivery.GroupKey : String.Empty);
-            }
-
-            var results = (long[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.CompleteScript,
+            results = (long[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.CompleteScript,
                 [_keys.Stream, _keys.Leases, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData, _keys.Idle], values.ToArray()).AnyContext())!;
-
-            bool released = false;
-            for (int i = 0; i < batch.Count; i++)
-            {
-                if (results[i] == 0)
-                {
-                    batch[i].TrySetException(new MessageLeaseLostException($"The lease for message {batch[i].Delivery.MessageId} was lost."));
-                    continue;
-                }
-
-                released |= results[i] == 2;
-                batch[i].TrySetResult();
-            }
-
-            if (released && !_subscribed)
-                Wake();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (RedisMessageTransport.IsRedisFailure(ex))
         {
-            foreach (var completion in batch)
-            {
-                completion.TrySetException(RedisMessageTransport.IsRedisFailure(ex)
-                    ? new MessageBusException($"Could not complete message {completion.Delivery.MessageId} from {Source}: {ex.Message}", ex)
-                    : ex);
-            }
+            throw new MessageBusException($"Could not complete {batch.Count} message(s) from {Source}: {ex.Message}", ex);
         }
+
+        Exception?[]? errors = null;
+        bool released = false;
+        for (int i = 0; i < batch.Count; i++)
+        {
+            if (results[i] == 0)
+                (errors ??= new Exception?[batch.Count])[i] = new MessageLeaseLostException($"The lease for message {batch[i].MessageId} was lost.");
+            else
+                released |= results[i] == 2;
+        }
+
+        if (released && !_subscribed)
+            Wake();
+
+        return errors;
     }
 
     private void Wake() => Interlocked.Exchange(ref _wake, NewWakeSignal()).TrySetResult();
@@ -585,11 +543,6 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         public bool IsCurrent() => !Wake.IsCompleted && (DueAt is not { } due || Stopwatch.GetTimestamp() < due);
 
         public TimeSpan? TimeUntilDue() => DueAt is { } due ? Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), due) : null;
-    }
-
-    private sealed class PendingCompletion(RedisIncomingMessage delivery) : TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
-    {
-        public RedisIncomingMessage Delivery { get; } = delivery;
     }
 
     private sealed class RedisIncomingMessage : IncomingMessage
