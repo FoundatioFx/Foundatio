@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 
 namespace Foundatio;
