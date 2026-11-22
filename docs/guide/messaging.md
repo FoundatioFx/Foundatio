@@ -283,8 +283,10 @@ Dead-lettering is at least once, like delivery: on transports that move a messag
 
 ## Options when sending
 
+`SendAsync` and `PublishAsync` return the message id: `MessageId` when you set it, otherwise the generated one. The handler sees the same id in `context.MessageId`.
+
 ```csharp
-await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
+string messageId = await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 {
     Delay = TimeSpan.FromMinutes(10),   // or DeliverAt
     TimeToLive = TimeSpan.FromHours(1), // discard if not handled by then
@@ -296,6 +298,21 @@ await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 ```
 
 Delays longer than the transport supports are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
+
+### Batches
+
+`SendBatchAsync` and `PublishBatchAsync` return the message ids in the order of the messages. `SendOptions.MessageId` and `DeduplicationId` name one message, so a batch rejects them; pass a selector instead to give each message its own ids and group key:
+
+```csharp
+IReadOnlyList<string> ids = await messages.SendBatchAsync(receipts, r => new MessageKeys
+{
+    MessageId = $"receipt-{r.OrderId}",
+    DeduplicationId = $"receipt-{r.OrderId}",
+    GroupKey = $"customer-{r.CustomerId}",   // null falls back to SendOptions.GroupKey
+});
+```
+
+A batch that throws may have been partly sent: the messages before the failure are on their way. Sending the batch again delivers those twice unless each message keeps its id across the retry, as above; on a transport that deduplicates (Redis, SQS FIFO, Service Bus with duplicate detection), the `DeduplicationId` then drops the copies, and elsewhere handlers see the repeated `MessageId`.
 
 `GroupKey` and `DeduplicationId` only guarantee something on transports that declare `OrderedGroups` and `Deduplication` in their `TransportCapabilities`. On other transports the message is still sent, and Foundatio logs a warning once per message type:
 

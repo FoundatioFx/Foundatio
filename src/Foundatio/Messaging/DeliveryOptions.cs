@@ -6,7 +6,10 @@ namespace Foundatio.Messaging;
 /// <summary>Options shared by <see cref="SendOptions"/> and <see cref="PublishOptions"/>.</summary>
 public abstract record DeliveryOptions
 {
-    /// <summary>The message id, up to 128 characters. Generated when omitted. Not allowed for batches.</summary>
+    /// <summary>
+    /// The message id, up to 128 characters. Generated when omitted. Not allowed for batches: give a batch per-message
+    /// ids with a <see cref="MessageKeys"/> selector.
+    /// </summary>
     public string? MessageId { get; init; }
 
     /// <summary>Defaults to the correlation id of the message being handled, if any.</summary>
@@ -30,7 +33,7 @@ public abstract record DeliveryOptions
 
     /// <summary>
     /// Up to 128 characters. Transports that support it drop later messages with the same id within their
-    /// deduplication window.
+    /// deduplication window. Not allowed for batches: use a <see cref="MessageKeys"/> selector.
     /// </summary>
     public string? DeduplicationId { get; init; }
 

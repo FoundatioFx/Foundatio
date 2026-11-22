@@ -17,6 +17,7 @@ namespace Foundatio.Messaging;
 internal sealed class MessageClient : IMessageClient
 {
     private const int MaxReportedMessageTypes = 1024;
+    private static readonly int[] FirstIndex = [0];
 
     private readonly MessagingRuntime _runtime;
     private readonly ILogger _logger;
@@ -34,28 +35,36 @@ internal sealed class MessageClient : IMessageClient
         _logger = runtime.LoggerFactory.CreateLogger<MessageClient>();
     }
 
-    public Task SendAsync<T>(T message, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<string> SendAsync<T>(T message, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(message);
-        return SendCoreAsync(MessageDestinationKind.Queue, [message], options, options?.Queue, isBatch: false, cancellationToken);
+        string id = options?.MessageId ?? NewMessageId();
+        return SendCoreAsync(MessageDestinationKind.Queue, [message], [id], null, options, options?.Queue, isBatch: false, id, cancellationToken);
     }
 
-    public Task SendBatchAsync<T>(IEnumerable<T> messages, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
+        => SendBatchCoreAsync(MessageDestinationKind.Queue, messages, null, options, options?.Queue, cancellationToken);
+
+    public Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, Func<T, MessageKeys> keys, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
-        ArgumentNullException.ThrowIfNull(messages);
-        return SendCoreAsync(MessageDestinationKind.Queue, messages, options, options?.Queue, isBatch: true, cancellationToken);
+        ArgumentNullException.ThrowIfNull(keys);
+        return SendBatchCoreAsync(MessageDestinationKind.Queue, messages, keys, options, options?.Queue, cancellationToken);
     }
 
-    public Task PublishAsync<T>(T message, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<string> PublishAsync<T>(T message, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(message);
-        return SendCoreAsync(MessageDestinationKind.Topic, [message], options, options?.Topic, isBatch: false, cancellationToken);
+        string id = options?.MessageId ?? NewMessageId();
+        return SendCoreAsync(MessageDestinationKind.Topic, [message], [id], null, options, options?.Topic, isBatch: false, id, cancellationToken);
     }
 
-    public Task PublishBatchAsync<T>(IEnumerable<T> messages, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
+        => SendBatchCoreAsync(MessageDestinationKind.Topic, messages, null, options, options?.Topic, cancellationToken);
+
+    public Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, Func<T, MessageKeys> keys, PublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
-        ArgumentNullException.ThrowIfNull(messages);
-        return SendCoreAsync(MessageDestinationKind.Topic, messages, options, options?.Topic, isBatch: true, cancellationToken);
+        ArgumentNullException.ThrowIfNull(keys);
+        return SendBatchCoreAsync(MessageDestinationKind.Topic, messages, keys, options, options?.Topic, cancellationToken);
     }
 
     public async Task<IAsyncDisposable> SubscribeAsync<T>(Func<T, IMessageContext, CancellationToken, Task> handler, SubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -72,22 +81,55 @@ internal sealed class MessageClient : IMessageClient
         return new AsyncDisposableAction(() => _runtime.StopProcessorAsync(processor));
     }
 
-    private async Task SendCoreAsync<T>(MessageDestinationKind kind, IEnumerable<T> messages, DeliveryOptions? options, string? destinationOverride, bool isBatch, CancellationToken cancellationToken) where T : class
+    private Task<IReadOnlyList<string>> SendBatchCoreAsync<T>(MessageDestinationKind kind, IEnumerable<T> messages, Func<T, MessageKeys>? keySelector,
+        DeliveryOptions? options, string? destinationOverride, CancellationToken cancellationToken) where T : class
     {
-        var items = messages as IReadOnlyCollection<T> ?? messages.ToList();
+        ArgumentNullException.ThrowIfNull(messages);
+        var items = messages as IReadOnlyList<T> ?? messages.ToList();
+        var ids = new string[items.Count];
+        MessageKeys[]? keys = keySelector is null ? null : new MessageKeys[items.Count];
+        for (int i = 0; i < items.Count; i++)
+        {
+            ArgumentNullException.ThrowIfNull(items[i], nameof(messages));
+            if (keys is not null)
+                keys[i] = keySelector!(items[i]);
+
+            ids[i] = keys?[i].MessageId ?? NewMessageId();
+        }
+
+        return SendCoreAsync<T, IReadOnlyList<string>>(kind, items, ids, keys, options, destinationOverride, isBatch: true, ids, cancellationToken);
+    }
+
+    /// <summary>Sends <paramref name="items"/> with the matching <paramref name="ids"/> and <paramref name="keys"/>, and returns <paramref name="result"/>.</summary>
+    private async Task<TResult> SendCoreAsync<T, TResult>(MessageDestinationKind kind, IReadOnlyList<T> items, string[] ids, MessageKeys[]? keys, DeliveryOptions? options,
+        string? destinationOverride, bool isBatch, TResult result, CancellationToken cancellationToken) where T : class
+    {
         if (items.Count == 0)
-            return;
+            return result;
 
         if (isBatch && (options?.MessageId is not null || options?.DeduplicationId is not null))
-            throw new ArgumentException("MessageId and DeduplicationId identify a single message and cannot be used for a batch.", nameof(options));
+            throw new ArgumentException("MessageId and DeduplicationId identify a single message and cannot be used for a batch; pass a MessageKeys selector to give each message its own.", nameof(options));
 
         ValidateIdLength(options?.MessageId, nameof(DeliveryOptions.MessageId));
         ValidateIdLength(options?.GroupKey, nameof(DeliveryOptions.GroupKey));
         ValidateIdLength(options?.DeduplicationId, nameof(DeliveryOptions.DeduplicationId));
+        bool anyGroupKey = options?.GroupKey is not null;
+        bool anyDeduplicationId = options?.DeduplicationId is not null;
+        if (keys is not null)
+        {
+            foreach (var key in keys)
+            {
+                ValidateIdLength(key.MessageId, nameof(MessageKeys.MessageId));
+                ValidateIdLength(key.GroupKey, nameof(MessageKeys.GroupKey));
+                ValidateIdLength(key.DeduplicationId, nameof(MessageKeys.DeduplicationId));
+                anyGroupKey |= key.GroupKey is not null;
+                anyDeduplicationId |= key.DeduplicationId is not null;
+            }
+        }
 
         var capabilities = _runtime.Transport.Capabilities;
-        if (options is not null)
-            CheckUnsupportedOptions(options, capabilities, items);
+        if (anyGroupKey || anyDeduplicationId)
+            CheckUnsupportedOptions(anyGroupKey, anyDeduplicationId, capabilities, items);
 
         var now = _runtime.TimeProvider.GetUtcNow();
         var deliverAt = options?.DeliverAt ?? (options?.Delay is { } delay ? now.Add(delay) : null);
@@ -118,24 +160,20 @@ internal sealed class MessageClient : IMessageClient
             options?.TimeToLive is { } ttl ? now.Add(ttl).ToString("O", CultureInfo.InvariantCulture) : null,
             deliverAt is { } requestedAt && nativeDeliverAt != deliverAt ? requestedAt.ToString("O", CultureInfo.InvariantCulture) : null,
             correlationId);
+        var batch = new SendBatch<T>(items, ids, keys, options, nativeDeliverAt, headerValues);
 
         // One message, the usual case, goes to its route's destination without grouping the batch by destination.
-        if (items.Count == 1 && items is IReadOnlyList<T> single)
+        if (items.Count == 1)
         {
-            var message = single[0];
-            ArgumentNullException.ThrowIfNull(message, nameof(messages));
-            await SendGroupAsync(kind, GetDestinationName(kind, message, destinationOverride), single, options, capabilities, nativeDeliverAt, headerValues, cancellationToken).AnyContext();
-            return;
+            await SendGroupAsync(kind, GetDestinationName(kind, items[0], destinationOverride), batch, FirstIndex, capabilities, cancellationToken).AnyContext();
+            return result;
         }
 
-        var groups = items.GroupBy(message =>
-        {
-            ArgumentNullException.ThrowIfNull(message, nameof(messages));
-            return GetDestinationName(kind, message, destinationOverride);
-        });
-
+        var groups = Enumerable.Range(0, items.Count).GroupBy(i => GetDestinationName(kind, items[i], destinationOverride));
         foreach (var group in groups)
-            await SendGroupAsync(kind, group.Key, group, options, capabilities, nativeDeliverAt, headerValues, cancellationToken).AnyContext();
+            await SendGroupAsync(kind, group.Key, batch, group.ToList(), capabilities, cancellationToken).AnyContext();
+
+        return result;
     }
 
     private string GetDestinationName<T>(MessageDestinationKind kind, T message, string? destinationOverride) where T : class
@@ -148,11 +186,11 @@ internal sealed class MessageClient : IMessageClient
     }
 
     /// <summary>
-    /// Sends messages that share a destination. Messages of the same type in one call share their headers, which are
-    /// the same for each and which transports only read.
+    /// Sends the messages of <paramref name="batch"/> at <paramref name="indices"/>, which share a destination. Messages of
+    /// the same type in one call share their headers, which are the same for each and which transports only read.
     /// </summary>
-    private async Task SendGroupAsync<T>(MessageDestinationKind kind, string destinationName, IEnumerable<T> messages, DeliveryOptions? options,
-        TransportCapabilities capabilities, DateTimeOffset? nativeDeliverAt, SendHeaders headerValues, CancellationToken cancellationToken) where T : class
+    private async Task SendGroupAsync<T>(MessageDestinationKind kind, string destinationName, SendBatch<T> batch, IReadOnlyList<int> indices,
+        TransportCapabilities capabilities, CancellationToken cancellationToken) where T : class
     {
         var destination = kind == MessageDestinationKind.Queue ? MessageDestination.Queue(destinationName) : MessageDestination.Topic(destinationName);
         var source = FoundatioDiagnostics.ActivitySource;
@@ -161,24 +199,28 @@ internal sealed class MessageClient : IMessageClient
         string? traceParent = current?.Id;
         string? traceState = current?.TraceStateString;
 
-        var outgoing = new List<OutgoingMessage>(messages is IReadOnlyCollection<T> collection ? collection.Count : 0);
+        var options = batch.Options;
+        var outgoing = new List<OutgoingMessage>(indices.Count);
         MessageRoute? headersRoute = null;
         IReadOnlyDictionary<string, string>? headers = null;
-        foreach (var message in messages)
+        foreach (int index in indices)
         {
+            var message = batch.Items[index];
             var route = _runtime.Types.GetRoute(message.GetType());
             if (!ReferenceEquals(route, headersRoute))
             {
                 CheckRouting(kind, route, destinationName);
-                headers = CreateHeaders(route, options?.Headers, headerValues, traceParent, traceState);
+                headers = CreateHeaders(route, options?.Headers, batch.HeaderValues, traceParent, traceState);
                 headersRoute = route;
             }
 
             byte[] body = _runtime.Serializer.SerializeToBytes<object>(message);
-            string messageId = options?.MessageId ?? Guid.NewGuid().ToString("N");
+            string messageId = batch.Ids[index];
+            string? groupKey = batch.Keys?[index].GroupKey ?? options?.GroupKey;
+            string? deduplicationId = batch.Keys?[index].DeduplicationId ?? options?.DeduplicationId;
             if (capabilities.MaxMessageSize is { } maxSize)
             {
-                long size = MessageSize.Of(messageId, body, headers!, options?.GroupKey, options?.DeduplicationId);
+                long size = MessageSize.Of(messageId, body, headers!, groupKey, deduplicationId);
                 if (size > maxSize)
                     throw new MessageTooLargeException($"Message {route.Name} is {size} bytes with its headers and ids, which exceeds the transport limit of {maxSize} bytes.") { Size = size, Limit = maxSize };
             }
@@ -188,9 +230,9 @@ internal sealed class MessageClient : IMessageClient
                 MessageId = messageId,
                 Body = body,
                 Headers = headers!,
-                DeliverAt = nativeDeliverAt,
-                GroupKey = options?.GroupKey,
-                DeduplicationId = options?.DeduplicationId
+                DeliverAt = batch.NativeDeliverAt,
+                GroupKey = groupKey,
+                DeduplicationId = deduplicationId
             });
         }
 
@@ -210,11 +252,15 @@ internal sealed class MessageClient : IMessageClient
 
         if (_runtime.Observer is { } observer)
         {
-            int index = 0;
-            foreach (var message in messages)
-                observer.OnSent(destination, message, outgoing[index++]);
+            for (int i = 0; i < indices.Count; i++)
+                observer.OnSent(destination, batch.Items[indices[i]], outgoing[i]);
         }
     }
+
+    /// <summary>The messages of one send and what they share, so each destination's group can pick its messages by index.</summary>
+    private readonly record struct SendBatch<T>(IReadOnlyList<T> Items, string[] Ids, MessageKeys[]? Keys, DeliveryOptions? Options, DateTimeOffset? NativeDeliverAt, SendHeaders HeaderValues);
+
+    private static string NewMessageId() => Guid.NewGuid().ToString("N");
 
     private Dictionary<string, string> CreateHeaders(MessageRoute route, IReadOnlyDictionary<string, string>? applicationHeaders, SendHeaders values, string? traceParent, string? traceState)
     {
@@ -251,10 +297,10 @@ internal sealed class MessageClient : IMessageClient
     /// Warns, once per message type, or with <see cref="MessagingOptions.RequireTransportCapabilities"/> throws, when a
     /// group key or deduplication id would not do on this transport what it does on one that supports it.
     /// </summary>
-    private void CheckUnsupportedOptions<T>(DeliveryOptions options, TransportCapabilities capabilities, IReadOnlyCollection<T> messages) where T : class
+    private void CheckUnsupportedOptions<T>(bool groupKey, bool deduplicationId, TransportCapabilities capabilities, IReadOnlyCollection<T> messages) where T : class
     {
-        bool unorderedGroup = options.GroupKey is not null && !capabilities.OrderedGroups;
-        bool ignoredDeduplicationId = options.DeduplicationId is not null && !capabilities.Deduplication;
+        bool unorderedGroup = groupKey && !capabilities.OrderedGroups;
+        bool ignoredDeduplicationId = deduplicationId && !capabilities.Deduplication;
         if (!unorderedGroup && !ignoredDeduplicationId)
             return;
 

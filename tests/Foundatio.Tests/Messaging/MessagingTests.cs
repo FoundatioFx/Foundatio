@@ -166,6 +166,90 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task SendAndPublish_ReturnTheMessageIdTheHandlerSees()
+    {
+        var received = new ConcurrentDictionary<int, string>();
+        await using var host = await StartAsync(m => m
+            .AddConsumer<PlaceOrder>((message, context, _) =>
+            {
+                received[message.OrderId] = context.MessageId;
+                return Task.CompletedTask;
+            })
+            .AddSubscriber<OrderShipped>((message, context, _) =>
+            {
+                received[message.OrderId] = context.MessageId;
+                return Task.CompletedTask;
+            }));
+
+        string sent = await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        string chosen = await host.Client.SendAsync(new PlaceOrder(2), new SendOptions { MessageId = "order-2" }, TestCancellationToken);
+        string published = await host.Client.PublishAsync(new OrderShipped(3), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => received.Count == 3);
+        Assert.Equal(received[1], sent);
+        Assert.Equal("order-2", chosen);
+        Assert.Equal(received[2], chosen);
+        Assert.Equal(received[3], published);
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_ReturnsTheIdsInOrder_EvenWhenTheMessagesGoToSeveralQueues()
+    {
+        var received = new ConcurrentDictionary<string, int>();
+        await using var host = await StartAsync(m => m
+            .AddConsumer<PlaceOrder>((message, context, _) =>
+            {
+                received[context.MessageId] = message.OrderId;
+                return Task.CompletedTask;
+            })
+            .AddConsumer<ShipOrder>((message, context, _) =>
+            {
+                received[context.MessageId] = -message.OrderId;
+                return Task.CompletedTask;
+            }));
+
+        object[] batch = [new PlaceOrder(1), new ShipOrder(2), new PlaceOrder(3), new ShipOrder(4)];
+        var ids = await host.Client.SendBatchAsync(batch, cancellationToken: TestCancellationToken);
+        var published = await host.Client.PublishBatchAsync([new OrderShipped(5), new OrderShipped(6)], cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => received.Count == 4);
+        Assert.Equal([1, -2, 3, -4], ids.Select(id => received[id]));
+        Assert.Equal(2, published.Distinct().Count());
+        Assert.Empty(await host.Client.SendBatchAsync(Array.Empty<PlaceOrder>(), cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task SendBatchAsync_WithPerMessageKeys_SendsEachWithItsOwnIdsSoARetriedBatchIsDeduplicated()
+    {
+        var received = new ConcurrentQueue<(int OrderId, string Id, string? GroupKey)>();
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((message, context, _) =>
+        {
+            received.Enqueue((message.OrderId, context.MessageId, context.GroupKey));
+            return Task.CompletedTask;
+        }));
+
+        PlaceOrder[] batch = [new PlaceOrder(1), new PlaceOrder(2), new PlaceOrder(3)];
+        static MessageKeys Keys(PlaceOrder order) => new()
+        {
+            MessageId = $"order-{order.OrderId}",
+            DeduplicationId = $"order-{order.OrderId}",
+            GroupKey = order.OrderId == 3 ? null : $"account-{order.OrderId % 2}"
+        };
+
+        var ids = await host.Client.SendBatchAsync(batch, Keys, new SendOptions { GroupKey = "default" }, TestCancellationToken);
+        var retried = await host.Client.SendBatchAsync(batch, Keys, cancellationToken: TestCancellationToken);
+
+        Assert.Equal(["order-1", "order-2", "order-3"], ids);
+        Assert.Equal(ids, retried);
+        await WaitForAsync(() => received.Count == 3);
+        await Task.Delay(100, TestCancellationToken);
+        Assert.Equal([(1, "order-1", "account-1"), (2, "order-2", "account-0"), (3, "order-3", "default")], received.OrderBy(r => r.OrderId));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Client.PublishBatchAsync([new OrderShipped(1)], _ => new MessageKeys { MessageId = new string('k', OutgoingMessage.MaxIdLength + 1) }, cancellationToken: TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Client.SendBatchAsync(batch, Keys, new SendOptions { MessageId = "shared" }, TestCancellationToken));
+    }
+
+    [Fact]
     public async Task SubscribeAsync_UnderAnActivity_DoesNotRunHandlersInTheSubscribersContext()
     {
         using var source = new ActivitySource("Foundatio.Tests.SubscriberContext");

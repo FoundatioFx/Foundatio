@@ -39,7 +39,7 @@ public class AzureServiceBusMessagingBuilderExtensionsTests(ITestOutputHelper ou
             }));
 
         // Act
-        var (ping, transport) = await RunAsync(services, provider => provider.GetRequiredService<IMessageClient>().SendAsync(new Ping("hello"), cancellationToken: TestCancellationToken), received.Task);
+        var (ping, transport) = await RunAsync(services, async provider => await provider.GetRequiredService<IMessageClient>().SendAsync(new Ping("hello"), cancellationToken: TestCancellationToken), received.Task);
 
         // Assert
         Assert.Equal("hello", ping.Text);
@@ -68,7 +68,7 @@ public class AzureServiceBusMessagingBuilderExtensionsTests(ITestOutputHelper ou
             }));
 
         // Act
-        var (ping, transport) = await RunAsync(services, provider => provider.GetRequiredService<IMessageClient>().PublishAsync(new Ping("from DI"), cancellationToken: TestCancellationToken), received.Task);
+        var (ping, transport) = await RunAsync(services, async provider => await provider.GetRequiredService<IMessageClient>().PublishAsync(new Ping("from DI"), cancellationToken: TestCancellationToken), received.Task);
 
         // Assert
         Assert.Equal("from DI", ping.Text);

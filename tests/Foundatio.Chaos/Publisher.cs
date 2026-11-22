@@ -111,7 +111,7 @@ public sealed class Publisher(IMessageClient messages, IJobClient? jobs, Ledger 
         }
 
         return SendUntilConfirmedAsync(Streams.Work, batchMessages.Select(m => (m.Id, "", m.Seq, 0L, m.Fail)).ToList(),
-            ct => messages.SendBatchAsync(batchMessages, cancellationToken: ct), cancellationToken);
+            async ct => await messages.SendBatchAsync(batchMessages, cancellationToken: ct), cancellationToken);
     }
 
     private readonly Dictionary<int, int> _groupSeq = [];
@@ -141,7 +141,7 @@ public sealed class Publisher(IMessageClient messages, IJobClient? jobs, Ledger 
         };
 
         return SendUntilConfirmedAsync(Streams.Grouped, batchMessages.Select(m => (m.Id, group, m.Seq, dueMs, m.Fail)).ToList(),
-            ct => messages.SendBatchAsync(batchMessages, options, ct), cancellationToken);
+            async ct => await messages.SendBatchAsync(batchMessages, options, ct), cancellationToken);
     }
 
     private int _delayedSeq;
@@ -161,7 +161,7 @@ public sealed class Publisher(IMessageClient messages, IJobClient? jobs, Ledger 
         };
 
         return SendUntilConfirmedAsync(Streams.Delayed, [(message.Id, "", seq, dueMs, FailMode.None)],
-            ct => messages.SendAsync(message, options, ct), cancellationToken);
+            async ct => await messages.SendAsync(message, options, ct), cancellationToken);
     }
 
     private int _eventSeq;
@@ -177,7 +177,7 @@ public sealed class Publisher(IMessageClient messages, IJobClient? jobs, Ledger 
         }
 
         return SendUntilConfirmedAsync(Streams.Event, events.Select(e => (e.Id, "", e.Seq, 0L, e.Fail)).ToList(),
-            ct => messages.PublishBatchAsync(events, cancellationToken: ct), cancellationToken);
+            async ct => await messages.PublishBatchAsync(events, cancellationToken: ct), cancellationToken);
     }
 
     private int _jobSeq;
