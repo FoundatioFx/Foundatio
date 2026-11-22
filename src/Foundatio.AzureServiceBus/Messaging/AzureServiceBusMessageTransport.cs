@@ -64,7 +64,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     /// <summary>
     /// Uses the given clients, which the caller owns. <paramref name="administrationClient"/> creates, counts and deletes
     /// entities; it may be null only with <see cref="AzureServiceBusMessageTransportOptions.CreateEntities"/> off, and
-    /// then <see cref="GetStatsAsync"/> returns null.
+    /// then <see cref="IMessageAdmin.GetStatsAsync"/> returns null.
     /// </summary>
     public AzureServiceBusMessageTransport(ServiceBusClient client, ServiceBusAdministrationClient? administrationClient, AzureServiceBusMessageTransportOptions? options = null)
         : this(client, administrationClient, options ?? new AzureServiceBusMessageTransportOptions(), ownsClients: false)
@@ -111,7 +111,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     internal bool IsDisposed => Volatile.Read(ref _disposed) == 1;
 
     /// <inheritdoc />
-    public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
@@ -169,7 +169,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
-    public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
+    async Task<IMessageReceiver> IMessageTransport.CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
@@ -220,7 +220,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     /// queues and subscriptions needs <see cref="AzureServiceBusMessageTransportOptions.CreateEntities"/>. Topics are
     /// kept: other services may still publish to them.
     /// </summary>
-    public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.DeleteAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();
@@ -262,7 +262,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     /// emulator, whose runtime properties always report zero.
     /// </summary>
     /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
-    public async Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task<MessageSourceStats?> IMessageTransport.GetStatsAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Kind == MessageSourceKind.DeadLetter)

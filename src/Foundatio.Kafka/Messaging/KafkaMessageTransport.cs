@@ -148,7 +148,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// topics, it looks the topic up in the background on that send.
     /// </remarks>
     /// <exception cref="MessageTooLargeException">A message is larger than <see cref="TransportCapabilities.MaxMessageSize"/>.</exception>
-    public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
@@ -225,7 +225,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// <see cref="KafkaMessageTransportOptions.ReceiverJoinTimeout"/>; nothing sent after this returns is missed. An
     /// instance subscription starts at the current end of its topic.
     /// </remarks>
-    public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
+    async Task<IMessageReceiver> IMessageTransport.CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
@@ -284,7 +284,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
-    public async Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task<MessageSourceStats?> IMessageTransport.GetStatsAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();
@@ -312,7 +312,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// are still in the shared delay topics are dropped when they come due, unless the source was created again.
     /// Throws <see cref="MessageBusException"/> when a receiver, in any process, is still open on the source.
     /// </remarks>
-    public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.DeleteAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();

@@ -10,7 +10,7 @@ using Xunit;
 namespace Foundatio.AzureServiceBus.Tests.Messaging;
 
 /// <summary>
-/// The emulator reports no runtime counts, so <see cref="AzureServiceBusMessageTransport.GetStatsAsync"/> is checked
+/// The emulator reports no runtime counts, so <see cref="IMessageTransport.GetStatsAsync"/> is checked
 /// against an administration client that returns the counts Service Bus would.
 /// </summary>
 public class AzureServiceBusMessageTransportStatsTests

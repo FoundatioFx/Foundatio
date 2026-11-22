@@ -3,6 +3,10 @@
     <NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Shared\TransportSpiExtensions.cs" Link="TransportSpiExtensions.cs" />
+    <Compile Include="..\Shared\ExperimentalApiBoundary.cs" Link="ExperimentalApiBoundary.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.AWS\Foundatio.AWS.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>

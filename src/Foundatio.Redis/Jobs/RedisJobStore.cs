@@ -77,10 +77,10 @@ public sealed class RedisJobStore : IJobStore
     private IDatabase Database => _connection.GetDatabase(_options.Database);
 
     /// <inheritdoc />
-    public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => CreateAsync(job, null, cancellationToken);
+    Task<bool> IJobStore.CreateAsync(JobInfo job, CancellationToken cancellationToken) => CreateAsync(job, null, cancellationToken);
 
     /// <inheritdoc />
-    public Task<bool> CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken = default) => CreateAsync(job, (TimeSpan?)availableAfter, cancellationToken);
+    Task<bool> IJobStore.CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken) => CreateAsync(job, (TimeSpan?)availableAfter, cancellationToken);
 
     /// <param name="job">The job to add.</param>
     /// <param name="availableAfter">When set, the job becomes available this long after now on the Redis clock, instead of at <see cref="JobInfo.AvailableAt"/>.</param>
@@ -129,7 +129,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default)
+    async Task<JobInfo?> IJobStore.GetAsync(string jobId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -137,7 +137,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
+    async Task<JobPage<JobInfo>> IJobStore.QueryAsync(JobQuery query, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1, nameof(query));
@@ -156,7 +156,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
+    async Task<long> IJobStore.CountAsync(JobState? state, string? name, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -168,14 +168,14 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
+    async Task<JobInfo?> IJobStore.ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken)
     {
-        var claimed = await ClaimBatchAsync(request, 1, cancellationToken).AnyContext();
+        var claimed = await ((IJobStore)this).ClaimBatchAsync(request, 1, cancellationToken).AnyContext();
         return claimed.Count > 0 ? claimed[0] : null;
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default)
+    async Task<IReadOnlyList<JobInfo>> IJobStore.ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Names);
@@ -224,7 +224,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+    async Task<JobLeaseStatus> IJobStore.RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
@@ -242,7 +242,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default)
+    async Task<bool> IJobStore.ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
@@ -253,7 +253,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default)
+    async Task<bool> IJobStore.CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
@@ -279,7 +279,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default)
+    async Task<bool> IJobStore.RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -303,7 +303,7 @@ public sealed class RedisJobStore : IJobStore
     }
 
     /// <inheritdoc />
-    public async Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default)
+    async Task<bool> IJobStore.DeleteAsync(string jobId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         cancellationToken.ThrowIfCancellationRequested();

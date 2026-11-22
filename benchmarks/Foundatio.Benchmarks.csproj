@@ -23,6 +23,9 @@
     <PackageReference Include="Polly" Version="8.9.1" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\tests\Shared\TransportSpiExtensions.cs" Link="TransportSpiExtensions.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\src\Foundatio\Foundatio.csproj" />
   </ItemGroup>
 </Project>

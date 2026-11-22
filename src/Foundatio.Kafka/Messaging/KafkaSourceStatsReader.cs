@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.Messaging.Transport;
 
 /// <summary>
-/// Reads <see cref="MessageSourceStats"/> for <see cref="KafkaMessageTransport.GetStatsAsync"/> from consumer lag: the
+/// Reads <see cref="MessageSourceStats"/> for <see cref="IMessageTransport.GetStatsAsync"/> from consumer lag: the
 /// partitions' watermarks, through the transport's admin client, and the groups' committed offsets, through a consumer
 /// of each group that never subscribes (<see cref="KafkaMessageTransport.CreateOffsetReader"/>). Nothing is created or
 /// joined. Those consumers are kept while their group keeps being read, up to a limit, and topic partitions are cached

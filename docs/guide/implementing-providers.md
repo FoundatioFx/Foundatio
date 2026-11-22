@@ -150,6 +150,8 @@ Use the database's clock for "now" so workers with skewed clocks agree. Prove it
 
 The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have been tried against Azure Service Bus only on its emulator, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin` with `MessageSourceStats`, `IWorkMonitor`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
 
+Implement the contracts explicitly (`Task IMessageTransport.SendAsync(...)`), as the in-repo transports and stores do, so your public class shows only its constructors, options and `Capabilities`. A public `SendAsync` or `ClaimAsync` on a class that isn't experimental would let app code call the SPI through `var` without the diagnostic, and make its signature part of your stable API. Tests call the members through the interface.
+
 Any reference to one of these types is a compile error, FOUNDATIO0001, until you suppress it. Suppress it for the whole provider project and its test project:
 
 ```xml

@@ -45,7 +45,7 @@ public sealed record RabbitMQMessageTransportOptions
 
     /// <summary>
     /// The RabbitMQ management API, for example "http://guest:guest@localhost:15672", used by
-    /// <see cref="RabbitMQMessageTransport.GetStatsAsync"/> to count delivered messages that are not settled yet, and,
+    /// <see cref="IMessageAdmin.GetStatsAsync"/> to count delivered messages that are not settled yet, and,
     /// with <see cref="DelayedDelivery"/>, to warn about what holds up delayed delivery: queues whose policy makes them
     /// refuse messages when full, policies that change the delay levels, the landing queues (one per target of delayed
     /// messages, which delivers them) or the discard queue, and delay levels and landing queues whose expired messages
@@ -85,7 +85,7 @@ public sealed record RabbitMQMessageTransportOptions
     /// <summary>How many times a receiver replaces a consumer whose prefetch is used up by unsettled deliveries before it waits for settlements.</summary>
     internal int MaxRetiredConsumers { get; init; } = 64;
 
-    /// <summary>How often, at most, <see cref="RabbitMQMessageTransport.GetStatsAsync"/> has the delay levels, landing queues and discard queue inspected through the management API.</summary>
+    /// <summary>How often, at most, <see cref="IMessageAdmin.GetStatsAsync"/> has the delay levels, landing queues and discard queue inspected through the management API.</summary>
     internal TimeSpan DelayCheckInterval { get; init; } = TimeSpan.FromSeconds(15);
 
     /// <summary>How long the dead-letter worker of a delay level or landing queue must have no room for more expired messages before the transport warns that it is held up.</summary>

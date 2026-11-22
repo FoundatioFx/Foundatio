@@ -53,7 +53,7 @@ namespace Foundatio.Messaging.Transport;
 /// Subscription and instance queues are created with the policy that lets their topic send to them, so SNS may deliver
 /// as soon as the subscription exists. AWS applies a policy changed on an existing queue within about a minute, and
 /// SNS drops a message it is not allowed to deliver, so messages published in that time to a subscription whose queue
-/// existed without the permission (for example one re-created after <see cref="DeleteAsync"/>) can be lost.
+/// existed without the permission (for example one re-created after <see cref="IMessageAdmin.DeleteAsync"/>) can be lost.
 /// </para>
 /// <para>
 /// Deleting a source keeps its queue, because SQS does not let a deleted queue's name be reused for 60 seconds and
@@ -158,7 +158,7 @@ public sealed class SqsMessageTransport : IMessageTransport
     internal bool IsDisposed => Volatile.Read(ref _disposed) == 1;
 
     /// <inheritdoc />
-    public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
@@ -193,7 +193,7 @@ public sealed class SqsMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
-    public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
+    async Task<IMessageReceiver> IMessageTransport.CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
@@ -232,7 +232,7 @@ public sealed class SqsMessageTransport : IMessageTransport
     /// letters a receiver holds. Instance subscriptions are not counted (null): each receiver has its own queue.
     /// </summary>
     /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
-    public async Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task<MessageSourceStats?> IMessageTransport.GetStatsAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Kind == MessageSourceKind.DeadLetter)
@@ -274,7 +274,7 @@ public sealed class SqsMessageTransport : IMessageTransport
     /// flight or delayed during the deletion are discarded by receivers opened afterwards, using the deletion time
     /// tagged on the queue. On FIFO queues, SQS keeps dropping deduplication ids seen in the 5 minutes before the deletion.
     /// </summary>
-    public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.DeleteAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();

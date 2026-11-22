@@ -159,7 +159,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
-    public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
@@ -215,7 +215,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
-    public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
+    async Task<IMessageReceiver> IMessageTransport.CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
@@ -266,7 +266,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     /// for the receiver that owns them.
     /// </summary>
     /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
-    public async Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task<MessageSourceStats?> IMessageTransport.GetStatsAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Kind == MessageSourceKind.DeadLetter)
@@ -299,7 +299,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     /// <remarks>
     /// Deduplication ids sent to the source are still remembered for <see cref="RedisMessageTransportOptions.DeduplicationWindow"/>.
     /// </remarks>
-    public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.DeleteAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Kind == MessageSourceKind.InstanceSubscription)

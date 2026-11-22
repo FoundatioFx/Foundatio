@@ -68,7 +68,7 @@ public sealed record KafkaMessageTransportOptions
     public TimeSpan RebalanceGracePeriod { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// How long <see cref="KafkaMessageTransport.CreateReceiverAsync"/> waits for a queue or subscription receiver to
+    /// How long <see cref="IMessageTransport.CreateReceiverAsync"/> waits for a queue or subscription receiver to
     /// join its consumer group and get its first assignment, so it can deliver as soon as it is returned. Joining a
     /// group that other receivers already use takes a rebalance. <see cref="TimeSpan.Zero"/> returns at once and
     /// joins in the background.

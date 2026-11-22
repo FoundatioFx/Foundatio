@@ -71,7 +71,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     public TransportCapabilities Capabilities { get; }
 
     /// <inheritdoc />
-    public Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
+    Task IMessageTransport.SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
@@ -114,7 +114,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
-    public Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
+    Task<IMessageReceiver> IMessageTransport.CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
@@ -147,7 +147,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     /// one receiver.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="source"/> is a dead-letter source.</exception>
-    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    Task<MessageSourceStats?> IMessageTransport.GetStatsAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();
@@ -171,7 +171,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
-    public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    Task IMessageTransport.DeleteAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();

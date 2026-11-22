@@ -623,7 +623,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             foreach (string name in jobs.Jobs.Keys.Where(scope.Includes))
             {
                 int due = store.CountDue(name);
-                long running = await store.CountAsync(JobState.Running, name, cancellationToken).AnyContext();
+                long running = await jobs.Store.CountAsync(JobState.Running, name, cancellationToken).AnyContext();
                 if (due + running > 0)
                     pending.Add($"job {name} has {due} due and {running} running");
             }

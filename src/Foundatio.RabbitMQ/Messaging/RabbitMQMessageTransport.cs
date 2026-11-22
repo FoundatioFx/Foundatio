@@ -160,7 +160,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// one subscription goes straight to that subscription's queue.
     /// </remarks>
     /// <exception cref="MessageTooLargeException">A message is larger than <see cref="TransportCapabilities.MaxMessageSize"/>.</exception>
-    public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
@@ -242,7 +242,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// queue or exchange that another process deleted, or the broker lost, after this transport declared it is
     /// declared again.
     /// </remarks>
-    public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
+    async Task<IMessageReceiver> IMessageTransport.CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
@@ -298,7 +298,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// which a process with delayed delivery may have declared even when this one has it off. Receivers open on a deleted queue, in any process, are cancelled by the broker and fault, so Foundatio replaces
     /// them and the queue is declared again. A subscription's topic exchange, and its landing queue, are kept.
     /// </remarks>
-    public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    async Task IMessageTransport.DeleteAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();
@@ -338,7 +338,7 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
-    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    Task<MessageSourceStats?> IMessageTransport.GetStatsAsync(MessageSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
         ThrowIfDisposed();
