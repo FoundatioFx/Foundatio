@@ -14,7 +14,8 @@ internal sealed class ReceiveBackoff
     /// <summary>How many failures in a row, without a successful receive since, replace the receiver.</summary>
     public const int ReplaceAfterFailures = 5;
 
-    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+    // Short enough that a processor resumes soon after a long outage ends; a failed receive every 10 s costs nothing.
+    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(10);
 
     private readonly TimeProvider _timeProvider;
     private readonly object _lock = new();
@@ -120,7 +121,7 @@ internal sealed class ReceiveBackoff
         }
     }
 
-    /// <summary>Doubles <paramref name="backoff"/>, from one second up to 30 seconds.</summary>
+    /// <summary>Doubles <paramref name="backoff"/>, from one second up to 10 seconds.</summary>
     public static TimeSpan Next(TimeSpan backoff)
         => backoff == TimeSpan.Zero ? TimeSpan.FromSeconds(1) : TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxBackoff.Ticks));
 

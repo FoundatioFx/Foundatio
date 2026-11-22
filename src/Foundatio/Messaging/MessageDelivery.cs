@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
@@ -44,6 +45,9 @@ internal sealed class MessageDelivery
     }
 
     public IMessageReceiver Receiver { get; }
+
+    /// <summary>Counts the deliveries of <see cref="Receiver"/> still in flight, so a failed receiver is disposed once they finish.</summary>
+    internal StrongBox<int>? ReceiverInFlight { get; init; }
 
     public IncomingMessage Message { get; }
 

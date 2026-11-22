@@ -11,7 +11,7 @@ internal sealed record MessageProcessorSettings
     /// <summary>The requested lease; capped at the transport's <c>MaxLeaseDuration</c>.</summary>
     public required TimeSpan LeaseDuration { get; init; }
 
-    /// <summary>How long a failed receiver's in-flight deliveries may finish before it is replaced.</summary>
+    /// <summary>How long a failed receiver's in-flight deliveries may finish, while its replacement receives, before it is disposed.</summary>
     public required TimeSpan ReplaceTimeout { get; init; }
 
     /// <summary>What handles the deliveries, for the log.</summary>

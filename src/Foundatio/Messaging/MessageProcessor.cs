@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -49,6 +50,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private readonly CancellationTokenSource _abortHandlers = new();
     private readonly object _lifecycleLock = new();
     private IMessageReceiver? _receiver;
+    private StrongBox<int> _receiverInFlight = new();
+    private readonly List<Task> _drains = [];
     private Task _receiveLoop = Task.CompletedTask;
     private int _inFlight;
     private TaskCompletionSource _room = NewSignal();
@@ -216,6 +219,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
         if (_receiver is { } receiver)
             await DisposeReceiverAsync(receiver).AnyContext();
 
+        // Receivers that failed are disposed once their own deliveries have finished, which the drain above waited for.
+        await Task.WhenAll(_drains).AnyContext();
         _renewer.Dispose();
     }
 
@@ -240,7 +245,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
     /// <summary>
     /// Runs the receives on one receiver at a time until the processor stops. When a receive decides the receiver must
-    /// be replaced, the others on it stop, and once all have ended it is replaced and receiving starts on the new one.
+    /// be replaced, the others on it stop, and once all have ended a new one is opened and receiving starts on it at
+    /// once, while the failed one is drained in the background (see <see cref="DrainReceiverAsync"/>).
     /// </summary>
     private async Task ReceiveLoopAsync()
     {
@@ -272,10 +278,15 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 break;
 
             await _timeProvider.SafeDelay(_backoff.Remaining, token).AnyContext();
-            if (await ReplaceReceiverAsync(receiver, _backoff.Current, token).AnyContext() is not { } replacement)
+            if (await OpenReplacementAsync(_backoff.Current, token).AnyContext() is not { } replacement)
                 break;
 
-            receiver = replacement;
+            var failedInFlight = _receiverInFlight;
+            _drains.RemoveAll(static drain => drain.IsCompleted);
+            var failed = receiver;
+            _drains.Add(Task.Run(() => DrainReceiverAsync(failed, failedInFlight), CancellationToken.None));
+            _receiverInFlight = new StrongBox<int>();
+            _receiver = receiver = replacement;
             _backoff.Reset();
             if (_ahead is not null)
                 ReopenBuffer();
@@ -366,9 +377,11 @@ internal sealed class MessageProcessor : IAsyncDisposable
                 if (messages.Count == 0)
                     continue;
 
+                var receiverInFlight = _receiverInFlight;
+                Interlocked.Add(ref receiverInFlight.Value, messages.Count);
                 var deliveries = new MessageDelivery[messages.Count];
                 for (int i = 0; i < messages.Count; i++)
-                    deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer, _holds, _settlements);
+                    deliveries[i] = new MessageDelivery(receiver, messages[i], _renewer, _holds, _settlements) { ReceiverInFlight = receiverInFlight };
 
                 _renewer.Track(deliveries);
                 if (_inOrder is not null)
@@ -708,7 +721,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             finally
             {
                 await delivery.StopRenewingAsync().AnyContext();
-                Interlocked.Decrement(ref _inFlight);
+                Leave(delivery);
             }
         }
     }
@@ -824,12 +837,14 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private MessageDelivery[] CreateDeliveries(IMessageReceiver receiver, IReadOnlyList<IncomingMessage> messages, long started, out long bytes)
     {
         var deliveries = new MessageDelivery[messages.Count];
+        var receiverInFlight = _receiverInFlight;
+        Interlocked.Add(ref receiverInFlight.Value, messages.Count);
         DateTimeOffset? receiveStartedAt = null;
         bytes = 0;
         for (int i = 0; i < messages.Count; i++)
         {
             var message = messages[i];
-            deliveries[i] = new MessageDelivery(receiver, message, _renewer, _holds, _settlements, _timeProvider);
+            deliveries[i] = new MessageDelivery(receiver, message, _renewer, _holds, _settlements, _timeProvider) { ReceiverInFlight = receiverInFlight };
             bytes += message.Body.Length;
             if (message.LeaseExpiresAt is { } expiresAt)
             {
@@ -920,32 +935,16 @@ internal sealed class MessageProcessor : IAsyncDisposable
     }
 
     /// <summary>
-    /// Lets the failed receiver's in-flight messages finish (up to the replace timeout), disposes it and opens a new
-    /// one, retrying with backoff. Returns null when the processor is stopping; <see cref="StopAsync"/> then closes
-    /// whatever receiver is left.
+    /// Opens a receiver to replace a failed one, retrying with backoff. Returns null when the processor is stopping;
+    /// <see cref="StopAsync"/> then closes the failed receiver, which is still <see cref="_receiver"/>.
     /// </summary>
-    private async Task<IMessageReceiver?> ReplaceReceiverAsync(IMessageReceiver failed, TimeSpan backoff, CancellationToken token)
+    private async Task<IMessageReceiver?> OpenReplacementAsync(TimeSpan backoff, CancellationToken token)
     {
-        if (!await WaitForInFlightAsync(_settings.ReplaceTimeout, token).AnyContext())
-        {
-            if (token.IsCancellationRequested)
-                return null;
-
-            // Disposing the receiver releases these messages to its replacement, so stop their handlers first.
-            _logger.LogWarning("Cancelling {Count} in-flight messages from the failed receiver for {Source}; they will be delivered again", Volatile.Read(ref _inFlight), Source);
-            _renewer.MarkLost(failed);
-            if (!await WaitForInFlightAsync(AbortGracePeriod, token).AnyContext() && token.IsCancellationRequested)
-                return null;
-        }
-
-        await DisposeReceiverAsync(failed).AnyContext();
-        _receiver = null;
         while (!token.IsCancellationRequested)
         {
             try
             {
                 var receiver = await _transport.CreateReceiverAsync(Source, _receiverOptions, token).AnyContext();
-                _receiver = receiver;
                 _logger.LogInformation("Replaced the receiver for {Source}", Source);
                 return receiver;
             }
@@ -963,6 +962,34 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Lets the deliveries a failed receiver still holds finish, up to the replace timeout, while its replacement
+    /// already receives, then disposes it. Their messages stay leased to it until then, so on transports whose leases
+    /// expire their redeliveries never run alongside them. Handlers still running at the timeout are cancelled first,
+    /// since disposing the receiver releases their messages to another consumer. At shutdown, <see cref="StopAsync"/>
+    /// drains every delivery, and this waits only until its abort.
+    /// </summary>
+    private async Task DrainReceiverAsync(IMessageReceiver failed, StrongBox<int> inFlight)
+    {
+        try
+        {
+            if (!await WaitForNoneAsync(() => Volatile.Read(ref inFlight.Value), _settings.ReplaceTimeout, _abortHandlers.Token).AnyContext())
+            {
+                if (!_abortHandlers.IsCancellationRequested)
+                {
+                    _logger.LogWarning("Cancelling {Count} in-flight messages from the failed receiver for {Source}; they will be delivered again", Volatile.Read(ref inFlight.Value), Source);
+                    _renewer.MarkLost(failed);
+                }
+
+                await WaitForNoneAsync(() => Volatile.Read(ref inFlight.Value), AbortGracePeriod, CancellationToken.None).AnyContext();
+            }
+        }
+        finally
+        {
+            await DisposeReceiverAsync(failed).AnyContext();
+        }
     }
 
     /// <summary>
@@ -1151,7 +1178,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private async Task FinishAsync(MessageDelivery delivery, bool holdsSlots)
     {
         await delivery.StopRenewingAsync().AnyContext();
-        Interlocked.Decrement(ref _inFlight);
+        Leave(delivery);
         if (delivery.SettlesOffSlot)
             _settlements.Leave();
 
@@ -1161,10 +1188,21 @@ internal sealed class MessageProcessor : IAsyncDisposable
             ReleaseSlots(1);
     }
 
-    private async Task<bool> WaitForInFlightAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    /// <summary>A delivery is no longer in flight, on the processor or on its receiver.</summary>
+    private void Leave(MessageDelivery delivery)
+    {
+        Interlocked.Decrement(ref _inFlight);
+        if (delivery.ReceiverInFlight is { } receiverInFlight)
+            Interlocked.Decrement(ref receiverInFlight.Value);
+    }
+
+    private Task<bool> WaitForInFlightAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        => WaitForNoneAsync(() => Volatile.Read(ref _inFlight), timeout, cancellationToken);
+
+    private static async Task<bool> WaitForNoneAsync(Func<int> count, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var deadline = Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
-        while (Volatile.Read(ref _inFlight) > 0)
+        while (count() > 0)
         {
             if (Stopwatch.GetTimestamp() >= deadline || cancellationToken.IsCancellationRequested)
                 return false;

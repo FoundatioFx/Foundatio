@@ -723,6 +723,34 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ReplaceReceiver_WhileAHandlerOfTheFaultedReceiverRuns_CompletesItOnTheFaultedReceiverThenDisposesIt()
+    {
+        int invocations = 0;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport);
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<SlowCommand>(async (_, _, _) =>
+        {
+            Interlocked.Increment(ref invocations);
+            started.TrySetResult();
+            await finish.Task;
+        }, new HandlerOptions { MaxConcurrency = 4 }));
+
+        await consumer.Client.SendAsync(new SlowCommand(1), cancellationToken: TestCancellationToken);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        transport.FaultReceivers();
+
+        // The replacement opens at once, and the faulted receiver stays open while its handler runs.
+        await WaitForAsync(() => transport.ReceiversCreated == 2, TimeSpan.FromSeconds(5));
+        Assert.Equal(2, transport.OpenReceivers);
+
+        finish.SetResult();
+        await WaitForAsync(() => transport.OpenReceivers == 1, TimeSpan.FromSeconds(5));
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.Equal(1, Volatile.Read(ref invocations));
+    }
+
+    [Fact]
     public async Task ReplaceReceiver_WhenAHandlerOutlivesTheReplaceTimeout_CancelsItBeforeTheMessageIsDeliveredAgain()
     {
         int invocations = 0, running = 0, maxRunning = 0, cancelled = 0;
