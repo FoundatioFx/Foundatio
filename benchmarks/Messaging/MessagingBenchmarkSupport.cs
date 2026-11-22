@@ -7,7 +7,6 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
-using Foundatio.Messaging.Transport;
 using Foundatio.Queues;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
