@@ -147,6 +147,14 @@ internal sealed class JobWorker
                 continue;
             }
 
+            if (token.IsCancellationRequested)
+            {
+                // Shutdown began while the claim was in flight: hand the job back for another worker rather than start it now.
+                await CompleteAsync(job, JobCompletion.Release()).AnyContext();
+                _slots.Release();
+                break;
+            }
+
             idle = MinPollInterval;
             Interlocked.Increment(ref _running);
             _runningByName.AddOrUpdate(job.Name, 1, (_, count) => count + 1);

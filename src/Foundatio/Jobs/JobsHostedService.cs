@@ -7,17 +7,22 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
-/// <summary>Runs the worker when job types are registered and the scheduler when CRON jobs are registered.</summary>
-internal sealed class JobsHostedService : IHostedService, IAsyncDisposable
+/// <summary>
+/// Runs the worker when job types are registered and the scheduler when CRON jobs are registered. When the host
+/// begins stopping, both stop taking work at once, together with the message handlers, and running jobs then drain
+/// while the host stops its other services.
+/// </summary>
+internal sealed class JobsHostedService : IHostedLifecycleService, IAsyncDisposable
 {
     private readonly JobsRuntime _runtime;
     private readonly JobClient _client;
     private readonly IStartupGate? _startupGate;
     private readonly CancellationTokenSource _stopping = new();
+    private readonly object _stopLock = new();
     private Task _gatedStart = Task.CompletedTask;
+    private Task? _stop;
     private JobWorker? _worker;
     private JobScheduler? _scheduler;
-    private int _stopped;
 
     public JobsHostedService(JobsRuntime runtime, JobClient client, IServiceProvider services)
     {
@@ -59,22 +64,21 @@ internal sealed class JobsHostedService : IHostedService, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken)
+    public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>Stops claiming and scheduling as soon as the host begins stopping, before any hosted service's <see cref="StopAsync"/>, and starts draining.</summary>
+    public Task StoppingAsync(CancellationToken cancellationToken)
     {
-        if (Interlocked.Exchange(ref _stopped, 1) == 1)
-            return;
-
-        _stopping.Cancel();
-        await _gatedStart.AnyContext();
-        if (_runtime.HostState != ProcessingState.Faulted)
-            _runtime.HostState = ProcessingState.Stopped;
-
-        if (_scheduler is not null)
-            await _scheduler.StopAsync().AnyContext();
-
-        if (_worker is not null)
-            await _worker.StopAsync(cancellationToken).AnyContext();
+        BeginStop(cancellationToken);
+        return Task.CompletedTask;
     }
+
+    /// <summary>Waits for the drain <see cref="StoppingAsync"/> started, or stops now when the host did not call it.</summary>
+    public Task StopAsync(CancellationToken cancellationToken) => BeginStop(cancellationToken);
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
     /// Stops the worker and scheduler when the host is disposed without being stopped, for example a test's
@@ -89,6 +93,23 @@ internal sealed class JobsHostedService : IHostedService, IAsyncDisposable
         }
 
         _stopping.Dispose();
+    }
+
+    private Task BeginStop(CancellationToken cancellationToken)
+    {
+        lock (_stopLock)
+            return _stop ??= StopCoreAsync(cancellationToken);
+    }
+
+    private async Task StopCoreAsync(CancellationToken cancellationToken)
+    {
+        _stopping.Cancel();
+        await _gatedStart.AnyContext();
+        if (_runtime.HostState != ProcessingState.Faulted)
+            _runtime.HostState = ProcessingState.Stopped;
+
+        // Both stop taking work before either waits: the scheduler for its pass, the worker for its running jobs.
+        await Task.WhenAll(_scheduler?.StopAsync() ?? Task.CompletedTask, _worker?.StopAsync(cancellationToken) ?? Task.CompletedTask).AnyContext();
     }
 
     private void Start()

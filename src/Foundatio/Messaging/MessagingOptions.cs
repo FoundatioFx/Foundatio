@@ -18,8 +18,13 @@ public sealed class MessagingOptions
     /// <summary>Used when a handler does not set its own policy.</summary>
     public RetryPolicy DefaultRetryPolicy { get; set; } = RetryPolicy.Default;
 
-    /// <summary>How long shutdown waits for in-flight messages before cancelling them. They are then delivered again.</summary>
-    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(25);
+    /// <summary>
+    /// How long shutdown waits for in-flight messages before cancelling them; they are then delivered again. Handlers
+    /// still running get 5 more seconds after cancellation. The wait starts when the host begins stopping and runs
+    /// alongside the job worker's, so keep this plus 5 seconds under the host's <c>HostOptions.ShutdownTimeout</c>
+    /// (30 seconds by default) and the orchestrator's grace period. Defaults to 20 seconds.
+    /// </summary>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(20);
 
     /// <summary>Defaults to the registered <see cref="ISerializer"/>, or JSON.</summary>
     public ISerializer? Serializer { get; set; }

@@ -8,15 +8,20 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
-/// <summary>Starts a processor for every source that registered handlers, and drains them on shutdown.</summary>
-internal sealed class MessagingHostedService : IHostedService, IDisposable
+/// <summary>
+/// Starts a processor for every source that registered handlers. When the host begins stopping, they stop receiving
+/// at once, together with the job worker, and then drain while the host stops its other services.
+/// </summary>
+internal sealed class MessagingHostedService : IHostedLifecycleService, IDisposable
 {
     private readonly MessagingRuntime _runtime;
     private readonly MessagingRegistrations _registrations;
     private readonly IStartupGate? _startupGate;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _stopping = new();
+    private readonly object _stopLock = new();
     private Task _gatedStart = Task.CompletedTask;
+    private Task? _stop;
 
     public MessagingHostedService(MessagingRuntime runtime, MessagingRegistrations registrations, IServiceProvider services)
     {
@@ -41,8 +46,33 @@ internal sealed class MessagingHostedService : IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
+    public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>Stops receiving as soon as the host begins stopping, before any hosted service's <see cref="StopAsync"/>, and starts draining.</summary>
+    public Task StoppingAsync(CancellationToken cancellationToken)
+    {
+        BeginStop(cancellationToken);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Waits for the drain <see cref="StoppingAsync"/> started, or stops now when the host did not call it.</summary>
+    public Task StopAsync(CancellationToken cancellationToken) => BeginStop(cancellationToken);
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>Ends a wait for the startup gate when the host is disposed without being stopped.</summary>
+    public void Dispose() => _stopping.Cancel();
+
+    private Task BeginStop(CancellationToken cancellationToken)
+    {
+        lock (_stopLock)
+            return _stop ??= StopCoreAsync(cancellationToken);
+    }
+
     /// <summary>Stops every processor, even when starting them failed or was interrupted by this shutdown.</summary>
-    public async Task StopAsync(CancellationToken cancellationToken)
+    private async Task StopCoreAsync(CancellationToken cancellationToken)
     {
         _stopping.Cancel();
         try
@@ -59,9 +89,6 @@ internal sealed class MessagingHostedService : IHostedService, IDisposable
 
         await _runtime.StopAllAsync(cancellationToken).AnyContext();
     }
-
-    /// <summary>Ends a wait for the startup gate when the host is disposed without being stopped.</summary>
-    public void Dispose() => _stopping.Cancel();
 
     private async Task StartWhenTheGateOpensAsync()
     {

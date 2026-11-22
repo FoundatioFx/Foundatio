@@ -16,8 +16,13 @@ public sealed class JobWorkerOptions
     /// <summary>The longest an idle worker waits before checking for jobs enqueued by other processes.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>How long shutdown waits for running jobs before cancelling them. Cancelled jobs run again later.</summary>
-    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(25);
+    /// <summary>
+    /// How long shutdown waits for running jobs before cancelling them; cancelled jobs run again later without using
+    /// an attempt. Jobs still running get 5 more seconds after cancellation. The wait starts when the host begins
+    /// stopping and runs alongside the message handlers', so keep this plus 5 seconds under the host's
+    /// <c>HostOptions.ShutdownTimeout</c> (30 seconds by default) and the orchestrator's grace period. Defaults to 20 seconds.
+    /// </summary>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(20);
 
     /// <summary>How long succeeded jobs are kept, without their arguments. Defaults to one day.</summary>
     public TimeSpan RetainSucceededFor { get; set; } = TimeSpan.FromDays(1);
