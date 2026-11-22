@@ -1,0 +1,388 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Azure;
+using Azure.Storage.Queues;
+using Foundatio.Messaging;
+using Foundatio.Messaging.Transport;
+using Foundatio.Tests.Messaging;
+using Foundatio.Tests.Utility;
+using Microsoft.Extensions.Logging;
+using Xunit;
+
+namespace Foundatio.AzureStorage.Tests.Messaging;
+
+/// <summary>
+/// Runs the conformance suite against Azurite, plus what only the Storage Queues transport does. Each test gets its own
+/// queue name prefix, and its queues are deleted when it ends, since the transport only clears the queues it deletes.
+/// </summary>
+public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : MessageTransportTestsBase(output)
+{
+    private readonly string _prefix = $"ft{Guid.NewGuid():N}"[..10] + "-";
+    private QueueServiceClient? _service;
+
+    protected override IMessageTransport CreateTransport() => new AzureStorageQueueMessageTransport(CreateOptions());
+
+    /// <summary>A client of its own, as another producer or consumer of the account would use.</summary>
+    protected QueueServiceClient Service => _service ??= new QueueServiceClient(GetConnectionString());
+
+    protected AzureStorageQueueMessageTransportOptions CreateOptions() => new()
+    {
+        ConnectionString = GetConnectionString(),
+        Prefix = _prefix,
+        LoggerFactory = Log
+    };
+
+    internal AzureStorageQueueMessageTransportNames Names => new(_prefix);
+
+    [Fact]
+    public async Task Renew_GivesTheMessageANewPopReceipt_AndLaterSettlementsUseIt()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("receipt"));
+        await using var receiver = await CreateReceiverAsync(source, TimeSpan.FromSeconds(30));
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("renewed", "id-renewed")], TestCancellationToken);
+        var message = Assert.IsType<AzureStorageQueueIncomingMessage>(await ReceiveOneAsync(receiver));
+        string first = message.PopReceipt;
+
+        // Act
+        for (int i = 0; i < 3; i++)
+            await receiver.RenewAsync(message, TestCancellationToken);
+        string renewed = message.PopReceipt;
+
+        // Assert
+        Assert.NotEqual(first, renewed);
+        var queue = Service.GetQueueClient(Names.Queue(source.Name));
+        var stale = await Assert.ThrowsAsync<RequestFailedException>(() => queue.DeleteMessageAsync(message.QueueMessageId, first, TestCancellationToken));
+        Assert.Equal(400, stale.Status);
+        await receiver.CompleteAsync(message, TestCancellationToken);
+        Assert.Equal(0, (await queue.GetPropertiesAsync(TestCancellationToken)).Value.ApproximateMessagesCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentRenewalsAndComplete_OfOneDelivery_UseTheLatestPopReceipt()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("receipt-race"));
+        await using var receiver = await CreateReceiverAsync(source, TimeSpan.FromSeconds(30));
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("raced", "id-raced")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+
+        // Act
+        var renewals = Enumerable.Range(0, 5).Select(_ => receiver.RenewAsync(message, TestCancellationToken)).ToList();
+        await Task.WhenAll(renewals);
+        await receiver.CompleteAsync(message, TestCancellationToken);
+
+        // Assert
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task DeadLetter_GoesToThePoisonQueueNamedAfterTheSource()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("poison"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison", "id-poison")], TestCancellationToken);
+
+        // Act
+        await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "bad input", TestCancellationToken);
+
+        // Assert
+        string queueName = Names.Queue(source.Name);
+        Assert.Equal(queueName + "-poison", Names.DeadLetter(source));
+        var poison = Service.GetQueueClient(queueName + "-poison");
+        var peeked = Assert.Single((await poison.PeekMessagesAsync(10, TestCancellationToken)).Value);
+        Assert.True(AzureStorageQueueMessageTransportCodec.TryDecode(peeked.Body.ToMemory(), out var body, out string? id, out var headers, out _));
+        Assert.Equal("id-poison", id);
+        Assert.Equal("poison", Encoding.UTF8.GetString(body.Span));
+        Assert.Equal("bad input", headers![KnownHeaders.DeadLetterReason]);
+    }
+
+    [Fact]
+    public async Task Receive_WhileWaiting_IsWokenAtOnceBySendsAndRetriesThroughTheSameTransport()
+    {
+        // Arrange: polling every 30 seconds at most, so only the in-process signal can deliver promptly.
+        await using var transport = new AzureStorageQueueMessageTransport(CreateOptions() with { MaxPollInterval = TimeSpan.FromSeconds(30) });
+        var source = MessageSource.Queue(NewName("signal"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+        Assert.Empty(await receiver.ReceiveAsync(10, TimeSpan.FromSeconds(4), TestCancellationToken));
+
+        // Act
+        var waiting = receiver.ReceiveAsync(10, TimeSpan.FromSeconds(20), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("now", "id-now")], TestCancellationToken);
+        var message = Assert.Single(await waiting);
+        var sendLatency = stopwatch.Elapsed;
+
+        var retrying = receiver.ReceiveAsync(10, TimeSpan.FromSeconds(20), TestCancellationToken);
+        stopwatch.Restart();
+        await receiver.AbandonAsync(message, TimeSpan.Zero, TestCancellationToken);
+        var retried = Assert.Single(await retrying);
+        var retryLatency = stopwatch.Elapsed;
+
+        // Assert
+        Assert.Equal("id-now", retried.MessageId);
+        Assert.True(sendLatency < TimeSpan.FromSeconds(2), $"A waiting receive got the message {sendLatency} after its send began.");
+        Assert.True(retryLatency < TimeSpan.FromSeconds(2), $"A waiting receive got the retried message {retryLatency} after the abandon began.");
+        await receiver.CompleteAsync(retried, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task Receive_OfAMessageFromAnotherProcess_WaitsAtMostAboutTheMaxPollInterval()
+    {
+        // Arrange
+        var interval = TimeSpan.FromMilliseconds(500);
+        await using var transport = new AzureStorageQueueMessageTransport(CreateOptions() with { MaxPollInterval = interval });
+        var source = MessageSource.Queue(NewName("poll"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        Assert.Empty(await receiver.ReceiveAsync(10, TimeSpan.FromSeconds(2), TestCancellationToken));
+
+        // Act
+        var waiting = receiver.ReceiveAsync(10, TimeSpan.FromSeconds(10), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(300), TestCancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        await PeerTransport.SendAsync(MessageDestination.Queue(source.Name), [Message("polled", "id-polled")], TestCancellationToken);
+        var message = Assert.Single(await waiting);
+
+        // Assert
+        Assert.True(stopwatch.Elapsed < interval + TimeSpan.FromMilliseconds(500), $"The receive got the message {stopwatch.Elapsed} after it was sent, with a {interval} poll interval.");
+        await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task Send_WithMoreHeadersThanTheFramingReserve_ThrowsMessageTooLarge()
+    {
+        // Arrange: each header costs two length bytes that MessageSize does not count.
+        var headers = Enumerable.Range(0, 2000).ToDictionary(i => $"h{i}", _ => "v");
+        long counted = MessageSize.Of("too-many-headers", ReadOnlySpan<byte>.Empty, headers);
+        var body = new byte[Transport.Capabilities.MaxMessageSize!.Value - counted];
+        var source = MessageSource.Queue(NewName("framing"));
+        DeleteAfterTest(source);
+
+        // Act
+        var ex = await Assert.ThrowsAsync<MessageTooLargeException>(() => Transport.SendAsync(MessageDestination.Queue(source.Name),
+            [new OutgoingMessage { MessageId = "too-many-headers", Body = body, Headers = headers }], TestCancellationToken));
+
+        // Assert
+        Assert.Equal(AzureStorageQueueMessageTransportCodec.MaxEnvelopeSize, ex.Limit);
+        Assert.Contains("headers", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Send_OverTheSizeLimit_ThrowsMessageTooLargePointingToFileStorage()
+    {
+        var source = MessageSource.Queue(NewName("too-large"));
+        DeleteAfterTest(source);
+
+        var ex = await Assert.ThrowsAsync<MessageTooLargeException>(() => Transport.SendAsync(MessageDestination.Queue(source.Name),
+            [new OutgoingMessage { MessageId = "large", Body = new byte[64 * 1024] }], TestCancellationToken));
+
+        Assert.Equal(46 * 1024, ex.Limit);
+        Assert.Contains("file storage", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Receive_MessagesWrittenByOtherProducers_AreDeliveredAsTheirBody()
+    {
+        // Arrange: the Storage SDK's default base64 encoding (also what Event Grid and Azure Functions write), and plain text.
+        var source = MessageSource.Queue(NewName("foreign"));
+        await using var receiver = await CreateReceiverAsync(source);
+        string queueName = Names.Queue(source.Name);
+        var base64 = new QueueClient(GetConnectionString(), queueName, new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 });
+        var plain = new QueueClient(GetConnectionString(), queueName, new QueueClientOptions { MessageEncoding = QueueMessageEncoding.None });
+        var sent = await base64.SendMessageAsync(BinaryData.FromString("{\"value\":1}"), cancellationToken: TestCancellationToken);
+        await plain.SendMessageAsync("plain <text> & more", cancellationToken: TestCancellationToken);
+
+        // Act
+        var messages = await ReceiveAsync(receiver, 2);
+
+        // Assert
+        var bodies = messages.Select(m => Encoding.UTF8.GetString(m.Body.Span)).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(["plain <text> & more", "{\"value\":1}"], bodies);
+        var json = messages.Single(m => m.Body.Span[0] == (byte)'{');
+        Assert.Equal(sent.Value.MessageId, json.MessageId);
+        Assert.Empty(json.Headers);
+        foreach (var message in messages)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task Names_ThatDifferOnlyInCaseOrPunctuationOrPastTheLengthLimit_DoNotCollide()
+    {
+        // Arrange
+        string name = NewName("collide");
+        string tooLong = name + new string('x', 100);
+        string[] queues = [$"{name}.a", $"{name}_a", $"{name}-A", tooLong + "1", tooLong + "2"];
+        var receivers = new List<IMessageReceiver>();
+        foreach (string queue in queues)
+            receivers.Add(await CreateReceiverAsync(MessageSource.Queue(queue)));
+
+        // "a-b" + "c" and "a" + "b-c" read the same once joined with '-'.
+        var ambiguous = new[] { MessageSource.Subscription($"{name}-t-x", "s"), MessageSource.Subscription($"{name}-t", "x-s") };
+        foreach (var subscription in ambiguous)
+            receivers.Add(await CreateReceiverAsync(subscription));
+
+        try
+        {
+            // Act
+            foreach (string queue in queues)
+                await Transport.SendAsync(MessageDestination.Queue(queue), [Message(queue)], TestCancellationToken);
+            foreach (var subscription in ambiguous)
+                await Transport.SendAsync(MessageDestination.Topic(subscription.Topic!), [Message(subscription.Topic!)], TestCancellationToken);
+
+            // Assert
+            string[] expected = [.. queues, .. ambiguous.Select(s => s.Topic!)];
+            for (int i = 0; i < receivers.Count; i++)
+            {
+                var message = await ReceiveOneAsync(receivers[i]);
+                Assert.Equal(expected[i], Encoding.UTF8.GetString(message.Body.Span));
+                await receivers[i].CompleteAsync(message, TestCancellationToken);
+            }
+
+            foreach (string queueName in queues.Select(Names.Queue).Concat(queues.Select(q => Names.DeadLetter(MessageSource.Queue(q)))))
+                Assert.Matches("^[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]$", queueName);
+        }
+        finally
+        {
+            foreach (var receiver in receivers)
+                await receiver.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Publish_SkipsAndRemovesInstanceSubscriptionsWhoseHeartbeatLapsed()
+    {
+        // Arrange: an instance queue left behind by a process that died an hour ago.
+        string topic = NewName("stale");
+        await using var live = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "live"));
+        var stale = Service.GetQueueClient(Names.Instance(topic, "dead"));
+        await stale.CreateAsync(new Dictionary<string, string>
+        {
+            [AzureStorageQueueMessageTransport.KindMetadata] = AzureStorageQueueMessageTransport.InstanceKind,
+            [AzureStorageQueueMessageTransport.TopicMetadata] = topic,
+            [AzureStorageQueueMessageTransport.HeartbeatMetadata] = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
+        }, TestCancellationToken);
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("event", "id-event")], TestCancellationToken);
+
+        // Assert
+        await AssertOnlyReceivedAsync(live, "id-event");
+        await WaitForAsync(() => !stale.Exists().Value);
+    }
+
+    [Fact]
+    public async Task DisposingAnInstanceReceiver_DeletesItsQueue()
+    {
+        string topic = NewName("instance-gone");
+        var receiver = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "gone"));
+        var queues = await ListQueuesAsync(Names.TopicPrefix(topic));
+        Assert.Single(queues);
+
+        await receiver.DisposeAsync();
+
+        Assert.Empty(await ListQueuesAsync(Names.TopicPrefix(topic)));
+    }
+
+    [Fact]
+    public async Task Delete_ClearsTheQueuesAndKeepsThem()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("cleared"));
+        await using (var receiver = await CreateReceiverAsync(source))
+        {
+            await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("a"), Message("b") with { DeliverAt = DateTimeOffset.UtcNow.AddMinutes(5) }], TestCancellationToken);
+            await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "conformance", TestCancellationToken);
+        }
+
+        // Act
+        await Transport.DeleteAsync(source, TestCancellationToken);
+
+        // Assert
+        var queue = Service.GetQueueClient(Names.Queue(source.Name));
+        var poison = Service.GetQueueClient(Names.DeadLetter(source));
+        Assert.True((await queue.ExistsAsync(TestCancellationToken)).Value);
+        Assert.Equal(0, (await queue.GetPropertiesAsync(TestCancellationToken)).Value.ApproximateMessagesCount);
+        Assert.Equal(0, (await poison.GetPropertiesAsync(TestCancellationToken)).Value.ApproximateMessagesCount);
+    }
+
+    [Fact]
+    public async Task GetStats_CountsLeasedAndDelayedMessagesAsQueued()
+    {
+        var source = MessageSource.Queue(NewName("stats-all"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("leased"), Message("delayed") with { DeliverAt = DateTimeOffset.UtcNow.AddMinutes(5) }], TestCancellationToken);
+        var leased = await ReceiveOneAsync(receiver);
+
+        var stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+
+        Assert.NotNull(stats);
+        Assert.Equal(2, stats.Queued);
+        Assert.Null(stats.InFlight);
+        Assert.Null(stats.Delayed);
+        Assert.Equal(0, stats.DeadLettered);
+        await receiver.CompleteAsync(leased, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task MessageTimeToLive_LimitsDelaysAndIsAppliedToMessages()
+    {
+        await using var transport = new AzureStorageQueueMessageTransport(CreateOptions() with { MessageTimeToLive = TimeSpan.FromHours(1) });
+        var source = MessageSource.Queue(NewName("ttl"));
+        DeleteAfterTest(source);
+
+        Assert.Equal(TimeSpan.FromHours(1) - TimeSpan.FromSeconds(1), transport.Capabilities.MaxDelay);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("expiring")], TestCancellationToken);
+
+        var peeked = Assert.Single((await Service.GetQueueClient(Names.Queue(source.Name)).PeekMessagesAsync(1, TestCancellationToken)).Value);
+        Assert.NotNull(peeked.ExpiresOn);
+        Assert.InRange(peeked.ExpiresOn!.Value, DateTimeOffset.UtcNow.AddMinutes(55), DateTimeOffset.UtcNow.AddMinutes(65));
+    }
+
+    [Fact]
+    public async Task Send_WithoutATimeToLive_KeepsTheMessageUntilItIsReceived()
+    {
+        var source = MessageSource.Queue(NewName("no-ttl"));
+        DeleteAfterTest(source);
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("kept")], TestCancellationToken);
+
+        var peeked = Assert.Single((await Service.GetQueueClient(Names.Queue(source.Name)).PeekMessagesAsync(1, TestCancellationToken)).Value);
+        Assert.True(peeked.ExpiresOn is null || peeked.ExpiresOn > DateTimeOffset.UtcNow.AddYears(100), $"The message expires at {peeked.ExpiresOn}.");
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        try
+        {
+            foreach (string queueName in await ListQueuesAsync(_prefix, CancellationToken.None))
+                await Service.GetQueueClient(queueName).DeleteIfExistsAsync();
+        }
+        catch (RequestFailedException ex)
+        {
+            Log.CreateLogger<AzureStorageQueueMessageTransportTests>().LogWarning(ex, "Could not delete the queues of the test");
+        }
+    }
+
+    private async Task<List<string>> ListQueuesAsync(string prefix, CancellationToken? cancellationToken = null)
+    {
+        var names = new List<string>();
+        await foreach (var queue in Service.GetQueuesAsync(prefix: prefix, cancellationToken: cancellationToken ?? TestCancellationToken))
+            names.Add(queue.Name);
+
+        return names;
+    }
+
+    internal static string GetConnectionString() =>
+        Configuration.GetConnectionString("AzureStorageConnectionString") ?? "UseDevelopmentStorage=true";
+}
