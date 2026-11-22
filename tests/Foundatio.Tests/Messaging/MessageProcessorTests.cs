@@ -15,6 +15,7 @@ using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -178,6 +179,25 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.True(Volatile.Read(ref renewals) > 1, "No renewal failed, so the test did not exercise failing renewals.");
         Assert.Equal(0, Volatile.Read(ref cancelled));
         Assert.Equal(1, Volatile.Read(ref handled));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HandleAsync_WhenItThrowsBeforeSettling_AbandonsTheDelivery(bool inOrder)
+    {
+        // Without lease expiration an unsettled delivery never comes back, so handling that throws must release it.
+        await using var transport = new InMemoryMessageTransport(new InMemoryMessageTransport().Capabilities with { LeaseExpiration = false });
+        var source = MessageSource.Queue("throwing");
+        await transport.SendAsync(MessageDestination.Queue("throwing"), [new OutgoingMessage { MessageId = "m1", Body = new byte[] { 1 } }], TestCancellationToken);
+        var handler = new ThrowOnceDeliveryHandler();
+        var settings = new MessageProcessorSettings { MaxConcurrency = 2, LeaseDuration = ShortLease, ReplaceTimeout = TimeSpan.FromSeconds(5), Description = "test", InOrder = inOrder };
+        await using var processor = new MessageProcessor(transport, source, settings, handler, new ProcessingStatusTracker(TimeProvider.System), TimeProvider.System, Log);
+        await processor.StartAsync(TestCancellationToken);
+
+        Assert.True(await transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.Equal(2, Volatile.Read(ref handler.Calls));
+        Assert.Equal(["retry"], handler.Released);
     }
 
     [Fact]
@@ -1464,6 +1484,24 @@ public class MessageProcessorTests : TestWithLoggingBase
     private sealed class OpenGate : IStartupGate
     {
         public Task<bool> WaitAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+    }
+
+    /// <summary>Throws from its first delivery before settling it, as a throwing logging scope would, and completes the rest.</summary>
+    private sealed class ThrowOnceDeliveryHandler : IMessageDeliveryHandler
+    {
+        public int Calls;
+
+        public ConcurrentQueue<string> Released { get; } = new();
+
+        public async Task<bool> HandleAsync(MessageDelivery delivery, CancellationToken abortToken)
+        {
+            if (Interlocked.Increment(ref Calls) == 1)
+                throw new InvalidOperationException("Handling failed before settling");
+
+            return await delivery.SettleAsync(static (receiver, message, ct) => receiver.CompleteAsync(message, ct), "complete", NullLogger.Instance) is null;
+        }
+
+        public void OnReleased(MessageDelivery delivery, string outcome) => Released.Enqueue(outcome);
     }
 
     /// <summary>Records the outcome reported for each message id.</summary>

@@ -22,6 +22,7 @@ internal sealed class MessageDelivery
     private readonly TimeProvider? _slotClock;
     private CancellationTokenSource? _handlerCancellation;
     private int _leaseLost;
+    private int _settling;
 
     /// <param name="receiver">The receiver that received it.</param>
     /// <param name="message">The message.</param>
@@ -48,6 +49,9 @@ internal sealed class MessageDelivery
 
     /// <summary>True once a renewal reported the lease lost: another consumer may have the message, so it must not be settled.</summary>
     public bool IsLeaseLost => Volatile.Read(ref _leaseLost) == 1;
+
+    /// <summary>True once <see cref="SettleAsync"/> has been called, whether or not the settlement succeeded.</summary>
+    public bool IsSettling => Volatile.Read(ref _settling) == 1;
 
     // Renewal state, read and written only under the renewer's lock.
     internal bool Tracked { get; set; }
@@ -121,6 +125,7 @@ internal sealed class MessageDelivery
     /// </summary>
     public async Task<Exception?> SettleAsync(Func<IMessageReceiver, IncomingMessage, CancellationToken, Task> settle, string operation, ILogger logger)
     {
+        Volatile.Write(ref _settling, 1);
         HandlerReturned?.TrySetResult();
         MarkHandlerReturned();
         var stopRenewing = StopRenewingAsync();

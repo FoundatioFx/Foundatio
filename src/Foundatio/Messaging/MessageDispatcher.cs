@@ -214,16 +214,26 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         if (error is null && !context.RetryRequested)
             return await CompleteAsync(delivery).AnyContext() ? ("success", null) : ("settle-failed", null);
 
-        if (policy.CanRetry(error, context.Attempt))
+        string description = error is null ? "Retry requested" : $"{error.GetType().Name}: {error.Message}";
+        TimeSpan? retryIn;
+        try
         {
-            var delay = context.RetryDelay ?? policy.GetDelay(context.Attempt);
+            retryIn = policy.CanRetry(error, context.Attempt) ? context.RetryDelay ?? policy.GetDelay(context.Attempt) : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The retry policy for message {MessageId} threw; dead-lettering it", message.MessageId);
+            return await DeadLetterOrDropAsync(delivery, $"The retry policy threw {ex.GetType().Name}: {ex.Message} while handling {description}", abortToken).AnyContext();
+        }
+
+        if (retryIn is { } delay)
+        {
             _logger.LogWarning(error, "Message {MessageId} failed on attempt {Attempt} of {MaxAttempts}; retrying in {Delay}",
                 message.MessageId, context.Attempt, policy.MaxAttempts, delay);
             await RetryAsync(delivery, delay, abortToken).AnyContext();
             return (delivery.IsLeaseLost ? "lease-lost" : "retry", null);
         }
 
-        string description = error is null ? "Retry requested" : $"{error.GetType().Name}: {error.Message}";
         _logger.LogError(error, "Message {MessageId} failed after {Attempt} attempts: {Reason}", message.MessageId, context.Attempt, description);
         return await DeadLetterOrDropAsync(delivery, description, abortToken).AnyContext();
     }
@@ -329,10 +339,24 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             : $"No handler for message type \"{messageType}\"";
         var policy = _runtime.Options.DefaultRetryPolicy;
         int attempt = Math.Max(1, message.DeliveryCount);
+        TimeSpan? retryIn = null;
         if (attempt < policy.MaxAttempts)
         {
+            try
+            {
+                retryIn = policy.GetDelay(attempt);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "The default retry policy threw; dead-lettering message {MessageId}", message.MessageId);
+                reason = $"{reason}; the default retry policy threw {ex.GetType().Name}: {ex.Message}";
+            }
+        }
+
+        if (retryIn is { } delay)
+        {
             _logger.LogWarning("No handler for message type {MessageType} on {Source}; retrying (attempt {Attempt} of {MaxAttempts})", messageType, _source, attempt, policy.MaxAttempts);
-            await RetryAsync(delivery, policy.GetDelay(attempt), abortToken).AnyContext();
+            await RetryAsync(delivery, delay, abortToken).AnyContext();
             _runtime.Observer?.OnHandled(_source, message, null, "retry", reason, null);
             RecordUnhandled(counter, message, "retry", reason);
             return false;

@@ -1065,6 +1065,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             {
                 release = true;
                 _logger.LogError(ex, "Unexpected error processing message {MessageId} from {Source}", delivery.Message.MessageId, Source);
+                await AbandonUnsettledAsync(delivery).AnyContext();
             }
             finally
             {
@@ -1117,11 +1118,32 @@ internal sealed class MessageProcessor : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error processing message {MessageId} from {Source}", delivery.Message.MessageId, Source);
+            await AbandonUnsettledAsync(delivery).AnyContext();
         }
         finally
         {
             delivery.HandlerReturned?.TrySetResult();
             await FinishAsync(delivery, !delivery.SlotsReleased).AnyContext();
+        }
+    }
+
+    /// <summary>
+    /// Abandons a delivery whose handling threw before it began to settle, so it is delivered again instead of staying
+    /// unsettled: without lease expiration it would never come back, and a Kafka partition would stop committing behind it.
+    /// </summary>
+    private async Task AbandonUnsettledAsync(MessageDelivery delivery)
+    {
+        if (delivery.IsSettling || delivery.IsLeaseLost)
+            return;
+
+        try
+        {
+            if (await delivery.SettleAsync(static (receiver, message, ct) => receiver.AbandonAsync(message, TimeSpan.Zero, ct), "abandon", _logger).AnyContext() is null)
+                _handler.OnReleased(delivery, "retry");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error abandoning message {MessageId} from {Source}", delivery.Message.MessageId, Source);
         }
     }
 
