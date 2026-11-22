@@ -127,6 +127,37 @@ var report = job?.GetArguments<GenerateReport>();   // null once the job has suc
 
 `QueryAsync` lists jobs newest first by state and name; `CountAsync` counts them.
 
+### One at a time per key
+
+`ConcurrencyKey` runs at most one job of that name with that key at a time, across every instance: one reset per project, one sync per account.
+
+```csharp
+await jobs.EnqueueAsync(new ResetProjectData(projectId), new EnqueueOptions { ConcurrencyKey = projectId });
+```
+
+- A job whose key is held stays queued and doesn't use an attempt or wait for a backoff. It runs as soon as the running one succeeds, fails, is retried, is released at shutdown, or is deleted. Jobs with other keys, and jobs of other names (even with the same key), are not held up.
+- A job whose worker crashes keeps its key until its lease runs out and it is claimed again, so it runs before the jobs waiting for its key, and a slow worker that still finishes never overlaps the next one.
+- It is enforced by the store when a worker claims a job, so it holds across instances. `JobTypeOptions.MaxConcurrency` limits jobs of a type per instance; use both if you need both.
+- Jobs waiting for a key run longest-due first, but a retried or released job goes behind the ones already waiting.
+
+### Deduplicate while waiting
+
+`DeduplicationKey` collapses repeated enqueues of work that hasn't started yet. While a job of that name with that key is waiting for its first run, enqueuing another returns the waiting job's handle instead of creating one:
+
+```csharp
+var options = new EnqueueOptions { DeduplicationKey = organizationId };
+var first = await jobs.EnqueueAsync(new NotifyOrganization(organizationId), options);
+var second = await jobs.EnqueueAsync(new NotifyOrganization(organizationId), options);   // second.Id == first.Id
+```
+
+The key is free again once the job starts (or is cancelled or deleted), so work that arrives while a job runs isn't lost: the next enqueue creates a new job. A job that is retried or released doesn't take the key back. Give a job both keys to keep at most one running and one waiting per key, for example to refresh a project's stats after every change without running two refreshes at once or queuing a hundred:
+
+```csharp
+new EnqueueOptions { ConcurrencyKey = projectId, DeduplicationKey = projectId }
+```
+
+`JobId` is different: it keeps the id taken for as long as the job is retained (a day after it succeeds, by default), so it suits "do this exactly once", while `DeduplicationKey` suits "do this at least once after now". The id check comes first when you set both.
+
 There is no API to run a failed job again. A failed or cancelled job keeps its arguments, so enqueue them again; its `JobId` stays taken while the old job is retained, so use a new one:
 
 ```csharp
@@ -153,7 +184,13 @@ j.AddCronJob<SyncJob>("*/30 * * * * *", new CronJobOptions              // six f
     AllowConcurrent = false,                       // default: skip while the previous run is unfinished
     MisfireThreshold = TimeSpan.FromMinutes(10)    // run a missed occurrence if an instance starts within this
 });
+j.AddCronJob<StackEventCountJob>("*/5 * * * * *", new CronJobOptions   // every 5 seconds
+{
+    RetainSucceededFor = TimeSpan.Zero             // keep no history beyond what runs each occurrence once
+});
 ```
+
+A job that runs every few seconds, like a hosted interval job, can be a CRON job with six fields. Each occurrence is a stored job, so set `RetainSucceededFor` on the schedule: zero keeps each occurrence's job only until the next occurrence is due (or `MisfireThreshold` has passed, if sooner) plus a minute, which every-5-seconds works out to about 13 jobs at a time instead of 17,280 a day under the default one-day retention. Each occurrence costs a read of the previous one and a create from each instance's scheduler, and a claim and a completion from the worker that runs it, on top of an idle worker polling the store about once a second.
 
 `AddCronJob<TJob>` also registers the job, with `CronJobOptions.JobTypeOptions` if you set them. A schedule of arguments, `AddCronJob(expression, arguments)`, doesn't register the job that takes them, so register it with `AddJob` in the process that runs it, and set its options there; setting `JobTypeOptions` on such a schedule throws. A process that runs jobs logs a warning at startup for a schedule whose job it doesn't run, and when it enqueues one (once per job name), since that is usually a forgotten `AddJob`.
 
@@ -180,6 +217,8 @@ await jobs.EnqueueAsync<LegacyJob<QueueStatsJob>>();
 
 Finished jobs stay in the store so you can read their results: succeeded jobs for `JobWorkerOptions.RetainSucceededFor` (1 day by default), failed and cancelled jobs for `RetainFailedFor` (7 days). A succeeded job's arguments are dropped when it finishes; failed and cancelled jobs keep theirs so you can see what they were given.
 
+A job type's `JobTypeOptions.RetainSucceededFor` overrides the worker's for its jobs, and a schedule's `CronJobOptions.RetainSucceededFor` overrides both for the jobs it creates. Zero stops reads returning a job once it succeeds, so `WaitForCompletionAsync` can't see the result; use it for jobs nobody reads back. They apply in the process that runs the job, so register a schedule in the processes that run its job, as `AddCronJob<TJob>` does.
+
 Every retained job takes memory in the store. With a 55-character correlation id, a `traceparent` header and a short message, a succeeded job measured about 1.6 KB in Redis, a failed job with 200 bytes of arguments about 2 KB, and a job in the in-memory store about 1.2 KB. Longer messages, errors and headers add to that. Memory grows with rate × retention: at 10 jobs a second, a day of succeeded jobs is 864,000 jobs, about 1.4 GB in Redis; at 100 a second, about 14 GB. In Redis, all of a store's jobs live on one cluster shard, so size that shard for it. Redis job keys carry no TTL; each process that runs workers deletes the expired ones about once a second, up to 5,000 at a time. Shorten retention for high-volume jobs:
 
 ```csharp
@@ -190,7 +229,7 @@ j.Configure(o =>
 });
 ```
 
-A CRON schedule's `MisfireThreshold` must stay shorter than both, or an occurrence could run twice; startup checks it.
+A process that runs a schedule's jobs keeps each occurrence's job, however short the retention, until no scheduler can create that occurrence again: until the next occurrence is due, or `MisfireThreshold` has passed if sooner, plus a minute for clocks that differ. A process that schedules a job it doesn't run can't do that for the process that runs it, so startup checks that the schedule's `MisfireThreshold` is shorter than its own `RetainSucceededFor` and `RetainFailedFor`, which are assumed to match there.
 
 ## Startup
 

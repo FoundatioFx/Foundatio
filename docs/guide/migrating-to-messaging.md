@@ -7,9 +7,6 @@ The original queue, message bus and job APIs keep working alongside the new ones
 
 Check these first; work that depends on them stays on the original APIs for now:
 
-- **Per-key job concurrency.** `WorkItemHandlerBase.GetWorkItemLockAsync` (one reset per project at a time) has no durable-job equivalent. For messages, a `SendOptions.GroupKey` handles one message of each key at a time on transports that order groups (in-memory, Redis, Kafka, SQS FIFO, Service Bus with sessions). For jobs, take an `ILockProvider` lock in the handler and throw when it is held, which spends an attempt, or keep the work item on `IQueue<WorkItemData>`.
-- **Deduplicate while queued.** `DuplicateDetectionQueueBehavior` rejects an item only while one with the same id is queued, and allows it again once it is dequeued. `EnqueueOptions.JobId` returns the existing job for as long as the job is retained (a day after it succeeds, by default), and `SendOptions.DeduplicationId` drops repeats within the transport's own window, on transports that deduplicate (in-memory, Redis, SQS FIFO, Service Bus with duplicate detection).
-- **Retention per schedule.** Every CRON occurrence is a stored job, and `JobWorkerOptions.RetainSucceededFor` applies to all of them. A job that runs every few seconds stores thousands of records a day, so keep it on `services.AddJob<T>()` with its interval.
 - **One transport per app.** Every queue and topic uses the transport you choose with `Use...()`, and `AddLegacyMessageBus()` runs on it too. You can't keep queues on one broker and pub/sub on another.
 - **Run once and exit.** There is no "run this job, then stop the process" mode for a Kubernetes CronJob. Host the schedule with `AddCronJob` in a long-running process instead.
 
@@ -30,7 +27,9 @@ Check these first; work that depends on them stays on the original APIs for now:
 | `JobWithLockBase` CRON jobs, `services.AddCronJob<T>(...)` | An `IJobHandler` + `AddFoundatioJobs(j => j.AddCronJob<T>("..."))`; one run per occurrence, no lock needed |
 | `IJob` / `JobBase` run on demand or on a schedule | `IJobHandler` ([see below](#converting-an-ijob-or-jobbase)), or unchanged through `j.AddLegacyJob<T>()` and `j.AddCronJob<LegacyJob<T>>("...")` |
 | `IJob` / `JobBase` run continuously with `services.AddJob<T>()` | Unchanged: keep `services.AddJob<T>()`. Durable jobs only run when enqueued or scheduled |
-| Queue behaviors, duplicate detection | `SendOptions.DeduplicationId` where the transport supports it (elsewhere a warning is logged); otherwise idempotent handlers. It is not the same contract; see [Not in v2 yet](#before-you-start-not-in-v2-yet) |
+| A hosted job on a short `Interval` (every few seconds) | `j.AddCronJob<T>("*/5 * * * * *", new CronJobOptions { RetainSucceededFor = TimeSpan.Zero })`; see [work items and interval jobs](#work-items-and-interval-jobs) |
+| `WorkItemHandlerBase.GetWorkItemLockAsync` (one per project at a time) | `EnqueueOptions.ConcurrencyKey`; see [work items and interval jobs](#work-items-and-interval-jobs) |
+| Queue behaviors, duplicate detection | For jobs, `EnqueueOptions.DeduplicationKey`, the same contract as `DuplicateDetectionQueueBehavior`. For messages, `SendOptions.DeduplicationId` where the transport supports it (elsewhere a warning is logged), which drops repeats within a time window instead; otherwise idempotent handlers |
 | `QueueEntryOptions.GroupId` | `SendOptions.GroupKey` |
 | Tests that call `job.RunAsync()` / `RunUntilEmptyAsync()` and assert queue stats between steps | `AddFoundatioTestHarness(o => o.StartPaused = true)`, then `harness.ProcessPendingAsync<T>()`; see [tests](#tests) |
 | `services.AddJobLifetimeService()` | Unchanged. It also counts message handlers, the job worker and the CRON scheduler as running work, so a process that runs only those keeps running |
@@ -48,6 +47,23 @@ Check concurrency as you move each queue. A `QueueJobBase<T>` handled one entry 
 Message and job names default to the type's full name. Set stable names before your first deployment so later renames are safe.
 
 Name each service with `m.UseServiceName("orders")`. Its durable subscriptions are kept under that name, so every service needs a name of its own, and on a real broker the host fails to start without one when the service subscribes to events.
+
+## Work items and interval jobs
+
+A work item becomes the arguments of an `IJobHandler<TArgs>`. What its handler or queue did around the work maps to enqueue and schedule options:
+
+```csharp
+// Before: one reset per project, held with a lock the work item job takes before it runs the handler
+public override Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken ct) =>
+    _lockProvider.TryAcquireAsync($"{nameof(ResetProjectDataWorkItemHandler)}:{((ResetProjectDataWorkItem)workItem).ProjectId}", TimeSpan.FromMinutes(15), ct);
+
+// After: the store runs one job of this name per key at a time; no lock, and a job that waits doesn't use an attempt
+await jobs.EnqueueAsync(new ResetProjectDataWorkItem { OrganizationId = organizationId, ProjectId = projectId }, new EnqueueOptions { ConcurrencyKey = projectId });
+```
+
+- **`GetWorkItemLockAsync`** becomes `EnqueueOptions.ConcurrencyKey`: the key the lock was named after, without the handler's name, since keys are per job name already. A lock named only after the handler (one at a time across the cluster) becomes a constant key, such as `"all"`. A job that waits for its key stays queued without using an attempt, where a held lock abandoned the work item and spent a retry. Keys don't span job names; to keep two different jobs apart, keep the lock.
+- **`DuplicateDetectionQueueBehavior`** becomes `EnqueueOptions.DeduplicationKey`, with the item's `UniqueIdentifier` as the key. As with the behavior, an enqueue while a job with the key is waiting returns that job's handle (the behavior discarded the item), and once the job starts, the next enqueue creates a new one. There is no detection window: the key is held until the job starts, however long it waits.
+- **Interval jobs** (`[Job(Interval = "5s")]` or `services.AddJob<T>(o => o.Interval(...))`) become CRON jobs with a seconds field, with `CronJobOptions.RetainSucceededFor = TimeSpan.Zero` so each run's record is kept only as long as running each occurrence once needs. They then run once per occurrence across every instance instead of on every instance, and a run that overlaps the next occurrence makes it skip unless `AllowConcurrent` is set. Keep a job that should run continuously or on every instance on `services.AddJob<T>()`.
 
 ## Queue job outcomes
 
@@ -96,7 +112,7 @@ m.AddConsumer<WorkItemHandler>(new HandlerOptions
 | `Retries` (default 2) | `RetryPolicy.MaxAttempts` | **Off by one**: `Retries` counts retries, `MaxAttempts` counts every attempt, so `Retries = 2` is `MaxAttempts = 3`. The default goes from 3 attempts to 5 |
 | `RetryDelay` (1 min) × `RetryMultipliers` (`{ 1, 3, 5, 10 }`) | `RetryPolicy.Delay` | The default waits about 1, 4, 16 and 64 s (×4, ±20% jitter, at most 10 min), so a poison message is dead-lettered after about 85 s instead of about 4 min. Use `RetryPolicy.Exponential(initial, max)`, `RetryPolicy.Fixed(delay)` or your own `Func<int, TimeSpan>` |
 | `WorkItemTimeout` (5 min) | `HandlerOptions.LeaseDuration` (1 min) | Renewed while the handler runs, so it only bounds how long a crashed instance holds a message, not how long a handler may run |
-| `Behaviors` such as `DuplicateDetectionQueueBehavior` | `SendOptions.DeduplicationId` | A time window, and only on transports that deduplicate; see [Not in v2 yet](#before-you-start-not-in-v2-yet) |
+| `Behaviors` such as `DuplicateDetectionQueueBehavior` | `SendOptions.DeduplicationId` | A time window, and only on transports that deduplicate. Work moved to a durable job gets the behavior's own contract from `EnqueueOptions.DeduplicationKey`; see [work items and interval jobs](#work-items-and-interval-jobs) |
 | `GetDeadletterItemsAsync()` | `IMessageAdmin.PeekDeadLettersAsync(source)` | Entries already in the legacy dead-letter list stay there; drain or inspect them with the old queue |
 | `GetQueueStatsAsync()` | `IMessageAdmin.GetStatsAsync(source)` | Use the old queue's stats to know when it is drained before you remove its job |
 
