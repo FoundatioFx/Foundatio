@@ -33,7 +33,9 @@ public sealed record AzureStorageQueueMessageTransportOptions
 
     /// <summary>
     /// How long Storage keeps a message nobody received. Null, the default, keeps messages until they are received:
-    /// Storage's own default of 7 days would silently drop a backlog a consumer did not get to.
+    /// Storage's own default of 7 days would silently drop a backlog a consumer did not get to. A time to live counts
+    /// from the send, and Storage cannot hide a message past it, so it also bounds delays, retries and leases; a
+    /// message received or retried close to its expiry may expire in flight.
     /// </summary>
     public TimeSpan? MessageTimeToLive { get; init; }
 

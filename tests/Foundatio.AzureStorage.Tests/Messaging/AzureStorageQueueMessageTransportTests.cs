@@ -341,6 +341,8 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
         DeleteAfterTest(source);
 
         Assert.Equal(TimeSpan.FromHours(1) - TimeSpan.FromSeconds(1), transport.Capabilities.MaxDelay);
+        Assert.Equal(TimeSpan.FromHours(1) - TimeSpan.FromSeconds(1), transport.Capabilities.MaxRetryDelay);
+        Assert.Equal(TimeSpan.FromHours(1) - TimeSpan.FromSeconds(1), transport.Capabilities.MaxLeaseDuration);
         await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("expiring")], TestCancellationToken);
 
         var peeked = Assert.Single((await Service.GetQueueClient(Names.Queue(source.Name)).PeekMessagesAsync(1, TestCancellationToken)).Value);

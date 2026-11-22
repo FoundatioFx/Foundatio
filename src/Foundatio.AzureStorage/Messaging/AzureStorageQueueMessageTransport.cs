@@ -111,7 +111,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
             MaxConcurrentReceives = MaxConcurrentReceives,
             ReceiveAhead = true,
             MaxMessageSize = AzureStorageQueueMessageTransportCodec.MaxMessageSize,
-            MaxLeaseDuration = MaxVisibilityTimeout,
+            MaxLeaseDuration = maxDelay,
             LeaseExpiration = true
         };
     }
@@ -362,9 +362,8 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
 
     internal async Task DeleteQueueAsync(string queueName)
     {
-        _queues.TryRemove(queueName, out _);
-        await GetQueue(queueName).DeleteIfExistsAsync().AnyContext();
-        _queues.TryRemove(queueName, out _);
+        var queue = _queues.TryRemove(queueName, out var cached) ? cached : Service.GetQueueClient(queueName);
+        await queue.DeleteIfExistsAsync().AnyContext();
     }
 
     /// <summary>
