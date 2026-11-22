@@ -879,13 +879,19 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertOnlyReceivedAsync(deadLetters, "id-good");
     }
 
-    /// <summary>Deleting a source with an open receiver either throws, or leaves the receiver receiving what is sent afterwards, or makes it throw; it never silently stops delivering.</summary>
-    [Fact]
-    public async Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults()
+    /// <summary>
+    /// Deleting a queue or durable subscription with an open receiver either throws, or leaves the receiver receiving what
+    /// is sent afterwards, or makes it throw; it never silently stops delivering.
+    /// </summary>
+    [Theory]
+    [InlineData(MessageSourceKind.Queue)]
+    [InlineData(MessageSourceKind.Subscription)]
+    public async Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(MessageSourceKind kind)
     {
-        var source = MessageSource.Queue(NewName("delete-open"));
+        var source = kind == MessageSourceKind.Queue ? MessageSource.Queue(NewName("delete-open")) : MessageSource.Subscription(NewName("delete-open"), "open");
+        var destination = kind == MessageSourceKind.Queue ? MessageDestination.Queue(source.Name) : MessageDestination.Topic(source.Topic!);
         await using var receiver = await CreatePeerReceiverAsync(source);
-        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("before", "id-before")], TestCancellationToken);
+        await Transport.SendAsync(destination, [Message("before", "id-before")], TestCancellationToken);
         await receiver.CompleteAsync(await ReceiveOneAsync(receiver), TestCancellationToken);
 
         bool refused = false;
@@ -899,7 +905,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             refused = true;
         }
 
-        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
+        await Transport.SendAsync(destination, [Message("after", "id-after")], TestCancellationToken);
         if (refused)
         {
             await AssertOnlyReceivedAsync(receiver, "id-after");
@@ -911,13 +917,24 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         {
             message = await ReceiveOneAsync(receiver);
         }
-        catch (Exception ex) when (ex is not TimeoutException and not OperationCanceledException)
+        catch (TimeoutException)
+        {
+            Assert.Fail($"The receiver of the deleted {source} neither received what was sent afterwards nor threw: it went silently deaf.");
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogInformation(ex, "The receiver faulted after its source was deleted; replacing it");
             await using var replacement = await CreateReceiverAsync(source);
-            message = await ReceiveOneAsync(replacement);
-            await replacement.CompleteAsync(message, TestCancellationToken);
-            Assert.Equal("id-after", message.MessageId);
+
+            // A subscription gets nothing published while it was deleted, until it is received from again.
+            if (kind == MessageSourceKind.Subscription)
+                await Transport.SendAsync(destination, [Message("after replacing", "id-replaced")], TestCancellationToken);
+
+            var received = await ReceiveUntilAsync(replacement, kind == MessageSourceKind.Queue ? "id-after" : "id-replaced");
+            Assert.All(received, m => Assert.Contains(m.MessageId, new[] { "id-after", "id-replaced" }));
+            foreach (var replaced in received)
+                await replacement.CompleteAsync(replaced, TestCancellationToken);
             return;
         }
 
