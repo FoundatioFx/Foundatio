@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
@@ -22,8 +24,16 @@ namespace Foundatio.Messaging;
 /// received by a <see cref="MessageProcessor"/> in batches of up to <see cref="MaxBatchSize"/>, so a failed receiver
 /// is replaced and leases are renewed while subscribers run. They are handled one at a time in arrival order, each
 /// completed while the next is handled, and a slow subscriber does not hold up the other subscribers of a message.
+/// <para>
+/// Created by <c>AddLegacyMessageBus()</c>, it also shares the message types <see cref="IMessageClient"/> knows (mapped,
+/// marked with <see cref="MessageAttribute"/>, or handled by a registered handler): publishing one also sends a copy,
+/// with the headers <see cref="IMessageClient.PublishAsync{T}"/> adds, to its topic, and subscribing to one also opens
+/// an instance subscription to that topic, so its subscribers receive what <see cref="IMessageClient"/> publishes. A
+/// copy keeps the legacy type header, which tells that subscription to skip it: its subscribers already received it
+/// from the legacy topic. So each subscriber, on either API, gets every publish once.
+/// </para>
 /// </remarks>
-internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHandler
+internal sealed class LegacyMessageBusAdapter : IMessageBus
 {
     private const string LegacyTypeHeader = "legacy-type";
     private const int MaxCachedTypeMisses = 1000;
@@ -35,25 +45,41 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
     private static readonly TimeSpan ReplaceTimeout = TimeSpan.FromSeconds(5);
 
     private readonly IMessageTransport _transport;
+    private readonly MessagingRuntime? _runtime;
     private readonly ISerializer _serializer;
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
     private readonly string _topic;
+    private readonly MessageDestination _destination;
     private readonly IReadOnlyDictionary<string, Type> _typeMappings;
     private readonly ConcurrentDictionary<Type, string> _typeNames = new();
     private readonly ConcurrentDictionary<Guid, Subscriber> _subscribers = new();
     private readonly ConcurrentDictionary<string, Type?> _types = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Type, bool> _attributedTypes = new();
+    private readonly Dictionary<string, MessageProcessor> _sharedTopics = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _startLock = new(1, 1);
     private readonly CancellationTokenSource _disposed = new();
     private MessageProcessor? _processor;
     private int _typeMisses;
 
-    public LegacyMessageBusAdapter(IMessageTransport transport, SharedMessageBusOptions options)
+    /// <summary>A legacy bus on <paramref name="transport"/> that shares nothing with <see cref="IMessageClient"/>.</summary>
+    public LegacyMessageBusAdapter(IMessageTransport transport, SharedMessageBusOptions options) : this(transport, null, options)
+    {
+    }
+
+    /// <summary>A legacy bus on <paramref name="runtime"/>'s transport that shares the message types it knows with <see cref="IMessageClient"/>.</summary>
+    public LegacyMessageBusAdapter(MessagingRuntime runtime, SharedMessageBusOptions options) : this(runtime.Transport, runtime, options)
+    {
+    }
+
+    private LegacyMessageBusAdapter(IMessageTransport transport, MessagingRuntime? runtime, SharedMessageBusOptions options)
     {
         _transport = transport;
+        _runtime = runtime;
         _serializer = options.Serializer;
         _topic = MessageTypeRegistry.NormalizeName(options.Topic);
+        _destination = MessageDestination.Topic(_topic);
         _typeMappings = new Dictionary<string, Type>(options.MessageTypeMappings);
         _timeProvider = options.TimeProvider;
         _loggerFactory = options.LoggerFactory;
@@ -70,12 +96,13 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
+        var now = _timeProvider.GetUtcNow();
         var headers = new Dictionary<string, string>(options?.Properties ?? new Dictionary<string, string>())
         {
             [LegacyTypeHeader] = GetTypeName(messageType),
-            [KnownHeaders.SentAt] = _timeProvider.GetUtcNow().ToString("O", CultureInfo.InvariantCulture)
+            [KnownHeaders.SentAt] = now.ToString("O", CultureInfo.InvariantCulture)
         };
-        if ((options?.CorrelationId ?? System.Diagnostics.Activity.Current?.Id) is { } correlationId)
+        if ((options?.CorrelationId ?? Activity.Current?.Id) is { } correlationId)
             headers[KnownHeaders.CorrelationId] = correlationId;
 
         byte[] body;
@@ -88,33 +115,30 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
             throw new MessageBusException($"Error publishing {messageType.Name}: {ex.Message}", ex);
         }
 
+        // Like the original buses: delays the transport cannot hold are kept in memory and lost if the process stops.
+        var delay = options?.DeliveryDelay ?? TimeSpan.Zero;
+        bool holdInMemory = delay > TimeSpan.Zero && _transport.Capabilities.MaxPublishDelay is { } maxDelay && delay > maxDelay;
         var outgoing = new OutgoingMessage
         {
             MessageId = options?.UniqueId ?? Guid.NewGuid().ToString("N"),
             Body = body,
-            Headers = headers
+            Headers = headers,
+            DeliverAt = delay > TimeSpan.Zero && !holdInMemory ? now.Add(delay) : null
         };
+        var copy = CreateSharedCopy(message, outgoing);
 
-        var delay = options?.DeliveryDelay ?? TimeSpan.Zero;
-        if (delay <= TimeSpan.Zero)
+        if (!holdInMemory)
         {
-            await _transport.SendAsync(MessageDestination.Topic(_topic), [outgoing], cancellationToken).AnyContext();
+            await SendAsync(message, outgoing, copy, cancellationToken).AnyContext();
             return;
         }
 
-        if (_transport.Capabilities.MaxPublishDelay is not { } maxDelay || delay <= maxDelay)
-        {
-            await _transport.SendAsync(MessageDestination.Topic(_topic), [outgoing with { DeliverAt = _timeProvider.GetUtcNow().Add(delay) }], cancellationToken).AnyContext();
-            return;
-        }
-
-        // Like the original buses: delays the transport cannot hold are kept in memory and lost if the process stops.
         _ = Task.Run(async () =>
         {
             try
             {
                 await _timeProvider.SafeDelay(delay, _disposed.Token).AnyContext();
-                await _transport.SendAsync(MessageDestination.Topic(_topic), [outgoing], _disposed.Token).AnyContext();
+                await SendAsync(message, outgoing, copy, _disposed.Token).AnyContext();
             }
             catch (OperationCanceledException) when (_disposed.IsCancellationRequested)
             {
@@ -134,8 +158,12 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
 
         await EnsureReceivingAsync(cancellationToken).AnyContext();
 
+        var subscriber = Subscriber.For(typeof(T), (message, ct) => handler((T)message, ct));
+        if (subscriber.Kind != SubscriberKind.Raw && TryGetSharedRoute(subscriber.BodyType, out var route))
+            await EnsureReceivingSharedTopicAsync(route.Topic, cancellationToken).AnyContext();
+
         var id = Guid.NewGuid();
-        _subscribers[id] = Subscriber.For(typeof(T), (message, ct) => handler((T)message, ct));
+        _subscribers[id] = subscriber;
         cancellationToken.Register(() => _subscribers.TryRemove(id, out _));
     }
 
@@ -149,87 +177,211 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
         _disposed.Cancel();
         _subscribers.Clear();
 
-        MessageProcessor? processor;
+        MessageProcessor[] processors;
         await _startLock.WaitAsync(CancellationToken.None).AnyContext();
         try
         {
-            processor = _processor;
+            processors = [.. _sharedTopics.Values];
+            if (_processor is not null)
+                processors = [_processor, .. processors];
+
             _processor = null;
+            _sharedTopics.Clear();
         }
         finally
         {
             _startLock.Release();
         }
 
-        if (processor is not null)
-            await processor.StopAsync(TimeSpan.Zero).AnyContext();
+        await Task.WhenAll(processors.Select(p => p.StopAsync(TimeSpan.Zero))).AnyContext();
     }
 
-    async Task<bool> IMessageDeliveryHandler.HandleAsync(MessageDelivery delivery, CancellationToken abortToken)
+    /// <summary>
+    /// Sends a legacy publish to the legacy topic and, for a type <see cref="IMessageClient"/> knows, its copy to that
+    /// type's topic.
+    /// </summary>
+    private async Task SendAsync(object message, OutgoingMessage outgoing, (MessageDestination Destination, OutgoingMessage Message)? copy, CancellationToken cancellationToken)
     {
-        await DispatchAsync(delivery.Message, abortToken).AnyContext();
+        await _transport.SendAsync(_destination, [outgoing], cancellationToken).AnyContext();
+        if (copy is not { } shared)
+            return;
+
+        await _transport.SendAsync(shared.Destination, [shared.Message], cancellationToken).AnyContext();
+        _runtime!.Observer?.OnSent(shared.Destination, message, shared.Message);
+    }
+
+    /// <summary>
+    /// The copy of a legacy publish that goes to the topic <see cref="IMessageClient"/> publishes its type to, with the
+    /// headers it adds. Null when there is no runtime, or it does not know the type.
+    /// </summary>
+    private (MessageDestination Destination, OutgoingMessage Message)? CreateSharedCopy(object message, OutgoingMessage outgoing)
+    {
+        if (_runtime is null || !TryGetSharedRoute(message.GetType(), out var route))
+            return null;
+
+        var headers = new Dictionary<string, string>(outgoing.Headers.Count + 4);
+        foreach (var header in outgoing.Headers)
+            headers[header.Key] = header.Value;
+
+        headers[KnownHeaders.MessageType] = route.Name;
+        if (_runtime.Types.GetBaseTypeNames(route.Type) is { } baseTypes)
+            headers[KnownHeaders.MessageBaseTypes] = baseTypes;
+        if (Activity.Current is { } current)
+        {
+            if (current.Id is { } traceParent)
+                headers[KnownHeaders.TraceParent] = traceParent;
+            if (!String.IsNullOrEmpty(current.TraceStateString))
+                headers[KnownHeaders.TraceState] = current.TraceStateString;
+        }
+
+        ReadOnlyMemory<byte> body;
+        try
+        {
+            body = ReferenceEquals(_runtime.Serializer, _serializer) ? outgoing.Body : _runtime.Serializer.SerializeToBytes<object>(message);
+        }
+        catch (Exception ex)
+        {
+            throw new MessageBusException($"Error publishing {route.Type.Name}: {ex.Message}", ex);
+        }
+
+        return (MessageDestination.Topic(route.Topic), outgoing with { Body = body, Headers = headers });
+    }
+
+    /// <summary>
+    /// Whether <see cref="IMessageClient"/> knows <paramref name="type"/>: it is mapped, handled by a registered handler
+    /// (or derives from a handled type in the same assembly), has a <see cref="MessageAttribute"/>, or was sent before.
+    /// </summary>
+    private bool TryGetSharedRoute(Type type, out MessageRoute route)
+    {
+        route = null!;
+        if (_runtime is null)
+            return false;
+
+        if (_runtime.Types.TryGetRoute(type, out route))
+            return true;
+
+        if (!_attributedTypes.GetOrAdd(type, static t => t.GetCustomAttribute<MessageAttribute>(inherit: false) is not null))
+            return false;
+
+        route = _runtime.Types.GetRoute(type);
+        return true;
+    }
+
+    private Task EnsureReceivingAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _processor) is not null)
+            return Task.CompletedTask;
+
+        return StartAsync(cancellationToken);
+
+        async Task StartAsync(CancellationToken ct)
+        {
+            await _startLock.WaitAsync(ct).AnyContext();
+            try
+            {
+                if (_processor is null && !_disposed.IsCancellationRequested)
+                    _processor = await StartProcessorAsync(_topic, isSharedTopic: false, ct).AnyContext();
+            }
+            finally
+            {
+                _startLock.Release();
+            }
+        }
+    }
+
+    /// <summary>Receives what <see cref="IMessageClient"/> publishes to <paramref name="topic"/>, once per topic.</summary>
+    private async Task EnsureReceivingSharedTopicAsync(string topic, CancellationToken cancellationToken)
+    {
+        if (topic == _topic)
+            return;
+
+        await _startLock.WaitAsync(cancellationToken).AnyContext();
+        try
+        {
+            if (!_sharedTopics.ContainsKey(topic) && !_disposed.IsCancellationRequested)
+                _sharedTopics[topic] = await StartProcessorAsync(topic, isSharedTopic: true, cancellationToken).AnyContext();
+        }
+        finally
+        {
+            _startLock.Release();
+        }
+    }
+
+    private async Task<MessageProcessor> StartProcessorAsync(string topic, bool isSharedTopic, CancellationToken cancellationToken)
+    {
+        // Like the original buses, messages are handled one at a time in arrival order, and a subscriber is never
+        // called concurrently with itself; the subscribers of one message run concurrently.
+        var settings = new MessageProcessorSettings
+        {
+            MaxConcurrency = Math.Max(1, Math.Min(_transport.Capabilities.MaxReceiveBatchSize, MaxBatchSize)),
+            InOrder = true,
+            LeaseDuration = LeaseDuration,
+            ReplaceTimeout = ReplaceTimeout,
+            Description = isSharedTopic ? $"legacy message bus subscribers of {topic}" : "legacy message bus subscribers"
+        };
+        var processor = new MessageProcessor(_transport, MessageSource.InstanceSubscription(topic, "legacy-bus"), settings, new DeliveryHandler(this, isSharedTopic),
+            new ProcessingStatusTracker(_timeProvider), _timeProvider, _loggerFactory);
+
+        await processor.StartAsync(cancellationToken).AnyContext();
+        return processor;
+    }
+
+    private async Task<bool> HandleAsync(MessageDelivery delivery, bool isSharedTopic, CancellationToken abortToken)
+    {
+        await DispatchAsync(delivery.Message, isSharedTopic, abortToken).AnyContext();
         if (delivery.IsLeaseLost)
             return false;
 
         return await delivery.SettleAsync(static (receiver, message, ct) => receiver.CompleteAsync(message, ct), "complete", _logger).AnyContext() is null;
     }
 
-    void IMessageDeliveryHandler.OnReleased(MessageDelivery delivery, string outcome)
+    private async Task DispatchAsync(IncomingMessage message, bool isSharedTopic, CancellationToken cancellationToken)
     {
-    }
-
-    private async Task EnsureReceivingAsync(CancellationToken cancellationToken)
-    {
-        if (Volatile.Read(ref _processor) is not null)
-            return;
-
-        await _startLock.WaitAsync(cancellationToken).AnyContext();
-        try
+        Type? type;
+        ISerializer serializer;
+        bool fromMessageClient = false;
+        if (message.Headers.TryGetValue(LegacyTypeHeader, out string? typeName))
         {
-            if (_processor is not null || _disposed.IsCancellationRequested)
+            // A legacy publish's copy: its subscribers here already received it from the legacy topic.
+            if (isSharedTopic)
                 return;
 
-            // Like the original buses, messages are handled one at a time in arrival order, and a subscriber is never
-            // called concurrently with itself; the subscribers of one message run concurrently.
-            var settings = new MessageProcessorSettings
-            {
-                MaxConcurrency = Math.Max(1, Math.Min(_transport.Capabilities.MaxReceiveBatchSize, MaxBatchSize)),
-                InOrder = true,
-                LeaseDuration = LeaseDuration,
-                ReplaceTimeout = ReplaceTimeout,
-                Description = "legacy message bus subscribers"
-            };
-            var processor = new MessageProcessor(_transport, MessageSource.InstanceSubscription(_topic, "legacy-bus"), settings, this,
-                new ProcessingStatusTracker(_timeProvider), _timeProvider, _loggerFactory);
-
-            await processor.StartAsync(cancellationToken).AnyContext();
-            _processor = processor;
+            type = GetType(typeName);
+            serializer = _serializer;
         }
-        finally
+        else if (_runtime is not null && _runtime.Types.TryGetType(message.Headers, out var known))
         {
-            _startLock.Release();
+            type = known;
+            typeName = GetTypeName(known);
+            serializer = _runtime.Serializer;
+            fromMessageClient = true;
         }
-    }
+        else
+        {
+            if (isSharedTopic)
+                return;
 
-    private async Task DispatchAsync(IncomingMessage message, CancellationToken cancellationToken)
-    {
-        message.Headers.TryGetValue(LegacyTypeHeader, out string? typeName);
-        var type = typeName is null ? null : GetType(typeName);
+            type = null;
+            serializer = _serializer;
+        }
+
         var subscribers = _subscribers.Values.Where(s => s.Accepts(type)).ToList();
         if (subscribers.Count == 0)
             return;
 
-        var body = new Lazy<object?>(() => type is null ? null : _serializer.Deserialize(message.Body, type), LazyThreadSafetyMode.ExecutionAndPublication);
+        var body = new Lazy<object?>(() => type is null ? null : serializer.Deserialize(message.Body, type), LazyThreadSafetyMode.ExecutionAndPublication);
         var raw = new Message(message.Body, _ => body.Value)
         {
             UniqueId = message.MessageId,
             CorrelationId = message.Headers.GetValueOrDefault(KnownHeaders.CorrelationId),
             Type = typeName,
             ClrType = type,
-            Properties = message.Headers.Where(h => h.Key is not LegacyTypeHeader and not KnownHeaders.SentAt and not KnownHeaders.CorrelationId).ToDictionary(h => h.Key, h => h.Value)
+            Properties = message.Headers.Where(h => fromMessageClient ? !IsMessageClientHeader(h.Key) : h.Key is not LegacyTypeHeader and not KnownHeaders.SentAt and not KnownHeaders.CorrelationId)
+                .ToDictionary(h => h.Key, h => h.Value)
         };
 
-        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", System.Diagnostics.ActivityKind.Internal, raw.CorrelationId);
+        string? parentId = fromMessageClient ? message.Headers.GetValueOrDefault(KnownHeaders.TraceParent) ?? raw.CorrelationId : raw.CorrelationId;
+        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", ActivityKind.Internal, parentId);
         if (activity is not null)
             activity.DisplayName = $"Message: {type?.Name ?? typeName}";
 
@@ -260,6 +412,9 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
                 _logger.LogError(ex, "Error handling legacy bus message {MessageId} of type {MessageType}", message.MessageId, typeName);
         }
     }
+
+    private static bool IsMessageClientHeader(string name) => name is KnownHeaders.MessageType or KnownHeaders.MessageBaseTypes or KnownHeaders.SentAt
+        or KnownHeaders.CorrelationId or KnownHeaders.TraceParent or KnownHeaders.TraceState or KnownHeaders.DeliverAt or KnownHeaders.ExpiresAt;
 
     private string GetTypeName(Type type)
     {
@@ -302,6 +457,16 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
             Interlocked.Decrement(ref _typeMisses);
 
         return type;
+    }
+
+    /// <summary>Handles the deliveries of one topic: the legacy topic, or a topic shared with <see cref="IMessageClient"/>.</summary>
+    private sealed class DeliveryHandler(LegacyMessageBusAdapter bus, bool isSharedTopic) : IMessageDeliveryHandler
+    {
+        public Task<bool> HandleAsync(MessageDelivery delivery, CancellationToken abortToken) => bus.HandleAsync(delivery, isSharedTopic, abortToken);
+
+        public void OnReleased(MessageDelivery delivery, string outcome)
+        {
+        }
     }
 
     private enum SubscriberKind

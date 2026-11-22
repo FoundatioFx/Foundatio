@@ -83,8 +83,17 @@ public sealed class FoundatioMessagingBuilder
     /// Every running instance receives every message, as before.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// It does not talk to the original buses, such as <c>RedisMessageBus</c>, so every process that shares a bus must
     /// switch to it in the same deployment.
+    /// </para>
+    /// <para>
+    /// It shares the message types <see cref="IMessageClient"/> knows, those mapped with <see cref="MapMessage{T}"/>,
+    /// marked with <see cref="MessageAttribute"/>, or handled by a registered handler: <see cref="IMessagePublisher.PublishAsync"/>
+    /// of one also reaches its <see cref="IMessageClient"/> subscribers, and <see cref="IMessageClient.PublishAsync{T}"/>
+    /// of one also reaches its <see cref="IMessageSubscriber.SubscribeAsync{T}"/> subscribers, each once. Other types
+    /// stay on the legacy bus. Between services, each one must know the type.
+    /// </para>
     /// </remarks>
     public FoundatioMessagingBuilder AddLegacyMessageBus(Action<SharedMessageBusOptions>? configure = null)
     {
@@ -97,7 +106,7 @@ public sealed class FoundatioMessagingBuilder
             if (sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>() is { } loggerFactory)
                 options.LoggerFactory = loggerFactory;
             configure?.Invoke(options);
-            return new LegacyMessageBusAdapter(sp.GetRequiredService<MessagingRuntime>().Transport, options);
+            return new LegacyMessageBusAdapter(sp.GetRequiredService<MessagingRuntime>(), options);
         });
         Services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
         Services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());

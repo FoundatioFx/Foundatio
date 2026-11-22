@@ -47,6 +47,9 @@ internal sealed class MessageTypeRegistry
         }
     }
 
+    /// <summary>The route of a type that is already known, without making it known.</summary>
+    public bool TryGetRoute(Type type, out MessageRoute route) => _routes.TryGetValue(type, out route!);
+
     public bool TryGetType(string name, out Type type) => _types.TryGetValue(name, out type!);
 
     /// <summary>
