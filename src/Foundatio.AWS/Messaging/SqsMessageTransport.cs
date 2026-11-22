@@ -59,7 +59,9 @@ namespace Foundatio.Messaging.Transport;
 /// Deleting a source keeps its queue, because SQS does not let a deleted queue's name be reused for 60 seconds and
 /// purges are asynchronous. The subscription is removed from its topic, the visible messages are deleted, and the
 /// queue is tagged with the queue's own time of the deletion so receivers discard messages that were in flight or
-/// delayed and become visible later.
+/// delayed and become visible later. A receiver still open on a deleted subscription notices within seconds of
+/// receiving nothing that its queue lost the topic's permission, and throws <see cref="MessageReceiverFaultedException"/>,
+/// so its replacement subscribes the queue again.
 /// </para>
 /// </remarks>
 public sealed class SqsMessageTransport : IMessageTransport
@@ -791,6 +793,28 @@ public sealed class SqsMessageTransport : IMessageTransport
 
             return existing;
         }
+    }
+
+    /// <summary>
+    /// Whether a durable subscription's queue still lets its topic send to it. <see cref="IMessageTransport.DeleteAsync"/>
+    /// removes that permission with the subscription, and every receiver and send to the subscription adds it back.
+    /// </summary>
+    internal async Task<bool> IsSubscribedAsync(MessageSource source, string queueUrl, CancellationToken cancellationToken)
+    {
+        var attributes = await Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+        {
+            QueueUrl = queueUrl,
+            AttributeNames = [QueueAttributeName.QueueArn, QueueAttributeName.Policy]
+        }, cancellationToken).AnyContext();
+
+        if (attributes.Attributes?.GetValueOrDefault(QueueAttributeName.QueueArn) is not { } queueArn)
+            return true;
+
+        string topicName = _names.Topic(source.Topic!);
+        if ((await GetCachedAsync(_topicArns, topicName).AnyContext() ?? GetTopicArn(queueArn, topicName)) is not { } topicArn)
+            return true;
+
+        return SqsMessageTransportPolicy.Merge(attributes.Attributes.GetValueOrDefault(QueueAttributeName.Policy), queueArn, topicArn) is null;
     }
 
     /// <summary>

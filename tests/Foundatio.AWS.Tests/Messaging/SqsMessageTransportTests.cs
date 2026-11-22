@@ -48,16 +48,6 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     /// <summary>SQS deletes a message by an old receipt handle without telling it apart from the current one.</summary>
     protected override bool StaleCompleteMayRemoveTheMessage => true;
 
-    /// <summary>CONF-3: deleting a subscription unsubscribes and purges its queue, and its open receiver keeps polling that queue.</summary>
-    [Theory]
-    [InlineData(MessageSourceKind.Queue)]
-    [InlineData(MessageSourceKind.Subscription)]
-    public override Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(MessageSourceKind kind)
-    {
-        Assert.SkipWhen(kind == MessageSourceKind.Subscription, "CONF-3: a receiver of a deleted durable subscription keeps polling its unsubscribed queue, so it goes deaf.");
-        return base.Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults(kind);
-    }
-
     [Fact]
     public async Task Names_ThatOnlyDifferInPunctuationOrPastTheLengthLimit_DoNotCollide()
     {

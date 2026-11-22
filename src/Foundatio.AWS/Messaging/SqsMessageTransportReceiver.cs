@@ -77,6 +77,9 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     /// <summary>How long a receive SQS refused with <c>OverLimit</c> waits before it asks again, within its wait time.</summary>
     private static readonly TimeSpan OverLimitRetryInterval = TimeSpan.FromSeconds(1);
 
+    /// <summary>How often, at most, an idle durable subscription receiver checks that its subscription was not deleted.</summary>
+    private static readonly TimeSpan SubscriptionCheckInterval = TimeSpan.FromSeconds(5);
+
     private readonly SqsMessageTransport _transport;
     private readonly string _queueUrl;
     private readonly string? _deadLetterQueueName;
@@ -101,6 +104,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     private long _measuredInFlight;
     private long _hiddenSinceCheck;
     private long _overLimitUntil;
+    private long _subscriptionCheckedAt = Stopwatch.GetTimestamp();
     private int _disposed;
 
     public SqsMessageReceiver(SqsMessageTransport transport, MessageSource source, ReceiverOptions options, string queueUrl, string? deadLetterQueueName,
@@ -194,6 +198,9 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
             var messages = await ToIncomingMessagesAsync(response.Messages, leaseStarted).AnyContext();
             if (messages.Count > 0)
                 return messages;
+
+            if (Source.Kind == MessageSourceKind.Subscription)
+                await ThrowIfUnsubscribedAsync(receiveCancellation.Token).AnyContext();
 
             remaining = maxWait - Stopwatch.GetElapsedTime(started);
             if (remaining <= TimeSpan.Zero)
@@ -930,6 +937,33 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
                 }).ToList()
             }, timeout.Token).AnyContext();
         }
+    }
+
+    /// <summary>
+    /// Faults the receiver once its subscription was deleted, at most one check every <see cref="SubscriptionCheckInterval"/>
+    /// while it receives nothing: the queue is kept but no longer subscribed, so the receiver would otherwise poll a queue
+    /// no publish reaches. Its replacement subscribes the queue again.
+    /// </summary>
+    private async Task ThrowIfUnsubscribedAsync(CancellationToken cancellationToken)
+    {
+        long checkedAt = Volatile.Read(ref _subscriptionCheckedAt);
+        long now = Stopwatch.GetTimestamp();
+        if (Stopwatch.GetElapsedTime(checkedAt, now) < SubscriptionCheckInterval || Interlocked.CompareExchange(ref _subscriptionCheckedAt, now, checkedAt) != checkedAt)
+            return;
+
+        bool subscribed;
+        try
+        {
+            subscribed = await _transport.IsSubscribedAsync(Source, _queueUrl, cancellationToken).AnyContext();
+        }
+        catch (AmazonServiceException ex)
+        {
+            _transport.Logger.LogDebug(ex, "Could not check that {Source} is still subscribed to its topic", Source);
+            return;
+        }
+
+        if (!subscribed)
+            throw new MessageReceiverFaultedException($"{Source} was deleted: its queue is no longer subscribed to the topic. Open a new receiver to subscribe it again.");
     }
 
     private async Task HeartbeatLoopAsync()
