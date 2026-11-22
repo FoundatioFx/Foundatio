@@ -99,6 +99,8 @@ Set a job's options once. Registering a job again is fine, and options given lat
 - A store error doesn't fail the job: it is logged, and the report is saved with the next one.
 - The last message stays as the job's `Message` after it succeeds, so a job can report its result, such as a file name.
 - A job that reports progress shows as active in the monitor at once; one that doesn't shows after it has run for a second.
+- A retried or released job keeps the last attempt's progress, message and error until the next attempt reports its own.
+- Progress reaches the store, the monitor and the job's trace span only. To push it to browsers, publish your own event from the job.
 
 `ReportProgressAsync`, `Attempt`, `CorrelationId` and `Headers` come from `IHandlerContext` in the `Foundatio` namespace, which [message handlers](./messaging#reporting-progress) share.
 
@@ -124,6 +126,15 @@ var report = job?.GetArguments<GenerateReport>();   // null once the job has suc
 ```
 
 `QueryAsync` lists jobs newest first by state and name; `CountAsync` counts them.
+
+There is no API to run a failed job again. A failed or cancelled job keeps its arguments, so enqueue them again; its `JobId` stays taken while the old job is retained, so use a new one:
+
+```csharp
+if (await jobs.GetAsync(id) is { State: JobState.Failed } failed && failed.GetArguments<GenerateReport>() is { } arguments)
+    await jobs.EnqueueAsync(arguments);
+```
+
+Arguments and job names are serialized with `JobWorkerOptions.Serializer`, or the `ISerializer` registered in DI, or a JSON serializer when neither is set. Every process that shares a store must use compatible serializers.
 
 ## Tracing and correlation
 
@@ -163,7 +174,7 @@ j.AddCronJob<LegacyJob<NightlyReportJob>>("0 2 * * *");   // runs on a schedule
 await jobs.EnqueueAsync<LegacyJob<QueueStatsJob>>();
 ```
 
-`LegacyJob<T>` keeps the job's name (its `[Job(Name = "...")]` or type name), so stored jobs and schedules keep theirs. A successful `JobResult`'s message becomes the job's message; a failed result fails the attempt, which the retry policy may retry; a cancelled result ends the job as cancelled when it was cancelled, and otherwise (a `JobWithLockBase` whose lock is held elsewhere returns one) succeeds with its message without a retry, as the hosted job runner treats it. A legacy job can't reach `IJobContext`, so [convert it](./migrating-to-messaging#converting-an-ijob-or-jobbase) when you can. A job that should run continuously rather than when enqueued stays on `services.AddJob<T>()` from Foundatio.Extensions.Hosting.
+`LegacyJob<T>` is named after `T`: its `[Job(Name = "...")]`, or else `T`'s full name (`MyApp.Jobs.CleanupJob`, not the hosted runner's "Cleanup"), so moving `T` to another namespace renames it. Job names allow only letters, digits, `.`, `_` and `-`, so registering a job with `[Job(Name = "Cleanup Data")]` throws; rename it, which a hosted job doesn't mind. A successful `JobResult`'s message becomes the job's message; a failed result fails the attempt, which the retry policy may retry; a cancelled result ends the job as cancelled when it was cancelled, and otherwise (a `JobWithLockBase` whose lock is held elsewhere returns one) succeeds with its message without a retry, as the hosted job runner treats it. A legacy job can't reach `IJobContext`, so [convert it](./migrating-to-messaging#converting-an-ijob-or-jobbase) when you can. A job that should run continuously rather than when enqueued stays on `services.AddJob<T>()` from Foundatio.Extensions.Hosting.
 
 ## Retention and memory
 

@@ -51,6 +51,9 @@ Registered handlers start receiving when the host starts. A process that registe
 - The service provider creates the transport and disposes it when the host shuts down.
 - `LoggerFactory` and `TimeProvider` come from the service provider unless the options set them.
 - Each method takes the options, or a `Func<IServiceProvider, TOptions>` that builds them, for example from configuration.
+- An app has one transport for all its queues and topics, and `AddLegacyMessageBus()` uses it too. The last `Use...` call wins.
+- `AddFoundatioMessaging` calls add up, so a shared library can choose the transport and map message names while each process adds its own handlers. To choose the transport from configuration, branch in your code: `if (useRedis) m.UseRedis(); else m.UseInMemory();`.
+- Bodies are serialized with `MessagingOptions.Serializer`, or the `ISerializer` registered in DI, or a JSON serializer when neither is set. Services that share a queue or topic must use compatible serializers.
 
 ### Using Redis
 
@@ -165,6 +168,8 @@ m.UseRabbitMQ(new RabbitMQMessageTransportOptions { Prefix = "myapp" });
 | Replicas of one service | Compete | Compete for the service's copy |
 | While no one is listening | Waits in the queue | Copies wait in each existing subscription; with no subscriptions it is dropped |
 
+`AddConsumer<THandler>()` and `AddSubscriber<THandler>()` register every `IMessageHandler<T>` the class implements. To consume one type and subscribe to another, split the class in two; registering one class both ways gives each of its types a queue and a subscription.
+
 Mixing them up delivers nothing, and only your app's own handlers are known to it: the first time a type is sent that your app only subscribes to, or published that it only consumes, a warning is logged suggesting the other call. A mix-up between services is not detected.
 
 For "every running instance" (local caches, pushing to WebSocket clients) use an instance-scoped subscriber:
@@ -209,6 +214,8 @@ m.AddConsumer<ImportHandler>(new HandlerOptions
 });
 ```
 
+Build a policy's delays with `RetryPolicy.Exponential(initial, max)` (four times longer after each attempt, ±20% jitter; the default is `Exponential(1s, 10min)`), `RetryPolicy.Fixed(delay)`, or your own `Func<int, TimeSpan>` of the failed attempt (1-based): `new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromSeconds(30)) }`. `MaxAttempts` counts the first attempt. A handler without a `RetryPolicy` uses `MessagingOptions.DefaultRetryPolicy`, which you set with `m.Configure(o => o.DefaultRetryPolicy = ...)`.
+
 A retry waits on the broker when it can delay it. When it can't (Kafka or RabbitMQ without delayed delivery, or a delay under the transport's `MinRetryDelay`, such as SQS's whole seconds), Foundatio holds the message in-process for the backoff. The message stays leased, and other messages use its handler slot meanwhile. At most 10 × `MaxConcurrency` messages per handler are held that way; further retries keep their slots until the backoff ends. A delay within 20% of `MinRetryDelay` is lengthened to it instead, so the default policy's first retry (about 1s) waits on the broker. Stopping the host releases held messages at once.
 
 Settling doesn't keep a handler slot waiting on the broker: once a handler returns, the complete, abandon or dead-letter runs while the slot takes the next message. The message stays in flight until the settlement finishes, and only then is its outcome reported and shutdown done waiting for it. Up to 2 × `MaxConcurrency` settlements per handler run that way; past that a settlement keeps its slot until it finishes. In an ordered group, the group's next message still waits for the previous one to settle.
@@ -221,7 +228,9 @@ To read handler options from configuration bound after your registrations, pass 
 
 Stopping the host doesn't cancel handlers at once. As soon as the host begins stopping, every handler stops receiving, and the job worker stops claiming, so nothing new starts during shutdown. Foundatio then waits up to `MessagingOptions.ShutdownTimeout` (20 seconds, set with `m.Configure(o => o.ShutdownTimeout = ...)`) for in-flight messages to finish, then fires their cancellation token and gives the handlers 5 more seconds; those messages are delivered again. Messaging and jobs drain at the same time, so keep each `ShutdownTimeout` plus 5 seconds under the host's `HostOptions.ShutdownTimeout` (30 seconds by default) and your orchestrator's grace period (30 seconds on Kubernetes).
 
-Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent.
+Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent. A message is completed only after its handler returns, so a crash after a side effect and before the completion repeats the side effect too.
+
+There is no transactional outbox: a send or publish is not part of your database transaction. Send after the transaction commits, and make handlers tolerate a message whose data was rolled back or not yet visible.
 
 When the broker can't be reached to renew a lease (SQS, Redis, Service Bus), Foundatio cancels the handler's `CancellationToken` shortly before the lease ends (a quarter of the lease before, at most 5 seconds) and leaves the message unsettled, as the job worker does with a job's lease, so it doesn't keep running while the broker gives the message to another consumer. Pass the token on to whatever the handler awaits. Kafka and RabbitMQ leases don't expire, so failed renewals there never cancel a handler.
 
@@ -267,6 +276,8 @@ await admin.DeleteAsync(MessageSource.Subscription("orders.order-placed", "retir
 
 Replayed messages keep their id, body and headers and are handled as new deliveries; the dead-letter reason, delay and expiry are dropped.
 
+Peek reads the oldest `max` dead letters (20 by default) and replay takes up to `max` (100) from the front; there is no paging and no replay or delete of a single message by id. To handle one dead letter, peek it, send its `Message` again with `SendAsync`, and purge once the queue holds nothing else you need.
+
 Dead-lettering is at least once, like delivery: on transports that move a message by copying it to the dead-letter queue and then removing the original (RabbitMQ, SQS and Kafka), a connection or lease lost in between delivers the original again, and it can be dead-lettered a second time. A dead-letter queue may then hold two entries with the same message id, which a replay sends twice; replayed handlers should be idempotent too.
 
 ## Options when sending
@@ -279,6 +290,7 @@ await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
     GroupKey = "customer-42",           // ordered delivery where the transport supports it (ids and keys: up to 128 characters)
     DeduplicationId = "receipt-1",      // dropped if seen recently, where the transport supports it
     CorrelationId = "order-1",          // defaults to the message or job being handled
+    MessageId = "receipt-1",            // your own id, which handlers see as context.MessageId; generated otherwise
 });
 ```
 
@@ -301,6 +313,8 @@ A message's name identifies it on the wire. By default it is the type's full nam
 [Message("orders.shipped", Topic = "orders")] public record OrderShipped(int OrderId);
 [Message("orders.cancelled", Topic = "orders")] public record OrderCancelled(int OrderId);
 ```
+
+A command goes to its own queue the same way: `[Message("orders.send-receipt", Queue = "orders.commands")]`, or `m.MapMessage<SendReceipt>("orders.send-receipt", queue: "orders.commands")`. A `MessageSource` for [dead letters](#dead-letters) and stats takes those names: `MessageSource.Queue` takes the queue name, which is the message name unless you set one, and `MessageSource.Subscription` takes the topic and the subscription name (the service name unless the subscriber sets `SubscriptionOptions.Name`).
 
 A subscriber ignores types on its topic that it has no handler for. A handler for a base type or interface also receives derived types:
 
@@ -432,3 +446,5 @@ If a liveness probe uses it, pass `failureStatus: HealthStatus.Degraded`, so an 
 ## Existing code using `IMessageBus`
 
 `m.AddLegacyMessageBus()` provides the original `IMessageBus` on the configured transport, so `HybridCacheClient`, `CacheLockProvider` and your existing subscribers keep working with the same semantics: each process handles messages one at a time in arrival order, never calls a subscriber concurrently with itself, and runs a message's subscribers concurrently. It receives up to 100 messages at a time (the transport's batch limit when lower) and completes each one while the next is handled. It doesn't talk to the original buses, such as `RedisMessageBus`, so switch every process that shares a bus in the same deployment. See [Moving IMessageBus to the new transport](./migrating-to-messaging#moving-imessagebus-to-the-new-transport).
+
+For a message type messaging knows (mapped, marked with `[Message]`, or handled by a registered handler), the legacy bus and `IMessageClient` reach each other's subscribers: an `IMessageBus.PublishAsync` reaches `AddSubscriber` handlers, and an `IMessageClient.PublishAsync` reaches `IMessageBus.SubscribeAsync` subscribers, each once. See [Mixing IMessageBus and IMessageClient](./migrating-to-messaging#mixing-imessagebus-and-imessageclient).
