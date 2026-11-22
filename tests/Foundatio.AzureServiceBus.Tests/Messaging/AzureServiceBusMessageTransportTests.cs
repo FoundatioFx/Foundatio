@@ -39,22 +39,6 @@ public class AzureServiceBusMessageTransportTests(ITestOutputHelper output) : Me
 
     protected override IMessageTransport CreateTransport() => new AzureServiceBusMessageTransport(CreateOptions());
 
-    /// <summary>CONF-4: on the emulator, application properties whose names differ only in case come back as one.</summary>
-    [Fact]
-    public override Task SendThenReceive_HeaderNamesThatDifferOnlyInCase_StayDistinct()
-    {
-        Assert.Skip("CONF-4: headers whose names differ only in case come back as one (X-Mixed came back as x-mixed's value).");
-        return Task.CompletedTask;
-    }
-
-    /// <summary>CONF-5: the emulator rejects a message id holding U+0000.</summary>
-    [Fact]
-    public override Task SendThenReceive_IdsAndGroupKeyWithNul_RoundTrip()
-    {
-        Assert.Skip("CONF-5: a message id holding U+0000 fails the send with a GeneralError MessageBusException; the transport does not map it.");
-        return Task.CompletedTask;
-    }
-
     /// <summary>A client of its own, as another producer or consumer of the namespace would use.</summary>
     protected ServiceBusClient Client => _client ??= new ServiceBusClient(GetConnectionString());
 

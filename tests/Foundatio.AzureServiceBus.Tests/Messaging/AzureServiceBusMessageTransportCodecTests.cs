@@ -43,6 +43,47 @@ public class AzureServiceBusMessageTransportCodecTests
         Assert.Equal(1, decoded.DeliveryCount);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EncodeThenDecode_IdsWithControlCharacters_AreEscapedTheSameWayEachTimeAndRoundTrip(bool deduplication)
+    {
+        // Arrange
+        var message = Message() with { MessageId = "id\0nul", GroupKey = "group\0nul", DeduplicationId = "dedup\0nul" };
+        var options = new AzureServiceBusEncodeOptions(Now, Sessions: true, deduplication, null);
+
+        // Act
+        var first = AzureServiceBusMessageTransportCodec.Encode(message, options);
+        var second = AzureServiceBusMessageTransportCodec.Encode(message with { MessageId = "other" }, options);
+        var decoded = AzureServiceBusMessageTransportCodec.Decode(Receive(first), deadLetter: false);
+
+        // Assert
+        Assert.DoesNotContain('\0', first.MessageId);
+        Assert.DoesNotContain('\0', first.SessionId);
+        Assert.Equal(first.SessionId, second.SessionId);
+        if (deduplication)
+            Assert.Equal(first.MessageId, second.MessageId);
+        Assert.Equal("id\0nul", decoded.MessageId);
+        Assert.Equal("group\0nul", decoded.GroupKey);
+    }
+
+    [Fact]
+    public void EncodeThenDecode_HeaderNamesDifferingOnlyInCase_TravelInTheBody()
+    {
+        // Arrange
+        var message = Message() with { Headers = new Dictionary<string, string> { ["X-Mixed"] = "upper", ["x-mixed"] = "lower" } };
+
+        // Act
+        var encoded = AzureServiceBusMessageTransportCodec.Encode(message, new AzureServiceBusEncodeOptions(Now, Sessions: false, Deduplication: false, null));
+        var decoded = AzureServiceBusMessageTransportCodec.Decode(Receive(encoded), deadLetter: false);
+
+        // Assert
+        Assert.True(encoded.ApplicationProperties.ContainsKey(AzureServiceBusMessageTransportCodec.HeadersProperty));
+        Assert.False(encoded.ApplicationProperties.ContainsKey("X-Mixed"));
+        Assert.Equal(message.Headers, decoded.Headers);
+        Assert.Equal(message.Body.ToArray(), decoded.Body.ToArray());
+    }
+
     [Fact]
     public void Encode_UngroupedMessageInSessionMode_SharesAnUngroupedSessionAndDecodesWithoutAGroupKey()
     {

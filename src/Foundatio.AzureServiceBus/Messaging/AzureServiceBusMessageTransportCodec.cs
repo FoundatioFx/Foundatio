@@ -1,7 +1,9 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Unicode;
 using Azure.Core.Amqp;
@@ -44,8 +46,17 @@ internal static class AzureServiceBusMessageTransportCodec
     /// <summary>When a message held back by its session receiver is due, in Unix milliseconds.</summary>
     public const string DeliverAtProperty = "x-foundatio-deliver-at";
 
-    /// <summary>The length of the encoded headers at the start of the body, when they did not fit in application properties.</summary>
+    /// <summary>
+    /// The length of the encoded headers at the start of the body, when they did not fit in application properties or
+    /// two of their names differ only in case, which Service Bus does not keep apart.
+    /// </summary>
     public const string HeadersProperty = "x-foundatio-headers";
+
+    /// <summary>The group key, when the session id is a hash of it because it holds a control character Service Bus rejects.</summary>
+    public const string GroupKeyProperty = "x-foundatio-group";
+
+    /// <summary>Starts the Service Bus message id or session id that stands for an id holding a control character.</summary>
+    public const string EscapedIdPrefix = "x-foundatio-";
 
     /// <summary>
     /// What the transport keeps of Service Bus's message size limit for AMQP framing (about 4 bytes per header), its own
@@ -82,15 +93,17 @@ internal static class AzureServiceBusMessageTransportCodec
 
         serviceBusMessage.MessageId = options.Deduplication
             ? message.DeduplicationId is { } deduplicationId
-                ? options.TargetSubscription is { } subscription ? AzureServiceBusMessageTransportNames.SubscriptionDeduplicationId(subscription, deduplicationId) : deduplicationId
+                ? options.TargetSubscription is { } subscription ? AzureServiceBusMessageTransportNames.SubscriptionDeduplicationId(subscription, deduplicationId) : EscapeId(deduplicationId)
                 : Guid.NewGuid().ToString("N")
-            : message.MessageId;
+            : HasControlCharacter(message.MessageId) ? Guid.NewGuid().ToString("N") : message.MessageId;
         if (serviceBusMessage.MessageId != message.MessageId)
             properties[MessageIdProperty] = message.MessageId;
 
         if (message.GroupKey is { } groupKey)
         {
-            serviceBusMessage.SessionId = groupKey;
+            serviceBusMessage.SessionId = EscapeId(groupKey);
+            if (serviceBusMessage.SessionId != groupKey)
+                properties[GroupKeyProperty] = groupKey;
         }
         else if (options.Sessions)
         {
@@ -173,7 +186,8 @@ internal static class AzureServiceBusMessageTransportCodec
             properties.TryGetValue(MessageIdProperty, out object? id) && id is string { Length: > 0 } messageId ? messageId : message.MessageId ?? message.SequenceNumber.ToString(CultureInfo.InvariantCulture),
             body,
             headers,
-            properties.ContainsKey(UngroupedProperty) || String.IsNullOrEmpty(message.SessionId) ? null : message.SessionId,
+            properties.ContainsKey(UngroupedProperty) || String.IsNullOrEmpty(message.SessionId) ? null
+                : properties.TryGetValue(GroupKeyProperty, out object? group) && group is string { Length: > 0 } groupKey ? groupKey : message.SessionId,
             (int)Math.Clamp(message.DeliveryCount + carried, 1, Int32.MaxValue));
     }
 
@@ -210,7 +224,7 @@ internal static class AzureServiceBusMessageTransportCodec
         foreach (var header in message.Headers)
             propertyBytes += Encoding.UTF8.GetByteCount(header.Key) + Encoding.UTF8.GetByteCount(header.Value) + PropertyFraming;
 
-        if (propertyBytes <= MaxApplicationPropertyBytes)
+        if (propertyBytes <= MaxApplicationPropertyBytes && !HasNamesDifferingOnlyInCase(message.Headers))
             return new BinaryData(message.Body);
 
         using var stream = new MemoryStream((int)Math.Min(propertyBytes + message.Body.Length, Int32.MaxValue));
@@ -227,6 +241,62 @@ internal static class AzureServiceBusMessageTransportCodec
         headerLength = (int)stream.Length;
         stream.Write(message.Body.Span);
         return new BinaryData(stream.GetBuffer().AsMemory(0, (int)stream.Length));
+    }
+
+    /// <summary>
+    /// Whether two header names are equal ignoring case: Service Bus keeps one of them, as HTTP headers and SQL filters
+    /// treat property names that way.
+    /// </summary>
+    private static bool HasNamesDifferingOnlyInCase(IReadOnlyDictionary<string, string> headers)
+    {
+        int count = headers.Count;
+        if (count < 2)
+            return false;
+
+        var names = ArrayPool<string>.Shared.Rent(count);
+        try
+        {
+            int i = 0;
+            foreach (string name in headers.Keys)
+            {
+                for (int j = 0; j < i; j++)
+                {
+                    if (names[j].Length == name.Length && String.Equals(names[j], name, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+
+                names[i++] = name;
+            }
+
+            return false;
+        }
+        finally
+        {
+            ArrayPool<string>.Shared.Return(names, clearArray: true);
+        }
+    }
+
+    /// <summary>Whether an id holds a control character, such as U+0000, which Service Bus rejects in message and session ids.</summary>
+    private static bool HasControlCharacter(string id)
+    {
+        foreach (char c in id)
+        {
+            if (Char.IsControl(c))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>The id itself, or, when it holds a control character, a hash of it that is the same for the same id.</summary>
+    private static string EscapeId(string id)
+    {
+        if (!HasControlCharacter(id))
+            return id;
+
+        Span<byte> hash = stackalloc byte[32];
+        SHA256.HashData(Encoding.UTF8.GetBytes(id), hash);
+        return EscapedIdPrefix + Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static bool TryDecodeHeaders(ReadOnlySpan<byte> encoded, out Dictionary<string, string> headers)
