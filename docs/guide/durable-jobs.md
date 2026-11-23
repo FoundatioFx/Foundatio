@@ -136,7 +136,7 @@ await jobs.EnqueueAsync(new ResetProjectData(projectId), new EnqueueOptions { Co
 ```
 
 - A job whose key is held stays queued and doesn't use an attempt or wait for a backoff. It runs as soon as the running one succeeds, fails, is retried, is released at shutdown, or is deleted. Jobs with other keys, and jobs of other names (even with the same key), are not held up.
-- A job whose worker crashes keeps its key until its lease runs out and it is claimed again, so it runs before the jobs waiting for its key, and a slow worker that still finishes never overlaps the next one.
+- A job whose worker crashes or loses its lease keeps its key until it is claimed again, so it runs before the jobs waiting for its key, and the next job waits for it to run to completion somewhere. The worker that lost the lease cancels the job's token first; a handler that ignores its token can still be running when the next job starts. Deleting a running job frees its key at once, while its handler runs until it next renews its lease (within about 5 seconds), or longer if it ignores its token.
 - It is enforced by the store when a worker claims a job, so it holds across instances. `JobTypeOptions.MaxConcurrency` limits jobs of a type per instance; use both if you need both.
 - Jobs waiting for a key run longest-due first, but a retried or released job goes behind the ones already waiting.
 
@@ -150,7 +150,7 @@ var first = await jobs.EnqueueAsync(new NotifyOrganization(organizationId), opti
 var second = await jobs.EnqueueAsync(new NotifyOrganization(organizationId), options);   // second.Id == first.Id
 ```
 
-The key is free again once the job starts (or is cancelled or deleted), so work that arrives while a job runs isn't lost: the next enqueue creates a new job. A job that is retried or released doesn't take the key back. Give a job both keys to keep at most one running and one waiting per key, for example to refresh a project's stats after every change without running two refreshes at once or queuing a hundred:
+The key is free again once the job starts (or is cancelled or deleted), so work that arrives while a job runs isn't lost: the next enqueue creates a new job. A job enqueued with `Delay` or `RunAt` holds its key until it starts too, so an immediate enqueue with the key returns the delayed job, and that work waits for the delay. A job that is retried or released doesn't take the key back. Give a job both keys to keep at most one running and one waiting per key, for example to refresh a project's stats after every change without running two refreshes at once or queuing a hundred:
 
 ```csharp
 new EnqueueOptions { ConcurrencyKey = projectId, DeduplicationKey = projectId }
