@@ -22,7 +22,11 @@ internal sealed class JobWorker
 {
     private static readonly TimeSpan MinPollInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan AbortGracePeriod = TimeSpan.FromSeconds(5);
+    // After a full batch, how long a claim waits for more slots to free; after a partial one, how long it waits for work.
+    private static readonly TimeSpan BatchFillWait = TimeSpan.FromMilliseconds(2);
+    private static readonly TimeSpan PartialBatchWait = TimeSpan.FromMilliseconds(5);
     private const int MaxClaimBatch = 100;
+    private const int MaxBatchFill = 8;
 
     private readonly JobsRuntime _runtime;
     private readonly ILogger _logger;
@@ -35,6 +39,7 @@ internal sealed class JobWorker
     private readonly bool _limitsByName;
     private readonly CancellationTokenSource _stopClaiming = new();
     private readonly JobLeaseRenewer _renewer;
+    private readonly int _batchFill;
     private Task _loop = Task.CompletedTask;
     private int _running;
 
@@ -49,6 +54,7 @@ internal sealed class JobWorker
         _allNames = runtime.Jobs.Values.Select(j => j.Name).ToList();
         _limitsByName = runtime.Jobs.Values.Any(j => j.Options.MaxConcurrency is not null);
         _renewer = new JobLeaseRenewer(runtime.Store, runtime.Options.LeaseDuration, runtime.TimeProvider, _logger);
+        _batchFill = Math.Clamp(runtime.Options.MaxConcurrency / 4, 1, MaxBatchFill);
     }
 
     /// <summary>Read by health checks. Claim errors are recorded here; they never stop the worker.</summary>
@@ -102,12 +108,15 @@ internal sealed class JobWorker
 
     /// <summary>
     /// Waits for a free slot, then claims as many jobs as there are free slots in one store call, so a worker is not
-    /// limited to one job per round trip to the store.
+    /// limited to one job per round trip to the store. While a backlog drains (the last batch was full), it waits a
+    /// moment for a few slots to free before claiming, so claims take several jobs rather than one per finished job.
+    /// After a partial batch the store has nothing more due, so it waits a moment for work before asking again.
     /// </summary>
     private async Task ClaimLoopAsync()
     {
         var token = _stopClaiming.Token;
         var idle = MinPollInterval;
+        bool lastBatchFull = false;
 
         while (!token.IsCancellationRequested)
         {
@@ -123,6 +132,9 @@ internal sealed class JobWorker
             int slots = 1;
             while (slots < MaxClaimBatch && await _slots.WaitAsync(0, CancellationToken.None).AnyContext())
                 slots++;
+
+            if (lastBatchFull && slots < _batchFill)
+                slots += await WaitForSlotsAsync(_batchFill - slots, token).AnyContext();
 
             var names = _allNames;
             Dictionary<string, int>? maxPerName = null;
@@ -157,9 +169,10 @@ internal sealed class JobWorker
             if (jobs.Count < slots)
                 _slots.Release(slots - jobs.Count);
 
+            lastBatchFull = jobs.Count == slots;
             if (jobs.Count == 0)
             {
-                await WaitForWorkAsync(workAvailable, idle, token).AnyContext();
+                await WaitForWorkAsync(workAvailable, idle, _runtime.TimeProvider, token).AnyContext();
                 idle = TimeSpan.FromTicks(Math.Min(idle.Ticks * 2, _runtime.Options.PollInterval.Ticks));
                 continue;
             }
@@ -182,7 +195,34 @@ internal sealed class JobWorker
                 // On the thread pool, as Task.Run would, without a task and delegate nobody awaits.
                 ThreadPool.QueueUserWorkItem(static state => _ = state.Worker.RunClaimedAsync(state.Job, state.ClaimSent), (Worker: this, Job: job, ClaimSent: claimSent), preferLocal: false);
             }
+
+            // Claiming again at once would most likely find nothing; a job enqueued or a key freed here signals sooner.
+            if (!lastBatchFull)
+                await WaitForWorkAsync(workAvailable, PartialBatchWait, TimeProvider.System, token).AnyContext();
         }
+    }
+
+    /// <summary>Takes up to <paramref name="wanted"/> more slots as they free within <see cref="BatchFillWait"/>. Returns how many it took.</summary>
+    private async Task<int> WaitForSlotsAsync(int wanted, CancellationToken cancellationToken)
+    {
+        int taken = 0;
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            while (taken < wanted)
+            {
+                var remaining = BatchFillWait - Stopwatch.GetElapsedTime(started);
+                if (remaining <= TimeSpan.Zero || !await _slots.WaitAsync(remaining, cancellationToken).AnyContext())
+                    break;
+
+                taken++;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        return taken;
     }
 
     /// <summary>The job names under their type's concurrency limit, and how many jobs of each limited one a claim may take.</summary>
@@ -489,10 +529,13 @@ internal sealed class JobWorker
         }
     }
 
-    private async Task WaitForWorkAsync(Task workAvailable, TimeSpan delay, CancellationToken cancellationToken)
+    private static async Task WaitForWorkAsync(Task workAvailable, TimeSpan delay, TimeProvider timeProvider, CancellationToken cancellationToken)
     {
+        if (workAvailable.IsCompleted)
+            return;
+
         using var delaySource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        await Task.WhenAny(workAvailable, Task.Delay(delay, _runtime.TimeProvider, delaySource.Token)).AnyContext();
+        await Task.WhenAny(workAvailable, Task.Delay(delay, timeProvider, delaySource.Token)).AnyContext();
         delaySource.Cancel();
     }
 

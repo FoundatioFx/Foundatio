@@ -846,6 +846,34 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     /// <summary>
+    /// Draining a backlog from a store that answers at once, the worker waits a moment for a few slots to free
+    /// before claiming again, so it claims several jobs per call rather than one per finished job.
+    /// </summary>
+    [Fact]
+    public async Task ClaimLoop_DrainingABacklog_ClaimsSeveralJobsPerCall()
+    {
+        var counting = new ClaimCountingJobStore(_store);
+        await using var host = await StartAsync(j => j.Configure(o => o.MaxConcurrency = 16).AddJob<ResizeImageJob>(), store: counting, startHostedServices: false);
+        for (int i = 0; i < 1000; i++)
+            await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), cancellationToken: TestCancellationToken);
+
+        var worker = new JobWorker(host.Services.GetRequiredService<JobsRuntime>());
+        worker.Start();
+        try
+        {
+            await WaitForAsync(async () => await _store.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) == 1000);
+        }
+        finally
+        {
+            await worker.StopAsync(TestCancellationToken);
+        }
+
+        var claims = counting.Claims.ToList();
+        _logger.LogInformation("{Claims} claims for 1000 jobs", claims.Count);
+        Assert.True(claims.Count <= 500, $"{claims.Count} claims for 1000 jobs");
+    }
+
+    /// <summary>
     /// A job type limited to one at a time, with nothing queued, doesn't limit how many jobs of other types a claim
     /// takes: the worker's batches still fill its free slots.
     /// </summary>
