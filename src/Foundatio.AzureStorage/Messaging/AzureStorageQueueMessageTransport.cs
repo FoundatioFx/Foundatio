@@ -18,7 +18,8 @@ namespace Foundatio.Messaging.Transport;
 /// <summary>
 /// A message transport on Azure Storage Queues. A queue is a Storage queue. Storage has no topics, so a durable
 /// subscription is a queue of its own, named after its topic, and a publish lists the topic's subscription queues (one
-/// call, not cached, so a subscription another process just opened gets every later publish) and sends a copy to each.
+/// call, not cached, so a subscription another process just opened gets every later publish, which makes a publish two
+/// round trips in a row where a send is one) and sends a copy to each.
 /// An instance subscription is a queue per receiver, deleted when the receiver is disposed, or by a later publish or
 /// instance receiver of the topic once its heartbeat is older than
 /// <see cref="AzureStorageQueueMessageTransportOptions.InstanceSubscriptionTimeout"/>. Every queue and durable
@@ -74,6 +75,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     private readonly ConcurrentDictionary<string, AzureStorageQueueSignal> _signals = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _lastSweeps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<AzureStorageQueueMessageReceiver, byte> _receivers = new();
+    private readonly ConcurrentDictionary<string, byte> _removingStale = new(StringComparer.Ordinal);
     private AzureStorageQueueClockReading? _storageClock;
     private int _disposed;
 
@@ -560,7 +562,8 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
 
     /// <summary>
     /// Lists the queues subscribed to the topic, with one call (a page per 5,000 queues), skipping instance subscription
-    /// queues whose heartbeat lapsed and removing them in the background.
+    /// queues whose heartbeat lapsed and removing them in the background, once at a time per transport however many
+    /// publishes see them.
     /// </summary>
     private async Task<IReadOnlyList<AzureStorageQueueSubscriptionQueue>> GetSubscriptionQueuesAsync(string topic, CancellationToken cancellationToken)
     {
@@ -607,17 +610,29 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
 
     private async Task RemoveStaleInstancesAsync(string topic, IReadOnlyList<string> queueNames)
     {
-        try
+        int removed = 0;
+        foreach (string queueName in queueNames)
         {
-            foreach (string queueName in queueNames)
-                await DeleteQueueAsync(queueName).AnyContext();
+            if (!_removingStale.TryAdd(queueName, 0))
+                continue;
 
-            Logger.LogInformation("Removed {Count} stale instance subscriptions of topic {Topic}", queueNames.Count, topic);
+            try
+            {
+                await DeleteQueueAsync(queueName).AnyContext();
+                removed++;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Could not remove stale instance subscription queue {QueueName} of topic {Topic}", queueName, topic);
+            }
+            finally
+            {
+                _removingStale.TryRemove(queueName, out _);
+            }
         }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Could not remove stale instance subscriptions of topic {Topic}", topic);
-        }
+
+        if (removed > 0)
+            Logger.LogInformation("Removed {Count} stale instance subscriptions of topic {Topic}", removed, topic);
     }
 
     private async Task<long> GetCountAsync(string queueName, CancellationToken cancellationToken)
