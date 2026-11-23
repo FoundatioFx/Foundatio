@@ -190,11 +190,14 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
-    [Fact]
-    public async Task Send_WithMoreHeadersThanTheFramingReserve_ThrowsMessageTooLarge()
+    [Theory]
+    [InlineData(600)]
+    [InlineData(2000)]
+    public async Task Send_WithMoreHeadersThanTheFramingReserve_ThrowsMessageTooLarge(int headerCount)
     {
-        // Arrange: each header costs two length bytes that MessageSize does not count.
-        var headers = Enumerable.Range(0, 2000).ToDictionary(i => $"h{i}", _ => "v");
+        // Arrange: each header costs two length bytes that MessageSize does not count, and 600 of them leave no room
+        // for a dead-letter reason, which would otherwise make the message impossible to dead-letter whole.
+        var headers = Enumerable.Range(0, headerCount).ToDictionary(i => $"h{i}", _ => "v");
         long counted = MessageSize.Of("too-many-headers", ReadOnlySpan<byte>.Empty, headers);
         var body = new byte[Transport.Capabilities.MaxMessageSize!.Value - counted];
         var source = MessageSource.Queue(NewName("framing"));
@@ -205,7 +208,7 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
             [new OutgoingMessage { MessageId = "too-many-headers", Body = body, Headers = headers }], TestCancellationToken));
 
         // Assert
-        Assert.Equal(AzureStorageQueueMessageTransportCodec.MaxEnvelopeSize, ex.Limit);
+        Assert.Equal(AzureStorageQueueMessageTransportCodec.MaxSendEnvelopeSize, ex.Limit);
         Assert.Contains("headers", ex.Message, StringComparison.Ordinal);
     }
 
@@ -245,6 +248,69 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
         Assert.Empty(json.Headers);
         foreach (var message in messages)
             await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    [Theory]
+    [InlineData(false, 60_000)]
+    [InlineData(true, 49_000)]
+    public async Task DeadLetter_OfALargeMessageFromAnotherProducer_KeepsItWholeWithItsIdAndReason(bool base64, int size)
+    {
+        // Arrange: Storage takes up to 64 KiB of text from another producer, more than an envelope of this transport holds.
+        var source = MessageSource.Queue(NewName("dl-foreign"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var producer = new QueueClient(GetConnectionString(), Names.Queue(source.Name), new QueueClientOptions { MessageEncoding = base64 ? QueueMessageEncoding.Base64 : QueueMessageEncoding.None });
+        var body = Encoding.UTF8.GetBytes("{" + new string('a', size - 2) + "}");
+        var sent = await producer.SendMessageAsync(BinaryData.FromBytes(body), cancellationToken: TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+        Assert.Equal(body.Length, message.Body.Length);
+
+        // Act
+        await receiver.DeadLetterAsync(message, "Could not parse: " + new string('r', 1000), TestCancellationToken);
+
+        // Assert
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        var deadLetter = await ReceiveOneAsync(deadLetters);
+        Assert.True(deadLetter.Body.Span.SequenceEqual(body), $"The dead letter's body is {deadLetter.Body.Length} bytes, not the {body.Length} sent.");
+        Assert.Equal(sent.Value.MessageId, deadLetter.MessageId);
+        Assert.StartsWith("Could not parse: ", deadLetter.Headers[KnownHeaders.DeadLetterReason]);
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromMilliseconds(200));
+        Assert.Equal(0, (await Service.GetQueueClient(Names.Queue(source.Name)).GetPropertiesAsync(TestCancellationToken)).Value.ApproximateMessagesCount);
+    }
+
+    [Fact]
+    public async Task DeadLetter_OfAMessageFromAnotherProducerThatFillsAStorageMessage_KeepsItsText()
+    {
+        // Arrange: no room is left for the dead letter's id and reason.
+        var source = MessageSource.Queue(NewName("dl-full"));
+        await using var receiver = await CreateReceiverAsync(source);
+        string text = new('~', AzureStorageQueueMessageTransportCodec.MaxMessageTextLength - 16);
+        await new QueueClient(GetConnectionString(), Names.Queue(source.Name)).SendMessageAsync(text, TestCancellationToken);
+
+        // Act
+        await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "too big", TestCancellationToken);
+
+        // Assert
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        var deadLetter = await ReceiveOneAsync(deadLetters);
+        Assert.Equal(text, Encoding.UTF8.GetString(deadLetter.Body.Span));
+    }
+
+    [Fact]
+    public void DeadLetter_OfAnEnvelopeThatFillsAStorageMessage_ThrowsInsteadOfWritingPartOfIt()
+    {
+        var message = new AzureStorageQueueIncomingMessage
+        {
+            Owner = null!,
+            QueueMessageId = "q",
+            PopReceipt = "p",
+            MessageId = "full",
+            Body = new byte[AzureStorageQueueMessageTransportCodec.MaxEnvelopeSize],
+            Headers = new Dictionary<string, string>()
+        };
+
+        var ex = Assert.Throws<MessageTooLargeException>(() => AzureStorageQueueMessageTransportCodec.EncodeDeadLetter(message, "reason"));
+
+        Assert.Equal(AzureStorageQueueMessageTransportCodec.MaxEnvelopeSize, ex.Limit);
     }
 
     [Fact]

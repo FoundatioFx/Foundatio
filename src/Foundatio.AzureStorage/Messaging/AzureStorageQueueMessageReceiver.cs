@@ -161,10 +161,28 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
             var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: _lease, cancellationToken: CancellationToken.None).AnyContext();
             delivery.PopReceipt = renewed.Value.PopReceipt;
 
-            string text = AzureStorageQueueMessageTransportCodec.EncodeDeadLetter(delivery, reason ?? String.Empty);
+            string text = EncodeDeadLetter(delivery, reason ?? String.Empty);
             await _transport.SendDeadLetterAsync(_deadLetterName, Source, text, CancellationToken.None).AnyContext();
             await _queue.DeleteMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, CancellationToken.None).AnyContext();
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// A dead letter of the delivery. Another producer's message, which may fill a Storage queue message on its own, is
+    /// kept as its own text; when even the shortest prefix with its id and reason does not fit, the text alone is.
+    /// </summary>
+    private string EncodeDeadLetter(AzureStorageQueueIncomingMessage delivery, string reason)
+    {
+        if (delivery.ForeignText is not { } foreign)
+            return AzureStorageQueueMessageTransportCodec.EncodeDeadLetter(delivery, reason);
+
+        string text = foreign.ToString();
+        string? deadLetter = AzureStorageQueueMessageTransportCodec.EncodeForeignDeadLetter(delivery.MessageId, text, reason);
+        if (deadLetter is not null)
+            return deadLetter;
+
+        _transport.Logger.LogWarning("Message {MessageId} from {Source} fills a Storage queue message, so it is dead-lettered without its id and reason: {Reason}", delivery.MessageId, Source, reason);
+        return text;
     }
 
     public Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default)
@@ -292,7 +310,8 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
                 Headers = headers ?? EmptyHeaders,
                 GroupKey = groupKey,
                 DeliveryCount = (int)Math.Min(message.DequeueCount, Int32.MaxValue),
-                EnqueuedAt = message.InsertedOn
+                EnqueuedAt = message.InsertedOn,
+                ForeignText = isEnvelope ? null : message.Body
             };
 
             _inFlight.TryAdd(delivery, 0);
@@ -477,6 +496,9 @@ internal sealed class AzureStorageQueueIncomingMessage : IncomingMessage
 
     /// <summary>Changed by each renewal; read and written only while <see cref="Gate"/> is held.</summary>
     public required string PopReceipt { get; set; }
+
+    /// <summary>The message text as Storage holds it, when another producer wrote it, so a dead letter can keep it whole.</summary>
+    public BinaryData? ForeignText { get; init; }
 
     /// <summary>Runs the delivery's settlements one at a time.</summary>
     public SemaphoreSlim Gate { get; } = new(1, 1);

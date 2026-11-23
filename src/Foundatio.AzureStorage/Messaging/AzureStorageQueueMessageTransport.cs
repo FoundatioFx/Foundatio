@@ -404,12 +404,12 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
         }
 
         var (text, envelopeSize) = AzureStorageQueueMessageTransportCodec.Encode(message);
-        if (envelopeSize > AzureStorageQueueMessageTransportCodec.MaxEnvelopeSize)
+        if (text is null || envelopeSize > AzureStorageQueueMessageTransportCodec.MaxSendEnvelopeSize)
         {
-            throw new MessageTooLargeException($"Message {message.MessageId} is {envelopeSize} bytes once encoded, over the {AzureStorageQueueMessageTransportCodec.MaxEnvelopeSize} bytes a Storage queue message holds: its {message.Headers.Count} headers need more framing than the transport reserves.")
+            throw new MessageTooLargeException($"Message {message.MessageId} is {envelopeSize} bytes once encoded, over the {AzureStorageQueueMessageTransportCodec.MaxSendEnvelopeSize} bytes a Storage queue message holds with room for a dead-letter reason: its {message.Headers.Count} headers need more framing than the transport reserves.")
             {
                 Size = envelopeSize,
-                Limit = AzureStorageQueueMessageTransportCodec.MaxEnvelopeSize
+                Limit = AzureStorageQueueMessageTransportCodec.MaxSendEnvelopeSize
             };
         }
 

@@ -614,6 +614,36 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.True(kept.Length >= 1024, $"The dead-letter reason was cut to {kept.Length} characters; at least the first 1,024 must be kept.");
     }
 
+    /// <summary>
+    /// A message at the size limit with as many headers as the size-limit tests send can be dead-lettered with a long
+    /// reason, keeping its body, every header and at least the first 1,024 characters of the reason, however the
+    /// transport frames headers.
+    /// </summary>
+    [Fact]
+    public async Task DeadLetter_OfAMessageAtTheSizeLimitWithManyHeaders_KeepsTheMessageAndItsHeaders()
+    {
+        var headers = ManyHeaders();
+        long limit = Transport.Capabilities.MaxMessageSize ?? 64 * 1024;
+        var body = new byte[(int)(limit - MessageSize.Of("dead-with-headers", ReadOnlySpan<byte>.Empty, headers))];
+        Random.Shared.NextBytes(body);
+        string reason = new('r', 4096);
+        var source = MessageSource.Queue(NewName("dlq-headers"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [new OutgoingMessage { MessageId = "dead-with-headers", Body = body, Headers = headers }], TestCancellationToken);
+
+        await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), reason, TestCancellationToken);
+
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        var deadLetter = await ReceiveOneAsync(deadLetters);
+        Assert.Equal("dead-with-headers", deadLetter.MessageId);
+        Assert.True(deadLetter.Body.Span.SequenceEqual(body), "The dead letter's body changed.");
+        foreach (var (key, value) in headers)
+            Assert.Equal(value, deadLetter.Headers[key]);
+        string kept = deadLetter.Headers[KnownHeaders.DeadLetterReason];
+        Assert.StartsWith(kept, reason);
+        Assert.True(kept.Length >= 1024, $"The dead-letter reason was cut to {kept.Length} characters; at least the first 1,024 must be kept.");
+    }
+
     /// <summary>Dead-lettering two messages with the same id keeps both dead letters, each with its reason.</summary>
     [Fact]
     public async Task DeadLetter_OfTheSameMessageAgain_KeepsBothDeadLetters()
