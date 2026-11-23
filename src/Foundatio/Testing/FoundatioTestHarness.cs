@@ -124,7 +124,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
     /// Messages and jobs then wait, so a test can assert what is queued, until it runs them with
     /// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> or calls <see cref="ResumeProcessing"/>.
     /// Receivers stay open, so subscriptions keep receiving published events. <see cref="IMessageAdmin"/> still reads
-    /// and replays dead letters, and <c>AddLegacyMessageBus()</c> subscribers keep running; every wait and step waits for those.
+    /// and replays dead letters, and <c>AddLegacyMessageBus()</c> subscribers keep running; <see cref="WaitForIdleAsync"/>,
+    /// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> and <see cref="ProcessNextAsync(int, TimeSpan?, CancellationToken)"/> wait for those.
     /// </summary>
     /// <exception cref="TimeoutException">Running work did not finish within <paramref name="timeout"/> (default 30 seconds).</exception>
     /// <exception cref="InvalidOperationException">The harness runs on a transport or job store shared with other hosts.</exception>
@@ -254,8 +255,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
     }
 
     /// <summary>
-    /// Waits until no message is waiting for or being handled by this app's handlers, and no job is queued or running.
-    /// Delayed messages and retries count as waiting. Messages sent to queues that nothing in this app consumes are ignored,
+    /// Waits until no message is waiting for or being handled by this app's handlers or its <c>AddLegacyMessageBus()</c>
+    /// subscribers, and no job is queued or running. Delayed messages and retries count as waiting. Messages sent to queues that nothing in this app consumes are ignored,
     /// but a queued job that nothing in this app runs is not: it keeps the app busy, and the timeout names it.
     /// </summary>
     /// <remarks>
@@ -720,7 +721,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     /// <summary>
     /// Adds what the legacy message bus's subscribers have waiting or running. They are never paused, and steps do not
-    /// count them, but every wait waits for them, so a test that publishes on <see cref="IMessageBus"/> sees them run.
+    /// count them, but the waits for idle and for pending work wait for them, so a test that publishes on <see cref="IMessageBus"/> sees them run.
     /// </summary>
     private void AddLegacyBusWork(InMemoryMessageTransport transport, List<string> work, bool includeDelayed)
     {
