@@ -12,7 +12,9 @@ namespace Foundatio.Jobs.Store;
 /// <remarks>
 /// A store only persists state. Retries, backoff, scheduling, concurrency and cancellation are handled by Foundatio.
 /// Use the store's own clock for "now" (lease expiry, availability, retention) so workers with skewed clocks agree.
-/// Implementations are verified by <c>JobStoreTestsBase</c> in Foundatio.TestHarness.
+/// Implementations are verified by <c>JobStoreTestsBase</c> in Foundatio.TestHarness. To wrap a store, for example to
+/// log, measure or fail some calls, derive from <see cref="JobStoreDecorator"/>, which forwards every member, including
+/// those with a default body here.
 /// </remarks>
 [Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public interface IJobStore

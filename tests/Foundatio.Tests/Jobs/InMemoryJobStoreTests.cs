@@ -14,6 +14,25 @@ public class InMemoryJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase
     protected override IJobStore CreateStore() => new InMemoryJobStore();
 
     [Fact]
+    public async Task JobStoreDecorator_WithNothingOverridden_ForwardsTheMembersWithDefaultBodies()
+    {
+        var store = new PassThroughJobStore(new InMemoryJobStore());
+        string name = NewName();
+        for (int i = 0; i < 3; i++)
+            await store.CreateAsync(NewJob(name), TestCancellationToken);
+        var delayed = NewJob(name) with { AvailableAt = DateTimeOffset.UtcNow };
+        await store.CreateAsync(delayed, TimeSpan.FromHours(1), TestCancellationToken);
+
+        var claimed = await store.ClaimBatchAsync(Claim(name), 10, TestCancellationToken);
+
+        Assert.Equal(3, claimed.Count);
+        Assert.DoesNotContain(claimed, j => j.Id == delayed.Id);
+        Assert.True((await store.GetAsync(delayed.Id, TestCancellationToken))!.AvailableAt > DateTimeOffset.UtcNow.AddMinutes(59));
+    }
+
+    private sealed class PassThroughJobStore(IJobStore inner) : JobStoreDecorator(inner);
+
+    [Fact]
     public async Task CountQueryAndGet_AfterRetentionPasses_LeaveOutExpiredJobsWithoutAClaim()
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));

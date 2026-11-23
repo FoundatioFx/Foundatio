@@ -151,6 +151,8 @@ A SQL store does these with columns and partial unique indexes. For the concurre
 
 Use the database's clock for "now" so workers with skewed clocks agree. Throw database and connection errors as `JobStoreException` (in `Foundatio.Jobs`), with the client's exception as its inner exception, so apps calling `IJobClient` catch one type on every store, as transports throw `MessageBusException`; keep `ArgumentException` for invalid arguments and let `OperationCanceledException` through. Prove it with `JobStoreTestsBase`, exactly like the transport suite.
 
+To wrap a store (logging, metrics, fault injection in tests), derive from `JobStoreDecorator` and override only the calls you change. It forwards every member, including `ClaimBatchAsync` and `CreateAsync(job, availableAfter)`; a wrapper that implements `IJobStore` itself and forwards only the required members silently falls back to their defaults, claiming one job per call and timing delayed jobs by the caller's clock.
+
 ## Registration helpers
 
 Give apps a `Use*` extension on `FoundatioMessagingBuilder` or `FoundatioJobsBuilder` that calls `UseTransport(factory)` or `UseStore(factory)`, so the service provider creates and disposes your transport or store. In the factory:
@@ -161,7 +163,7 @@ Give apps a `Use*` extension on `FoundatioMessagingBuilder` or `FoundatioJobsBui
 
 ## Experimental API {#experimental-api}
 
-The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have been tried against Azure Service Bus only on its emulator, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin` with `MessageSourceStats`, `IWorkMonitor`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
+The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion`, `JobLeaseStatus` and `JobStoreDecorator`) and the conformance suites. They have been tried against Azure Service Bus only on its emulator, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin` with `MessageSourceStats`, `IWorkMonitor`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
 
 Implement the contracts explicitly (`Task IMessageTransport.SendAsync(...)`), as the in-repo transports and stores do, so your public class shows only its constructors, options and `Capabilities`. A public `SendAsync` or `ClaimAsync` on a class that isn't experimental would let app code call the SPI through `var` without the diagnostic, and make its signature part of your stable API. Tests call the members through the interface.
 
