@@ -59,6 +59,9 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     /// <summary>The longest visibility timeout Storage takes, which bounds delays, retries and leases.</summary>
     internal static readonly TimeSpan MaxVisibilityTimeout = TimeSpan.FromDays(7);
 
+    /// <summary>The time to live Storage reads as "never expires".</summary>
+    private static readonly TimeSpan NeverExpires = TimeSpan.FromSeconds(-1);
+
     /// <summary>How many requests one send, publish or release makes at once: Storage has no batch send or delete.</summary>
     internal const int MaxRequestsInFlight = 32;
 
@@ -99,7 +102,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
         _names = new AzureStorageQueueMessageTransportNames(Options.Prefix);
         TimeProvider = Options.TimeProvider ?? TimeProvider.System;
         Logger = (Options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<AzureStorageQueueMessageTransport>();
-        TimeToLive = Options.MessageTimeToLive ?? TimeSpan.FromSeconds(-1);
+        TimeToLive = Options.MessageTimeToLive ?? NeverExpires;
 
         var maxDelay = Options.MessageTimeToLive is { } timeToLive && timeToLive <= MaxVisibilityTimeout ? timeToLive - TimeSpan.FromSeconds(1) : MaxVisibilityTimeout;
         Capabilities = new TransportCapabilities
@@ -351,10 +354,11 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
 
     internal static bool IsQueueNotFound(RequestFailedException ex) => ex.Status == 404 && ex.ErrorCode == QueueErrorCode.QueueNotFound.ToString();
 
+    /// <summary>Sends a dead letter, which never expires, whatever <see cref="AzureStorageQueueMessageTransportOptions.MessageTimeToLive"/> is: it is kept until it is replayed or deleted.</summary>
     internal async Task SendDeadLetterAsync(string deadLetterName, MessageSource source, string text, CancellationToken cancellationToken)
     {
         var message = new AzureStorageQueueEncodedMessage(text, TimeSpan.Zero);
-        await SendToQueueAsync(deadLetterName, [message], () => DeadLetterMetadata(source), cancellationToken).AnyContext();
+        await SendToQueueAsync(deadLetterName, [message], () => DeadLetterMetadata(source), cancellationToken, NeverExpires).AnyContext();
     }
 
     internal Task HeartbeatAsync(string queueName, string topic, CancellationToken cancellationToken) =>
@@ -421,9 +425,10 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     /// Sends the messages to the queue, as many at once as <see cref="MaxRequestsInFlight"/> allows, creating the queue
     /// with <paramref name="metadata"/> when Storage reports it missing (or with the subscription's when null).
     /// </summary>
-    private async Task SendToQueueAsync(string queueName, IReadOnlyList<AzureStorageQueueEncodedMessage> messages, Func<IDictionary<string, string>>? metadata, CancellationToken cancellationToken)
+    private async Task SendToQueueAsync(string queueName, IReadOnlyList<AzureStorageQueueEncodedMessage> messages, Func<IDictionary<string, string>>? metadata, CancellationToken cancellationToken, TimeSpan? timeToLive = null)
     {
         var queue = GetQueue(queueName);
+        var messageTimeToLive = timeToLive ?? TimeToLive;
         Lazy<Task>? creating = null;
         async ValueTask SendOneAsync(AzureStorageQueueEncodedMessage message, CancellationToken token)
         {
@@ -431,7 +436,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
             {
                 try
                 {
-                    await queue.SendMessageAsync(message.Text, message.Delay > TimeSpan.Zero ? message.Delay : null, TimeToLive, token).AnyContext();
+                    await queue.SendMessageAsync(message.Text, message.Delay > TimeSpan.Zero ? message.Delay : null, messageTimeToLive, token).AnyContext();
                     return;
                 }
                 catch (RequestFailedException ex) when (IsQueueNotFound(ex) && attempt < 3 && metadata is not null)

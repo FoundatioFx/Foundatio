@@ -449,6 +449,24 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
     }
 
     [Fact]
+    public async Task DeadLetter_WithAMessageTimeToLive_NeverExpires()
+    {
+        // Arrange
+        await using var transport = new AzureStorageQueueMessageTransport(CreateOptions() with { MessageTimeToLive = TimeSpan.FromHours(1) });
+        var source = MessageSource.Queue(NewName("dl-ttl"));
+        DeleteAfterTest(source);
+        await using var receiver = await ((IMessageTransport)transport).CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await ((IMessageTransport)transport).SendAsync(MessageDestination.Queue(source.Name), [Message("poison")], TestCancellationToken);
+
+        // Act
+        await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "kept", TestCancellationToken);
+
+        // Assert
+        var peeked = Assert.Single((await Service.GetQueueClient(Names.DeadLetter(source)).PeekMessagesAsync(1, TestCancellationToken)).Value);
+        Assert.True(peeked.ExpiresOn is null || peeked.ExpiresOn > DateTimeOffset.UtcNow.AddYears(100), $"The dead letter expires at {peeked.ExpiresOn}.");
+    }
+
+    [Fact]
     public async Task Send_WithoutATimeToLive_KeepsTheMessageUntilItIsReceived()
     {
         var source = MessageSource.Queue(NewName("no-ttl"));
