@@ -10,9 +10,10 @@ namespace Foundatio.Extensions.Hosting.HealthChecks;
 
 /// <summary>
 /// Fails host startup when a Foundatio health check was added for messaging or jobs that are not configured, instead
-/// of the check reporting a failure on every probe.
+/// of the check reporting a failure on every probe. It checks in <see cref="StartingAsync"/>, before any hosted service
+/// starts, so a misconfigured process never opens a receiver or claims a job.
 /// </summary>
-internal sealed class HealthCheckRequirementsValidator : IHostedService
+internal sealed class HealthCheckRequirementsValidator : IHostedLifecycleService
 {
     private readonly IEnumerable<HealthCheckRequirement> _requirements;
     private readonly IServiceProviderIsService? _isService;
@@ -23,7 +24,7 @@ internal sealed class HealthCheckRequirementsValidator : IHostedService
         _isService = services.GetService<IServiceProviderIsService>();
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public Task StartingAsync(CancellationToken cancellationToken)
     {
         if (_isService is null)
             return Task.CompletedTask;
@@ -36,5 +37,13 @@ internal sealed class HealthCheckRequirementsValidator : IHostedService
             $"The \"{r.CheckName}\" health check reports on {r.RegisterWith}, which is not configured: call services.{r.RegisterWith}(...), or remove the check.")));
     }
 
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

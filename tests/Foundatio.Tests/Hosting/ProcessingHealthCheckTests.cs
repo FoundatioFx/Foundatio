@@ -224,6 +224,25 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddFoundatioJobsHealthCheck_WithoutAddFoundatioJobs_FailsBeforeMessagingStartsReceiving()
+    {
+        await using var transport = new Foundatio.Messaging.Transport.InMemoryMessageTransport();
+        using var host = new HostBuilder().ConfigureServices(s =>
+        {
+            s.AddSingleton<ILoggerFactory>(Log);
+            s.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+            s.AddFoundatioMessaging(m => m.UseTransport(transport).UseServiceName("tests").AddConsumer<Ping>((_, _, _) => Task.CompletedTask));
+            s.AddHealthChecks().AddFoundatioMessaging().AddFoundatioJobs();
+        }).Build();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync(TestCancellationToken));
+        await Task.Delay(100, TestCancellationToken);
+
+        Assert.Contains("AddFoundatioJobs", error.Message);
+        Assert.DoesNotContain(Log.LogEntries, e => e.Message.StartsWith("Receiving", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AddFoundatioMessagingHealthCheck_WithoutAddFoundatioMessaging_FailsHostStartup()
     {
         using var host = new HostBuilder().ConfigureServices(s => s.AddHealthChecks().AddFoundatioMessaging()).Build();
@@ -381,6 +400,8 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
 
         _provider = services.BuildServiceProvider();
         _hostedServices = _provider.GetServices<IHostedService>().ToList();
+        foreach (var service in _hostedServices.OfType<IHostedLifecycleService>())
+            await service.StartingAsync(TestCancellationToken);
         foreach (var service in _hostedServices)
             await service.StartAsync(TestCancellationToken);
     }
