@@ -16,7 +16,7 @@ namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageTransportStatsTests(ITestOutputHelper output) : TestWithLoggingBase(output)
 {
-    private const string Prefix = "foundatio-tests";
+    private static readonly string Prefix = KafkaTestConnection.Prefix;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
     private readonly List<KafkaMessageTransport> _transports = [];

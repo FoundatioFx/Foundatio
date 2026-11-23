@@ -17,7 +17,7 @@ namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTransportTestsBase(output)
 {
-    private const string Prefix = "foundatio-tests";
+    private static readonly string Prefix = KafkaTestConnection.Prefix;
 
     protected override TimeSpan DeliveryTimeout => TimeSpan.FromSeconds(20);
 
@@ -361,7 +361,7 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         var source = MessageSource.Queue(NewName("foreign"));
         await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
         await transport.GetForwarderAsync();
-        string foreign = NewName("foundatio-tests-foreign");
+        string foreign = NewName($"{KafkaTestConnection.Prefix}-foreign");
         using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build();
         await admin.CreateTopicsAsync([new TopicSpecification { Name = foreign, NumPartitions = 1, ReplicationFactor = 1 }]);
         try

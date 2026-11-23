@@ -27,7 +27,7 @@ public class KafkaMessagingBuilderExtensionsTests(ITestOutputHelper output) : Te
             .UseKafka(new KafkaMessageTransportOptions
             {
                 BootstrapServers = KafkaTestConnection.BootstrapServers,
-                Prefix = $"foundatio-tests-helpers-{Guid.NewGuid():N}",
+                Prefix = $"{KafkaTestConnection.Prefix}-helpers-{Guid.NewGuid():N}",
                 Partitions = 1,
                 ReplicationFactor = 1,
                 ConfigureConsumer = KafkaTestConnection.UseConsumerGroupProtocol ? c => c.GroupProtocol = GroupProtocol.Consumer : null
