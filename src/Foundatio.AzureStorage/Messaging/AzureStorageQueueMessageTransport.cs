@@ -328,7 +328,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
         if (delay > Options.MaxPollInterval * 30 || !_signals.ContainsKey(queueName))
             return;
 
-        _ = Task.Delay(delay, TimeProvider).ContinueWith(static (_, state) =>
+        _ = Task.Delay(delay).ContinueWith(static (_, state) =>
         {
             var (transport, name) = ((AzureStorageQueueMessageTransport, string))state!;
             transport.Signal(name);

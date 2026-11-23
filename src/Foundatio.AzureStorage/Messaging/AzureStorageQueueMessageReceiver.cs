@@ -286,7 +286,7 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
     private async Task<bool> WaitAsync(TimeSpan delay, Task wake, CancellationToken cancellationToken, CancellationToken receiveCancellation)
     {
         using var delayCancellation = CancellationTokenSource.CreateLinkedTokenSource(receiveCancellation);
-        var delayed = Task.Delay(delay, _transport.TimeProvider, delayCancellation.Token);
+        var delayed = Task.Delay(delay, delayCancellation.Token);
         var completed = await Task.WhenAny(delayed, wake).AnyContext();
         await delayCancellation.CancelAsync().AnyContext();
 
@@ -343,7 +343,7 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
         {
             try
             {
-                await Task.Delay(interval, _transport.TimeProvider, token).AnyContext();
+                await Task.Delay(interval, token).AnyContext();
                 await _transport.HeartbeatAsync(_queueName, Source.Topic!, token).AnyContext();
                 await _transport.SweepInstancesAsync(Source.Topic!).AnyContext();
             }

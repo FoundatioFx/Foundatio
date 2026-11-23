@@ -13,6 +13,7 @@ using Foundatio.Resilience;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
@@ -64,6 +65,14 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// state, as with an in-process broker.
     /// </summary>
     protected virtual IMessageTransport CreatePeerTransport() => CreateTransport();
+
+    /// <summary>
+    /// Creates a transport like <see cref="CreateTransport"/> that reads the time from <paramref name="timeProvider"/>,
+    /// for the test that its receives keep to real time when an app's clock is fake. Returns null by default, which
+    /// skips that test: override it for a transport that takes a clock, unless its waits follow the clock on purpose,
+    /// as the in-memory transport's do.
+    /// </summary>
+    protected virtual IMessageTransport? CreateTransportWithClock(TimeProvider timeProvider) => null;
 
     /// <summary>The longest a test waits for a message the broker should deliver.</summary>
     protected virtual TimeSpan DeliveryTimeout => TimeSpan.FromSeconds(10);
@@ -197,6 +206,35 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Empty(messages);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1) + TimeSpan.FromSeconds(4), $"ReceiveAsync took {stopwatch.Elapsed} with a 1s maxWait.");
         Assert.True(stopwatch.Elapsed >= TimeSpan.FromSeconds(0.5), $"ReceiveAsync returned empty after {stopwatch.Elapsed} instead of waiting for its 1s maxWait.");
+    }
+
+    /// <summary>
+    /// On a clock that never advances, as a test's fake clock may be, an empty receive still returns within its maximum
+    /// wait, and a waiting receive still gets a message sent from another process: the broker keeps real time, so waits do too.
+    /// </summary>
+    [Fact]
+    public async Task Receive_OnAClockThatDoesNotAdvance_KeepsToRealTime()
+    {
+        var frozen = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var transport = CreateTransportWithClock(frozen);
+        Assert.SkipWhen(transport is null, "The transport does not take a clock, or its waits follow the clock on purpose.");
+        Track(transport!);
+        var source = MessageSource.Queue(NewName("frozen"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport!.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        var empty = receiver.ReceiveAsync(10, TimeSpan.FromSeconds(1), TestCancellationToken);
+        bool returned = await Task.WhenAny(empty, Task.Delay(TimeSpan.FromSeconds(1) + WakeUpTimeout, TestCancellationToken)) == empty;
+        Assert.True(returned, $"An empty receive with a 1s maxWait had not returned after {stopwatch.Elapsed} on a clock that does not advance.");
+        Assert.Empty(await empty);
+
+        var waiting = receiver.ReceiveAsync(10, WakeUpTimeout + DeliveryTimeout, TestCancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        await PeerTransport.SendAsync(MessageDestination.Queue(source.Name), [Message("frozen", "id-frozen")], TestCancellationToken);
+        var message = Assert.Single(await waiting);
+        Assert.Equal("id-frozen", message.MessageId);
+        await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
     /// <summary>A message sent from another process reaches a receive that is already waiting promptly, not on the next poll.</summary>

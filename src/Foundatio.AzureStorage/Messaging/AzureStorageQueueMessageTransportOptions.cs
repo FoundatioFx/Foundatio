@@ -63,7 +63,11 @@ public sealed record AzureStorageQueueMessageTransportOptions
     /// <summary>Changes the options of the queue clients the transport creates, such as their retry policy or diagnostics.</summary>
     public Action<QueueClientOptions>? ConfigureClient { get; init; }
 
-    /// <summary>The clock for delays and heartbeats. Defaults to <see cref="System.TimeProvider.System"/>.</summary>
+    /// <summary>
+    /// The clock a message's <see cref="OutgoingMessage.DeliverAt"/> is measured against, which should be the clock that
+    /// set it. Defaults to <see cref="System.TimeProvider.System"/>. Waits between polls, heartbeats and the visibility
+    /// timeouts Storage keeps run on real time whatever this is, so a fake clock that does not advance never stalls a receive.
+    /// </summary>
     public TimeProvider? TimeProvider { get; init; }
 
     /// <summary>The logger factory. Defaults to no logging.</summary>

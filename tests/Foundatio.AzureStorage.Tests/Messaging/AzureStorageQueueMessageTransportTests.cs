@@ -28,6 +28,8 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
 
     protected override IMessageTransport CreateTransport() => new AzureStorageQueueMessageTransport(CreateOptions());
 
+    protected override IMessageTransport CreateTransportWithClock(TimeProvider timeProvider) => new AzureStorageQueueMessageTransport(CreateOptions() with { TimeProvider = timeProvider });
+
     /// <summary>A client of its own, as another producer or consumer of the account would use.</summary>
     protected QueueServiceClient Service => _service ??= new QueueServiceClient(GetConnectionString());
 
