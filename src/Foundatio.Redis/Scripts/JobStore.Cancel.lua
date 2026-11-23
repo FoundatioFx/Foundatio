@@ -1,5 +1,6 @@
 -- KEYS: job, queued, expiring, queued index, queued name index, cancelled index, cancelled name index, holders,
---       waiting and pending (the name's concurrency keys, jobs waiting for one, and deduplication keys)
+--       waiting, pending and concurrency keys (the name's held concurrency keys, jobs waiting for one, deduplication
+--       keys, and its unfinished jobs' concurrency keys by id)
 -- ARGV: id, retain us, name
 -- Returns 1 when cancelled or flagged, 0 for a missing or finished job, -1 when the job's name is not the one given.
 local id = ARGV[1]
@@ -17,6 +18,9 @@ if job[1] == QUEUED then
     redis.call('HSET', KEYS[1], 'status', CANCELLED, 'completed', str(now), 'expires', str(expiresAt))
     redis.call('ZREM', KEYS[2], id)
     releaseQueued(KEYS[8], KEYS[9], KEYS[2], KEYS[10], present(job[5]), present(job[6]), job[7], id)
+    if present(job[5]) then
+        redis.call('HDEL', KEYS[11], id)
+    end
     redis.call('ZADD', KEYS[3], expiresAt, id)
     redis.call('ZREM', KEYS[4], job[3])
     redis.call('ZREM', KEYS[5], job[3])

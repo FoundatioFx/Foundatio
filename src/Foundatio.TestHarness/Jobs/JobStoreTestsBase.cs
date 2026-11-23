@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
@@ -1113,6 +1114,44 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Null(await Store.GetAsync(job.Id, TestCancellationToken));
         Assert.Equal(0, await Store.CountAsync(JobState.Succeeded, job.Name, TestCancellationToken));
         Assert.Equal(job.Id, await Store.CreateAsync(job, TestCancellationToken));
+    }
+
+    /// <summary>
+    /// Workers claiming in batches and completing at once run each concurrency key's jobs in the order they became
+    /// due, when all are due before the first claim.
+    /// </summary>
+    [Fact]
+    public async Task ClaimBatch_FromConcurrentWorkers_RunsEachConcurrencyKeysJobsInDueOrder()
+    {
+        string name = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var random = new Random(3);
+        var jobs = Enumerable.Range(0, 200).Select(i => NewJob(name) with { ConcurrencyKey = $"k{i % 4}", AvailableAt = now.AddSeconds(-1000 + random.Next(900)) }).ToList();
+        foreach (var job in jobs)
+            await Store.CreateAsync(job, TestCancellationToken);
+
+        var order = new ConcurrentQueue<JobInfo>();
+        int completed = 0;
+        await Parallel.ForEachAsync(Enumerable.Range(0, 6), TestCancellationToken, async (worker, token) =>
+        {
+            while (Volatile.Read(ref completed) < jobs.Count)
+            {
+                var batch = await Store.ClaimBatchAsync(Claim(name) with { WorkerId = $"worker-{worker}" }, 3, token);
+                foreach (var job in batch)
+                {
+                    order.Enqueue(job);
+                    await Store.CompleteAsync(job.Id, job.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(1)), token);
+                    Interlocked.Increment(ref completed);
+                }
+
+                if (batch.Count == 0)
+                    await Task.Delay(2, token);
+            }
+        });
+
+        var outOfOrder = order.GroupBy(j => j.ConcurrencyKey).SelectMany(g => g.Zip(g.Skip(1)).Where(p => p.First.AvailableAt > p.Second.AvailableAt)
+            .Select(p => $"{g.Key}: {p.First.AvailableAt:O} before {p.Second.AvailableAt:O}")).ToList();
+        Assert.True(outOfOrder.Count == 0, $"{outOfOrder.Count} out of order: {String.Join("; ", outOfOrder.Take(5))}");
     }
 
     /// <summary>

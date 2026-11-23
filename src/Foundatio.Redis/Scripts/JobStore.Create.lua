@@ -1,10 +1,11 @@
--- KEYS: job, queued, index, name index, queued index, queued name index, pending (the name's deduplication keys)
+-- KEYS: job, queued, index, name index, queued index, queued name index, pending (the name's deduplication keys),
+--       concurrency keys (the name's unfinished jobs' concurrency keys, by id)
 -- ARGV: id, name, available at, '1' when available at is an offset from now, index member, deduplication key ('' for
---       none), then field/value pairs
+--       none), concurrency key ('' for none), then field/value pairs
 -- Returns 1 when created, 0 when a job with the id exists, -1 when an expired job still holds the id, and the id of the
 -- pending job holding the deduplication key, creating nothing. A job created without a 'scheduled' field is scheduled
 -- for when it becomes available.
-local id, name, deduplicationKey = ARGV[1], ARGV[2], ARGV[6]
+local id, name, deduplicationKey, concurrencyKey = ARGV[1], ARGV[2], ARGV[6], ARGV[7]
 if redis.call('EXISTS', KEYS[1]) == 1 then
     if isExpired(redis.call('HGET', KEYS[1], 'expires')) then
         return -1
@@ -24,7 +25,7 @@ if ARGV[4] == '1' then
 end
 
 local fields = {}
-for i = 7, #ARGV do
+for i = 8, #ARGV do
     fields[#fields + 1] = ARGV[i]
 end
 if #fields > 0 then
@@ -40,5 +41,8 @@ for i = 3, 6 do
 end
 if deduplicationKey ~= '' then
     redis.call('HSET', KEYS[7], deduplicationKey, id)
+end
+if concurrencyKey ~= '' then
+    redis.call('HSET', KEYS[8], id, concurrencyKey)
 end
 return 1

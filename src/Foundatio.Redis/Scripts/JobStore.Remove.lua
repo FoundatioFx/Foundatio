@@ -1,5 +1,6 @@
 -- KEYS: job, expiring, then (when the job was found) queued, running, index, name index, status index, status name
---       index, holders, waiting and pending (the name's concurrency keys, jobs waiting for one, and deduplication keys)
+--       index, holders, waiting, pending and concurrency keys (the name's held concurrency keys, jobs waiting for one,
+--       deduplication keys, and its unfinished jobs' concurrency keys by id)
 -- ARGV: id, name, status, index member, '1' to remove the job only when it has expired
 -- Returns 1 when a live job was removed, 2 when an expired one was, 0 when there was nothing to remove, and -1 when
 -- the job's name, status or index member is not the one given (it changed since the caller read it). Releases the
@@ -10,7 +11,7 @@ if not job[1] then
     redis.call('ZREM', KEYS[2], id)
     return 0
 end
-if #KEYS < 11 or job[1] ~= ARGV[2] or job[2] ~= ARGV[3] or job[3] ~= ARGV[4] then
+if #KEYS < 12 or job[1] ~= ARGV[2] or job[2] ~= ARGV[3] or job[3] ~= ARGV[4] then
     return -1
 end
 
@@ -26,6 +27,7 @@ redis.call('ZREM', KEYS[3], id)
 redis.call('ZREM', KEYS[4], id)
 redis.call('ZREM', KEYS[2], id)
 redis.call('DEL', KEYS[1])
+redis.call('HDEL', KEYS[12], id)
 if job[2] == QUEUED then
     releaseQueued(KEYS[9], KEYS[10], KEYS[3], KEYS[11], present(job[5]), present(job[6]), job[7], id)
 elseif job[2] == RUNNING then

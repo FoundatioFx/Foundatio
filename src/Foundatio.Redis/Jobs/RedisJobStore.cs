@@ -52,7 +52,7 @@ public sealed class RedisJobStore : IJobStore
     private static readonly RedisScript CreateScript = LoadScript("Create");
     private static readonly RedisScript GetScript = LoadScript("Get");
     private static readonly RedisScript QueryScript = LoadScript("Query");
-    private static readonly RedisScript CandidatesScript = LoadScript("Candidates");
+    private static readonly RedisScript CandidatesScript = LoadScript("Candidates", withKeys: true);
     private static readonly RedisScript ClaimScript = LoadScript("Claim", withKeys: true);
     private static readonly RedisScript RenewScript = LoadScript("Renew");
     private static readonly RedisScript ProgressScript = LoadScript("Progress");
@@ -110,9 +110,10 @@ public sealed class RedisJobStore : IJobStore
 
         string member = $"{job.CreatedAt.UtcTicks:x16}|{job.Id}";
         string deduplicationKey = job.DeduplicationKey ?? String.Empty;
+        string concurrencyKey = job.ConcurrencyKey ?? String.Empty;
         var values = availableAfter is { } after
-            ? new List<RedisValue> { job.Id, job.Name, ToMicroseconds(after), "1", member, deduplicationKey }
-            : [job.Id, job.Name, ToMicroseconds(job.AvailableAt), "0", member, deduplicationKey];
+            ? new List<RedisValue> { job.Id, job.Name, ToMicroseconds(after), "1", member, deduplicationKey, concurrencyKey }
+            : [job.Id, job.Name, ToMicroseconds(job.AvailableAt), "0", member, deduplicationKey, concurrencyKey];
         values.AddRange(["payload", job.Payload, "created", ToMicroseconds(job.CreatedAt)]);
         AddIfPresent(values, "ckey", job.ConcurrencyKey);
         AddIfPresent(values, "dkey", job.DeduplicationKey);
@@ -134,7 +135,7 @@ public sealed class RedisJobStore : IJobStore
         RedisKey[] keys =
         [
             JobKey(job.Id), QueuedKey(job.Name), IndexKey(null, null), IndexKey(null, job.Name),
-            IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, job.Name), PendingKey(job.Name)
+            IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, job.Name), PendingKey(job.Name), ConcurrencyKeysKey(job.Name)
         ];
 
         try
@@ -242,7 +243,7 @@ public sealed class RedisJobStore : IJobStore
         {
             SweepIfDue();
             string[] names = request.Names.Distinct(StringComparer.Ordinal).ToArray();
-            var setKeys = names.SelectMany(n => new RedisKey[] { QueuedKey(n), RunningKey(n) }).ToArray();
+            var setKeys = names.SelectMany(n => new RedisKey[] { QueuedKey(n), RunningKey(n), ConcurrencyKeysKey(n), HoldersKey(n), WaitingKey(n) }).ToArray();
             int claimCount = Math.Min(maxCount, MaxClaimBatch);
             int candidateCount = ClaimCandidates + claimCount;
             var maxPerName = names.Select(n => request.MaxPerName is { } limits && limits.TryGetValue(n, out int max) ? Math.Clamp(max, 0, claimCount) : claimCount).ToArray();
@@ -251,13 +252,21 @@ public sealed class RedisJobStore : IJobStore
             for (int i = 0; i < names.Length; i++)
                 candidateValues[1 + i] = Math.Min(candidateCount, ClaimCandidates + maxPerName[i]);
 
-            // Find the jobs due longest, then claim those of them that no other worker has taken in the meantime.
-            // Two scripts, because a script can only touch the jobs whose keys it is given.
+            // Find the jobs due longest that a claim could take now, setting aside those waiting for a concurrency key,
+            // then claim those of them that no other worker has taken in the meantime. Two scripts, because a script can
+            // only touch the jobs whose keys it is given.
             for (int round = 0; round < MaxClaimRounds; round++)
             {
                 var candidates = (RedisResult[])(await EvaluateScriptAsync(CandidatesScript, setKeys, candidateValues).AnyContext())!;
-                if (candidates.Length == 0)
+                bool partlyScanned = (long)candidates[0] == 1;
+                if (candidates.Length == 1)
+                {
+                    // Every due job seen was waiting for a key and has been set aside; look further unless none is left.
+                    if (partlyScanned)
+                        continue;
+
                     return [];
+                }
 
                 var keys = new List<RedisKey>(2 + 7 * names.Length + candidates.Length / 3) { IndexKey(JobState.Queued, null), IndexKey(JobState.Running, null) };
                 foreach (string name in names)
@@ -272,7 +281,7 @@ public sealed class RedisJobStore : IJobStore
                 };
                 values.AddRange(names.Select(n => (RedisValue)n));
                 values.AddRange(maxPerName.Select(max => (RedisValue)max));
-                for (int i = 0; i + 2 < candidates.Length; i += 3)
+                for (int i = 1; i + 2 < candidates.Length; i += 3)
                 {
                     string id = (string)candidates[i]!;
                     keys.Add(JobKey(id));
@@ -353,7 +362,7 @@ public sealed class RedisJobStore : IJobStore
             RedisKey[] keys =
             [
                 JobKey(jobId), RunningKey(name), QueuedKey(name), ExpiringKey, IndexKey(JobState.Running, null), IndexKey(JobState.Running, name),
-                IndexKey(completion.State, null), IndexKey(completion.State, name), HoldersKey(name), WaitingKey(name)
+                IndexKey(completion.State, null), IndexKey(completion.State, name), HoldersKey(name), WaitingKey(name), ConcurrencyKeysKey(name)
             ];
 
             return await EvaluateAsync(CompleteScript, keys, [
@@ -385,7 +394,8 @@ public sealed class RedisJobStore : IJobStore
                 RedisKey[] keys =
                 [
                     JobKey(jobId), QueuedKey(name), ExpiringKey, IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, name),
-                    IndexKey(JobState.Cancelled, null), IndexKey(JobState.Cancelled, name), HoldersKey(name), WaitingKey(name), PendingKey(name)
+                    IndexKey(JobState.Cancelled, null), IndexKey(JobState.Cancelled, name), HoldersKey(name), WaitingKey(name), PendingKey(name),
+                    ConcurrencyKeysKey(name)
                 ];
 
                 long cancelled = await EvaluateAsync(CancelScript, keys, [jobId, ToMicroseconds(retainFor), name]).AnyContext();
@@ -429,7 +439,8 @@ public sealed class RedisJobStore : IJobStore
                 :
                 [
                     JobKey(jobId), ExpiringKey, QueuedKey(fields[0]!), RunningKey(fields[0]!), IndexKey(null, null), IndexKey(null, fields[0]),
-                    StatusIndexKey(fields[1]!, null), StatusIndexKey(fields[1]!, fields[0]), HoldersKey(fields[0]!), WaitingKey(fields[0]!), PendingKey(fields[0]!)
+                    StatusIndexKey(fields[1]!, null), StatusIndexKey(fields[1]!, fields[0]), HoldersKey(fields[0]!), WaitingKey(fields[0]!), PendingKey(fields[0]!),
+                    ConcurrencyKeysKey(fields[0]!)
                 ];
 
             long removed = await EvaluateAsync(RemoveScript, keys,
@@ -591,6 +602,9 @@ public sealed class RedisJobStore : IJobStore
     /// <summary>The deduplication keys of <paramref name="name"/>'s jobs that have not been claimed, each with the job's id.</summary>
     private RedisKey PendingKey(string name) => GetNameKeys(name).Pending;
 
+    /// <summary>The concurrency keys of <paramref name="name"/>'s queued and running jobs, by job id, so a claim can set aside the jobs whose key is held without reading them.</summary>
+    private RedisKey ConcurrencyKeysKey(string name) => GetNameKeys(name).ConcurrencyKeys;
+
     private RedisKey IndexKey(JobState? status, string? name)
     {
         if (name is null)
@@ -619,6 +633,7 @@ public sealed class RedisJobStore : IJobStore
         public RedisKey Holders { get; } = prefix + "holders:" + name;
         public RedisKey Waiting { get; } = prefix + "waiting:" + name;
         public RedisKey Pending { get; } = prefix + "pending:" + name;
+        public RedisKey ConcurrencyKeys { get; } = prefix + "ckeys:" + name;
         public RedisKey Index { get; } = $"{prefix}index:name:{name}";
         public RedisKey[] StatusIndexes { get; } = Enum.GetValues<JobState>().Select(state => (RedisKey)$"{prefix}index:status:{Status(state)}:{name}").ToArray();
     }

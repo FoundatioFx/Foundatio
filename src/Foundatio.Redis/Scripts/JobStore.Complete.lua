@@ -1,5 +1,6 @@
 -- KEYS: job, running, queued, expiring, running index, running name index, target status index, target status name
---       index, holders (the name's concurrency keys), waiting (the name's jobs waiting for a concurrency key)
+--       index, holders (the name's concurrency keys), waiting (the name's jobs waiting for a concurrency key), concurrency
+--       keys (the name's unfinished jobs' concurrency keys, by id)
 -- ARGV: id, claim token, status, retry delay us, refund attempt, retain us, has message, message, has error, error, name
 -- Releases the job's concurrency key, making the job waiting longest for it claimable. A finished job is kept for the
 -- retention given, or until its 'retain' time if later.
@@ -46,6 +47,9 @@ else
         redis.call('HDEL', KEYS[1], 'payload')
     end
     redis.call('ZADD', KEYS[4], expiresAt, id)
+    if concurrencyKey then
+        redis.call('HDEL', KEYS[11], id)
+    end
 end
 
 redis.call('ZREM', KEYS[5], job[4])
