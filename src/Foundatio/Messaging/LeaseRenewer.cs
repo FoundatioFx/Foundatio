@@ -22,7 +22,7 @@ internal sealed class LeaseRenewer : IDisposable
 {
     private static readonly TimeSpan OwnershipCheckInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan FirstRetryDelay = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan MinRenewTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MinRenewTimeout = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan MaxRenewTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan TimerResolution = TimeSpan.FromMilliseconds(5);
     private static readonly TimeSpan MaxLeaseMargin = TimeSpan.FromSeconds(5);
@@ -108,6 +108,39 @@ internal sealed class LeaseRenewer : IDisposable
 
         TryCancel(cancellation);
         await renewal.AnyContext();
+    }
+
+    /// <summary>
+    /// Whether <paramref name="delivery"/>'s lease is lost. With lease expiration, a delivery past the point where it
+    /// counts as lost is marked lost here, before its handler starts, even if the timer that marks it has not run yet,
+    /// as when the thread pool is starved.
+    /// </summary>
+    public bool CheckLeaseLost(MessageDelivery delivery)
+    {
+        if (delivery.IsLeaseLost)
+            return true;
+
+        if (!_leaseExpiration)
+            return false;
+
+        var now = _timeProvider.GetUtcNow();
+        if (now.UtcTicks < delivery.LostAtTicks)
+            return false;
+
+        CancellationTokenSource? renewal;
+        lock (_lock)
+        {
+            if (!delivery.Tracked || delivery.LostAt > now)
+                return delivery.IsLeaseLost;
+
+            delivery.Tracked = false;
+            _deliveries.Remove(delivery);
+            renewal = delivery.RenewalCancellation;
+        }
+
+        delivery.MarkLeaseLost();
+        TryCancel(renewal);
+        return true;
     }
 
     /// <summary>
@@ -268,8 +301,9 @@ internal sealed class LeaseRenewer : IDisposable
 
     private async Task RenewAsync(MessageDelivery delivery, CancellationTokenSource cancellation)
     {
+        // Half the time left before the delivery counts as lost, so a call that hangs times out with room to retry it.
         var started = _timeProvider.GetUtcNow();
-        cancellation.CancelAfter(Clamp(delivery.LeaseExpiresAt - started, MinRenewTimeout, MaxRenewTimeout));
+        cancellation.CancelAfter(Clamp(TimeSpan.FromTicks((delivery.LostAt - started).Ticks / 2), MinRenewTimeout, MaxRenewTimeout));
 
         bool lost = false;
         Exception? error = null;

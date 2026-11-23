@@ -87,6 +87,69 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.Equal(1, Volatile.Read(ref handled));
     }
 
+    [Theory]
+    [InlineData(3)]
+    [InlineData(9)]
+    public async Task LeaseRenewal_WhenOnlyTheFirstRenewalHangs_RetriesItBeforeTheLeaseIsLost(int leaseSeconds)
+    {
+        var lease = TimeSpan.FromSeconds(leaseSeconds);
+        int renewals = 0, cancelled = 0, completed = 0;
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnRenew = async (_, ct) =>
+            {
+                if (Interlocked.Increment(ref renewals) == 1)
+                    await Task.Delay(Timeout.Infinite, ct);
+            }
+        };
+
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (_, _, ct) =>
+        {
+            try
+            {
+                await Task.Delay(lease * 1.2, ct);
+                Interlocked.Increment(ref completed);
+            }
+            catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref cancelled);
+                throw;
+            }
+        }, new HandlerOptions { LeaseDuration = lease, MaxConcurrency = 1, RetryPolicy = new RetryPolicy { MaxAttempts = 1 } }));
+
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+
+        Assert.True(await _transport.WaitUntilIdleAsync(lease * 4, TestCancellationToken));
+        Assert.Equal(0, Volatile.Read(ref cancelled));
+        Assert.Equal(1, Volatile.Read(ref completed));
+        Assert.True(Volatile.Read(ref renewals) >= 2, $"The hung renewal was never retried ({Volatile.Read(ref renewals)} renewal calls).");
+    }
+
+    [Fact]
+    public async Task ProcessSequence_WhenTheLeaseTimerRunsLate_DoesNotStartAHandlerPastTheLostPoint()
+    {
+        // The clock jumps past the point where the waiting message's lease counts as lost, as a starved thread pool
+        // would make the renewer's timer run late: it must not be handed to its handler, though the timer never marked it.
+        var clock = new JumpingTimeProvider();
+        await using var transport = new InMemoryMessageTransport(clock);
+        var lease = TimeSpan.FromSeconds(20);
+        var attempts = new ConcurrentQueue<(int Id, int Attempt)>();
+        await using (var producer = await StartAsync(transport, _ => { }))
+            await producer.Client.SendBatchAsync([new GroupedCommand(1), new GroupedCommand(2)], new SendOptions { GroupKey = "g" }, TestCancellationToken);
+
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<GroupedCommand>((message, context, _) =>
+        {
+            attempts.Enqueue((message.Id, context.Attempt));
+            if (message.Id == 1)
+                clock.Jump(lease * 0.9);
+
+            return Task.CompletedTask;
+        }, new HandlerOptions { LeaseDuration = lease, MaxConcurrency = 2 }), s => s.AddSingleton<TimeProvider>(clock));
+
+        Assert.True(await transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        Assert.Equal([(1, 1), (2, 2)], attempts);
+    }
+
     [Fact]
     public async Task LeaseRenewal_WhenNoRenewalReachesTheBrokerBeforeTheLeaseEnds_CancelsTheHandlerBeforeAnotherConsumerGetsTheMessage()
     {
@@ -610,6 +673,34 @@ public class MessageProcessorTests : TestWithLoggingBase
 
         Assert.True(Volatile.Read(ref completed));
         Assert.Equal(0, _transport.GetMessageCount(source));
+    }
+
+    [Fact]
+    public async Task StopAsync_CalledAgainWhileTheFirstStopDrains_WaitsForTheSameDrain()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int finished = 0;
+        await using var consumer = await StartAsync(_transport, m => m.AddConsumer<SlowCommand>(async (_, _, _) =>
+        {
+            started.TrySetResult();
+            await release.Task;
+            Interlocked.Exchange(ref finished, 1);
+        }, new HandlerOptions { MaxConcurrency = 1 }));
+
+        await consumer.Client.SendAsync(new SlowCommand(1), cancellationToken: TestCancellationToken);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        var processor = GetProcessor(consumer);
+        var first = processor.StopAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        var second = processor.StopAsync(TimeSpan.Zero, TestCancellationToken);
+        await Task.Delay(100, TestCancellationToken);
+        Assert.False(second.IsCompleted, "A second StopAsync returned while the first was still draining.");
+
+        release.SetResult();
+        await second.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(1, Volatile.Read(ref finished));
+        await first;
     }
 
     [Theory]
@@ -1584,6 +1675,16 @@ public class MessageProcessorTests : TestWithLoggingBase
     public record RenewedCommand(int Id);
     public record SlowCommand(int Id);
     public record PoisonCommand(int Id);
+
+    /// <summary>The system clock, moved forward by <see cref="Jump"/>; timers run on real time, so they fire late after a jump.</summary>
+    private sealed class JumpingTimeProvider : TimeProvider
+    {
+        private long _skewTicks;
+
+        public void Jump(TimeSpan by) => Interlocked.Add(ref _skewTicks, by.Ticks);
+
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow().AddTicks(Interlocked.Read(ref _skewTicks));
+    }
 
     private sealed class OpenGate : IStartupGate
     {

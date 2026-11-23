@@ -58,7 +58,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private int _waitingForRoom;
     private int _partialReceive;
     private bool _started;
-    private bool _stopped;
+    private TaskCompletionSource? _stop;
 
     // Reading ahead. Receives at depth zero take slots as above; otherwise they ask for up to the free slots plus the
     // depth, less what is buffered or already asked for, and Pump gives each buffered message a slot.
@@ -142,7 +142,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         bool started = false;
         lock (_lifecycleLock)
         {
-            if (!_stopped && !_started)
+            if (_stop is null && !_started)
             {
                 _started = started = true;
                 _receiver = receiver;
@@ -190,18 +190,39 @@ internal sealed class MessageProcessor : IAsyncDisposable
     /// Stops receiving and waits for in-flight messages to finish until <paramref name="drainTimeout"/> elapses or
     /// <paramref name="cancellationToken"/> is cancelled. Handlers still running are then cancelled and their messages released.
     /// </summary>
-    public async Task StopAsync(TimeSpan drainTimeout, CancellationToken cancellationToken = default)
+    /// <remarks>Every call after the first returns the first call's task, so it too ends once the drain has.</remarks>
+    public Task StopAsync(TimeSpan drainTimeout, CancellationToken cancellationToken = default)
     {
         Task receiveLoop;
+        TaskCompletionSource stopped;
         lock (_lifecycleLock)
         {
-            if (_stopped)
-                return;
+            if (_stop is not null)
+                return _stop.Task;
 
-            _stopped = true;
+            _stop = stopped = NewSignal();
             receiveLoop = _receiveLoop;
         }
 
+        return StopCoreAsync(receiveLoop, stopped, drainTimeout, cancellationToken);
+    }
+
+    private async Task StopCoreAsync(Task receiveLoop, TaskCompletionSource stopped, TimeSpan drainTimeout, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await DrainAndCloseAsync(receiveLoop, drainTimeout, cancellationToken).AnyContext();
+            stopped.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            stopped.TrySetException(ex);
+            throw;
+        }
+    }
+
+    private async Task DrainAndCloseAsync(Task receiveLoop, TimeSpan drainTimeout, CancellationToken cancellationToken)
+    {
         Status.MarkStopped();
         _stopReceiving.Cancel();
         await receiveLoop.AnyContext();
@@ -1096,7 +1117,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             delivery.SequenceSlots = holdsSlots ? sequence.Count - i : 0;
             try
             {
-                if (delivery.IsLeaseLost)
+                if (_renewer.CheckLeaseLost(delivery))
                 {
                     await delivery.StopRenewingAsync().AnyContext();
                     _logger.LogWarning("Lost the lease on message {MessageId} while it waited its turn; another consumer will handle it", delivery.Message.MessageId);
@@ -1157,7 +1178,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         delivery.SequenceSlots = 1;
         try
         {
-            if (delivery.IsLeaseLost)
+            if (_renewer.CheckLeaseLost(delivery))
             {
                 await delivery.StopRenewingAsync().AnyContext();
                 _logger.LogWarning("Lost the lease on message {MessageId} while it waited its turn; another consumer will handle it", delivery.Message.MessageId);
