@@ -46,6 +46,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private static readonly TimeSpan ForwarderRestartDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxForwarderRestartDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MinimumCommittedWait = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan MinQueueFullBackoff = TimeSpan.FromMilliseconds(5);
+    private static readonly TimeSpan MaxQueueFullBackoff = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// The shortest retention of a delay tier topic. A record moves on within six hours while forwarders run; the rest
@@ -76,6 +78,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private readonly ConcurrentDictionary<KafkaMessageReceiver, byte> _receivers = new();
     private readonly object _forwarderLock = new();
     private Task<KafkaDelayForwarder>? _forwarder;
+    private TimeSpan _queueFullTimeout;
     private readonly object _stateStoreLock = new();
     private Task<KafkaReceiverStateStore?>? _stateStore;
     private long _stateStoreFailedAt;
@@ -122,7 +125,12 @@ public sealed class KafkaMessageTransport : IMessageTransport
             Deduplication = false
         };
 
-        Producer = CreateProducer();
+        Producer = CreateProducer(c => _queueFullTimeout = c.MessageTimeoutMs switch
+        {
+            null => TimeSpan.FromMinutes(5),
+            <= 0 => TimeSpan.MaxValue,
+            { } milliseconds => TimeSpan.FromMilliseconds(milliseconds)
+        });
         _admin = new DependentAdminClientBuilder(Producer.Handle).Build();
     }
 
@@ -852,11 +860,38 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
     }
 
+    /// <summary>
+    /// Sends one record. While librdkafka's queue is full (a burst of sends, or a slow broker), waits for room as
+    /// librdkafka recommends, for at most the producer's <c>message.timeout.ms</c>, as long as a queued record would wait.
+    /// </summary>
     private async Task ProduceOnceAsync(string topic, Message<byte[]?, byte[]> message, CancellationToken cancellationToken)
     {
-        var result = await Producer.ProduceAsync(topic, message, cancellationToken).AnyContext();
-        if (result.Status == PersistenceStatus.NotPersisted)
-            throw new MessageBusException($"Message was not persisted to {result.TopicPartitionOffset}.");
+        long waitingSince = 0;
+        var backoff = MinQueueFullBackoff;
+        while (true)
+        {
+            DeliveryResult<byte[]?, byte[]> result;
+            try
+            {
+                result = await Producer.ProduceAsync(topic, message, cancellationToken).AnyContext();
+            }
+            catch (ProduceException<byte[]?, byte[]> ex) when (ex.Error.Code == ErrorCode.Local_QueueFull)
+            {
+                if (waitingSince == 0)
+                    waitingSince = Stopwatch.GetTimestamp();
+                else if (Stopwatch.GetElapsedTime(waitingSince) >= _queueFullTimeout)
+                    throw;
+
+                await Task.Delay(backoff, cancellationToken).AnyContext();
+                backoff = TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxQueueFullBackoff.Ticks));
+                continue;
+            }
+
+            if (result.Status == PersistenceStatus.NotPersisted)
+                throw new MessageBusException($"Message was not persisted to {result.TopicPartitionOffset}.");
+
+            return;
+        }
     }
 
     private static MessageBusException ToException(string topic, ProduceException<byte[]?, byte[]> ex)

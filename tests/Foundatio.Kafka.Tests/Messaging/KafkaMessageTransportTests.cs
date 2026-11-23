@@ -533,6 +533,27 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Send_WhileTheProducerQueueIsFull_WaitsForRoom()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 1,
+            ConfigureProducer = c =>
+            {
+                c.QueueBufferingMaxMessages = 5;
+                c.BatchNumMessages = 5;
+                c.LingerMs = 200;
+            }
+        }));
+        var source = MessageSource.Queue(NewName("queue-full"));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 50).Select(i => Message($"m{i}", $"m{i}")).ToList(), TestCancellationToken);
+
+        Assert.Equal(50, (await DrainAsync(receiver, 50)).Distinct().Count());
+    }
+
+    [Fact]
     public async Task DeliverAt_WhenTheDelayForwarderFails_IsDeliveredByTheRestartedForwarder()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1 }));
