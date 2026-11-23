@@ -74,6 +74,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     private readonly ConcurrentDictionary<string, AzureStorageQueueSignal> _signals = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _lastSweeps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<AzureStorageQueueMessageReceiver, byte> _receivers = new();
+    private AzureStorageQueueClockReading? _storageClock;
     private int _disposed;
 
     /// <summary>Connects with <see cref="AzureStorageQueueMessageTransportOptions.ConnectionString"/> or <see cref="AzureStorageQueueMessageTransportOptions.ServiceUri"/>.</summary>
@@ -199,7 +200,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
             {
                 case MessageSourceKind.InstanceSubscription:
                     string instanceName = _names.Instance(source.Topic!, source.Name);
-                    await GetQueue(instanceName).CreateAsync(InstanceMetadata(source.Topic!), cancellationToken).AnyContext();
+                    await CreateInstanceQueueAsync(instanceName, source.Topic!, cancellationToken).AnyContext();
                     Logger.LogDebug("Created instance subscription queue {QueueName} for topic {Topic}", instanceName, source.Topic);
                     receiver = new AzureStorageQueueMessageReceiver(this, source, options, instanceName, null);
                     break;
@@ -361,8 +362,38 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
         await SendToQueueAsync(deadLetterName, [message], () => DeadLetterMetadata(source), cancellationToken, NeverExpires).AnyContext();
     }
 
-    internal Task HeartbeatAsync(string queueName, string topic, CancellationToken cancellationToken) =>
-        GetQueue(queueName).SetMetadataAsync(InstanceMetadata(topic), cancellationToken);
+    internal async Task HeartbeatAsync(string queueName, string topic, CancellationToken cancellationToken)
+    {
+        var response = await GetQueue(queueName).SetMetadataAsync(InstanceMetadata(topic, out _), cancellationToken).AnyContext();
+        ReadStorageClock(response);
+    }
+
+    /// <summary>
+    /// Storage's time: the <c>Date</c> of the last response that had one, moved on by the time since, or the system
+    /// clock until then. Heartbeats are written and judged on it, so machines whose clocks disagree agree on which
+    /// instance subscriptions are stale.
+    /// </summary>
+    internal DateTimeOffset GetStorageNow() =>
+        Volatile.Read(ref _storageClock) is { } reading ? reading.Date + Stopwatch.GetElapsedTime(reading.Timestamp) : DateTimeOffset.UtcNow;
+
+    private void ReadStorageClock(Response response)
+    {
+        if (response.Headers.Date is { } date)
+            Volatile.Write(ref _storageClock, new AzureStorageQueueClockReading(date, Stopwatch.GetTimestamp()));
+    }
+
+    /// <summary>
+    /// Creates an instance subscription queue with a heartbeat, and writes the heartbeat again when the response shows
+    /// that the one written was off from Storage's time, as it is when this machine's clock is skewed and no response
+    /// was read before.
+    /// </summary>
+    private async Task CreateInstanceQueueAsync(string queueName, string topic, CancellationToken cancellationToken)
+    {
+        var response = await GetQueue(queueName).CreateAsync(InstanceMetadata(topic, out var heartbeat), cancellationToken).AnyContext();
+        ReadStorageClock(response);
+        if (response.Headers.Date is { } date && (date - heartbeat).Duration() > TimeSpan.FromSeconds(2))
+            await HeartbeatAsync(queueName, topic, cancellationToken).AnyContext();
+    }
 
     internal async Task DeleteQueueAsync(string queueName)
     {
@@ -489,8 +520,23 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     {
         var queues = new List<string>();
         List<string>? stale = null;
-        long staleBefore = TimeProvider.GetUtcNow().Subtract(Options.InstanceSubscriptionTimeout).ToUnixTimeSeconds();
-        await foreach (var item in Service.GetQueuesAsync(QueueTraits.Metadata, _names.TopicPrefix(topic), cancellationToken).ConfigureAwait(false))
+        await foreach (var page in Service.GetQueuesAsync(QueueTraits.Metadata, _names.TopicPrefix(topic), cancellationToken).AsPages().ConfigureAwait(false))
+        {
+            var response = page.GetRawResponse();
+            ReadStorageClock(response);
+            long staleBefore = (response.Headers.Date ?? GetStorageNow()).Subtract(Options.InstanceSubscriptionTimeout).ToUnixTimeSeconds();
+            AddSubscriptionQueues(page.Values, topic, staleBefore, queues, ref stale);
+        }
+
+        if (stale is not null)
+            _ = RemoveStaleInstancesAsync(topic, stale);
+
+        return queues;
+    }
+
+    private static void AddSubscriptionQueues(IEnumerable<QueueItem> items, string topic, long staleBefore, List<string> queues, ref List<string>? stale)
+    {
+        foreach (var item in items)
         {
             if (item.Metadata is null || !TryGet(item.Metadata, TopicMetadata, out string? itemTopic) || !String.Equals(itemTopic, topic, StringComparison.Ordinal))
                 continue;
@@ -510,11 +556,6 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
                     queues.Add(item.Name);
             }
         }
-
-        if (stale is not null)
-            _ = RemoveStaleInstancesAsync(topic, stale);
-
-        return queues;
     }
 
     private async Task RemoveStaleInstancesAsync(string topic, IReadOnlyList<string> queueNames)
@@ -599,12 +640,16 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
         [NameMetadata] = subscription
     };
 
-    private Dictionary<string, string> InstanceMetadata(string topic) => new()
+    private Dictionary<string, string> InstanceMetadata(string topic, out DateTimeOffset heartbeat)
     {
-        [KindMetadata] = InstanceKind,
-        [TopicMetadata] = topic,
-        [HeartbeatMetadata] = TimeProvider.GetUtcNow().ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
-    };
+        heartbeat = GetStorageNow();
+        return new Dictionary<string, string>
+        {
+            [KindMetadata] = InstanceKind,
+            [TopicMetadata] = topic,
+            [HeartbeatMetadata] = heartbeat.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
+        };
+    }
 
     private static Dictionary<string, string> DeadLetterMetadata(MessageSource source) => new()
     {
@@ -632,6 +677,9 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
             : new QueueServiceClient(options.ServiceUri, options.Credential, clientOptions);
     }
 }
+
+/// <summary>Storage's time as a response's <c>Date</c> gave it, and the <see cref="Stopwatch"/> timestamp when it was read.</summary>
+internal sealed record AzureStorageQueueClockReading(DateTimeOffset Date, long Timestamp);
 
 /// <summary>A message's text, and how long it stays invisible after it is sent.</summary>
 internal sealed record AzureStorageQueueEncodedMessage(string Text, TimeSpan Delay);

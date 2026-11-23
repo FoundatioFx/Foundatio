@@ -379,6 +379,26 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
     }
 
     [Fact]
+    public async Task InstanceSubscription_WhenTheClocksOfItsOwnerAndAPublisherDisagree_IsNotRemoved()
+    {
+        // Arrange: the owner's clock runs 5 seconds behind, the publisher's 5 seconds ahead, with a 6 second timeout.
+        string topic = NewName("skew");
+        var timeout = TimeSpan.FromSeconds(6);
+        await using var owner = new AzureStorageQueueMessageTransport(CreateOptions() with { InstanceSubscriptionTimeout = timeout, TimeProvider = new SkewedTimeProvider(TimeSpan.FromSeconds(-5)) });
+        await using var publisher = new AzureStorageQueueMessageTransport(CreateOptions() with { InstanceSubscriptionTimeout = timeout, TimeProvider = new SkewedTimeProvider(TimeSpan.FromSeconds(5)) });
+        await using var instance = await ((IMessageTransport)owner).CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "live"), new ReceiverOptions(), TestCancellationToken);
+
+        // Act and assert: publishes over more than a timeout all arrive.
+        var stopwatch = Stopwatch.StartNew();
+        for (int i = 0; stopwatch.Elapsed < timeout + TimeSpan.FromSeconds(2); i++)
+        {
+            await ((IMessageTransport)publisher).SendAsync(MessageDestination.Topic(topic), [Message("event", $"id-{i}")], TestCancellationToken);
+            await AssertOnlyReceivedAsync(instance, $"id-{i}");
+            await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task DisposingAnInstanceReceiver_DeletesItsQueue()
     {
         string topic = NewName("instance-gone");
@@ -499,6 +519,11 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
             names.Add(queue.Name);
 
         return names;
+    }
+
+    private sealed class SkewedTimeProvider(TimeSpan skew) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + skew;
     }
 
     /// <summary>Delays the responses of Update Message requests after Storage has applied them.</summary>

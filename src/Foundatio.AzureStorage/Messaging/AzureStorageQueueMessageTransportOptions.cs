@@ -57,7 +57,8 @@ public sealed record AzureStorageQueueMessageTransportOptions
     /// <summary>
     /// How long an instance subscription's queue outlives its receiver's last heartbeat before a publish or another
     /// receiver of the topic removes it, after its process died without disposing it. Heartbeats are sent every third
-    /// of it.
+    /// of it, and are written and judged on Storage's clock (the <c>Date</c> of its responses), so machines whose
+    /// clocks disagree do not remove each other's live instance subscriptions.
     /// </summary>
     public TimeSpan InstanceSubscriptionTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
