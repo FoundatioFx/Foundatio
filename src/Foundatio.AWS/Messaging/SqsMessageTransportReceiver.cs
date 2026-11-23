@@ -976,7 +976,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         {
             try
             {
-                await Task.Delay(interval, _transport.TimeProvider, token).AnyContext();
+                await Task.Delay(interval, token).AnyContext();
                 await _transport.HeartbeatAsync(instance.QueueUrl, token).AnyContext();
                 await _transport.SweepInstancesAsync(instance).AnyContext();
             }

@@ -960,7 +960,7 @@ public sealed class SqsMessageTransport : IMessageTransport
             var candidates = (listed.QueueUrls ?? []).Where(url => GetQueueName(url) != own.QueueName).ToArray();
             Random.Shared.Shuffle(candidates);
 
-            long staleBefore = TimeProvider.GetUtcNow().Subtract(Options.InstanceSubscriptionTimeout).ToUnixTimeSeconds();
+            long staleBefore = DateTimeOffset.UtcNow.Subtract(Options.InstanceSubscriptionTimeout).ToUnixTimeSeconds();
             var checks = await Task.WhenAll(candidates.Take(MaxInstanceChecksPerSweep).Select(async queueUrl =>
             {
                 Dictionary<string, string>? tags;
@@ -1024,7 +1024,8 @@ public sealed class SqsMessageTransport : IMessageTransport
         }
     }
 
-    private string GetHeartbeat() => TimeProvider.GetUtcNow().ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+    // Heartbeats are compared across processes, so they keep real time even when TimeProvider is a test's fake clock.
+    private static string GetHeartbeat() => DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
 
     private static string GetQueueName(string queueUrl) => queueUrl[(queueUrl.LastIndexOf('/') + 1)..];
 

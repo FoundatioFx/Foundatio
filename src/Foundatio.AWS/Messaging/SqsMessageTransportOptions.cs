@@ -45,7 +45,10 @@ public sealed record SqsMessageTransportOptions
     /// </summary>
     public TimeSpan InstanceSubscriptionTimeout { get; init; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>Used to turn <see cref="OutgoingMessage.DeliverAt"/> into a delay and to write instance heartbeats.</summary>
+    /// <summary>
+    /// Used to turn <see cref="OutgoingMessage.DeliverAt"/> into a delay. Instance heartbeats keep real time whatever this
+    /// is, because other processes compare them.
+    /// </summary>
     public TimeProvider? TimeProvider { get; init; }
 
     /// <summary>Receives the transport's logs. Null for no logging.</summary>
