@@ -513,6 +513,127 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
 
         Assert.IsType<SendReceipt>(Assert.Single(step.HandledMessages).Message);
         Assert.Equal(["a@b.com: Receipt for order 1"], host.Services.GetRequiredService<EmailSender>().Sent);
+        Assert.Equal(1, Volatile.Read(ref legacy));
+    }
+
+    [Theory]
+    [InlineData(false, "idle")]
+    [InlineData(true, "idle")]
+    [InlineData(true, "pending")]
+    [InlineData(true, "next")]
+    public async Task Waits_AfterALegacyBusPublish_WaitForTheLegacySubscriber(bool paused, string wait)
+    {
+        var host = await StartHarnessAsync(o => o.StartPaused = paused, s => s.AddFoundatioMessaging(m => m.AddLegacyMessageBus()));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var bus = host.Services.GetRequiredService<Foundatio.Messaging.IMessageBus>();
+        int handled = 0;
+        await bus.SubscribeAsync<Bounce>(async (_, ct) =>
+        {
+            await Task.Delay(200, ct);
+            Interlocked.Increment(ref handled);
+        }, TestCancellationToken);
+
+        await bus.PublishAsync(new Bounce(1), cancellationToken: TestCancellationToken);
+        if (wait == "next")
+            await host.Services.GetRequiredService<IMessageClient>().SendAsync(new SendReceipt(1, "a@b.com"), cancellationToken: TestCancellationToken);
+
+        var processed = wait switch
+        {
+            "pending" => await harness.ProcessPendingAsync(TimeSpan.FromSeconds(10), TestCancellationToken),
+            "next" => await harness.ProcessNextAsync(1, TimeSpan.FromSeconds(10), TestCancellationToken),
+            _ => null
+        };
+        if (processed is null)
+            await harness.WaitForIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(1, Volatile.Read(ref handled));
+        Assert.Equal(paused, harness.IsPaused);
+        if (wait == "next")
+            Assert.IsType<SendReceipt>(Assert.Single(processed!.HandledMessages).Message);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_WithOrderedGroupsAndFailures_RunsExactlyTheCountOfHandlers()
+    {
+        for (int round = 0; round < 5; round++)
+        {
+            int started = 0;
+            var host = await StartHarnessAsync(o =>
+            {
+                o.StartPaused = true;
+                o.RetryDelay = TimeSpan.Zero;
+                o.TransportCapabilities = new TransportCapabilities { OrderedGroups = true, MaxReceiveBatchSize = 10 };
+            }, s => s.AddFoundatioMessaging(m => m.AddConsumer<ImportBatch>(async (batch, _, ct) =>
+            {
+                Interlocked.Increment(ref started);
+                await Task.Delay(Random.Shared.Next(0, 5), ct);
+                if (batch.Items[0] % 4 == 0)
+                    throw new InvalidOperationException("Import failed");
+            }, new HandlerOptions { MaxConcurrency = 8, RetryPolicy = new RetryPolicy { MaxAttempts = 3 } })));
+            var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+            var messages = host.Services.GetRequiredService<IMessageClient>();
+            for (int i = 0; i < 12; i++)
+                await messages.SendAsync(new ImportBatch([i]), new SendOptions { GroupKey = $"g{i % 3}" }, TestCancellationToken);
+
+            int total = 0;
+            foreach (int count in new[] { 1, 3, 2, 5, 1, 4 })
+            {
+                var step = await harness.ProcessNextAsync<ImportBatch>(count, TimeSpan.FromSeconds(10), TestCancellationToken);
+                Assert.True(step.HandledMessages.Count == count, $"Round {round}: ProcessNextAsync({count}) recorded "
+                    + String.Join(", ", step.HandledMessages.Select(m => $"{m.Message} {m.Outcome}")));
+                total += count;
+            }
+
+            Assert.Equal(total, Volatile.Read(ref started));
+            Assert.Equal(total, harness.HandledMessages.Count);
+            await host.StopAsync(TestCancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessPendingAsync_WithARetryDelayOfZero_AlsoShortensAHandlersOwnRetryDelay()
+    {
+        var host = await StartHarnessAsync(o =>
+        {
+            o.StartPaused = true;
+            o.RetryDelay = TimeSpan.Zero;
+        }, s => s.AddFoundatioMessaging(m => m.AddConsumer<ImportBatch>((_, context, _) =>
+        {
+            if (context.Attempt == 1)
+                context.Retry(TimeSpan.FromMinutes(5));
+
+            return Task.CompletedTask;
+        })));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new ImportBatch([1]), cancellationToken: TestCancellationToken);
+
+        var processed = await harness.ProcessPendingAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal([MessageOutcome.Retried, MessageOutcome.Completed], processed.HandledMessages.Select(m => m.Outcome));
+    }
+
+    [Fact]
+    public async Task MessageAdmin_WhilePaused_PeeksAndReplaysDeadLetters()
+    {
+        var host = await StartHarnessAsync(o =>
+        {
+            o.StartPaused = true;
+            o.RetryDelay = TimeSpan.Zero;
+        });
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var queue = admin.GetQueue<SendReceipt>();
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new SendReceipt(7, "bounce@b.com"), cancellationToken: TestCancellationToken);
+        await harness.ProcessPendingAsync(cancellationToken: TestCancellationToken);
+
+        var letter = Assert.Single(await admin.PeekDeadLettersAsync(queue, cancellationToken: TestCancellationToken));
+        Assert.True(await admin.ReplayDeadLetterAsync(queue, letter.MessageId, TestCancellationToken));
+        Assert.Empty(await admin.PeekDeadLettersAsync(queue, cancellationToken: TestCancellationToken));
+        Assert.True(harness.IsPaused);
+
+        var replayed = await harness.ProcessPendingAsync(cancellationToken: TestCancellationToken);
+        Assert.Equal(MessageOutcome.DeadLettered, replayed.HandledMessages.Last().Outcome);
+        Assert.All(replayed.HandledMessages, m => Assert.Equal(7, Assert.IsType<SendReceipt>(m.Message).OrderId));
     }
 
     [Fact]

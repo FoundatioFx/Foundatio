@@ -60,6 +60,9 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
     /// <summary>Notified of sends and settled deliveries; set by the test harness.</summary>
     public IMessagingObserver? Observer { get; init; }
 
+    /// <summary>The legacy message bus of <c>AddLegacyMessageBus()</c>, once it is created; the test harness waits for its subscribers.</summary>
+    public LegacyMessageBusAdapter? LegacyBus { get; set; }
+
     /// <summary>Follows every delivery for monitoring.</summary>
     public required WorkTracker Tracker { get; init; }
 

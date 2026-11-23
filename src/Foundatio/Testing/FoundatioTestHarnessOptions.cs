@@ -63,7 +63,8 @@ public sealed class FoundatioTestHarnessOptions
 
     /// <summary>
     /// Replaces the delay of every retry policy, messaging's and jobs' defaults and each handler's and job type's own,
-    /// so a retried message or job runs again after this delay instead of its production backoff. Attempts and
+    /// and the delay a handler asks for with <c>context.Retry(delay)</c>, so a retried message or job runs again after
+    /// this delay instead of its production backoff. Attempts and
     /// <see cref="Resilience.RetryPolicy.ShouldRetry"/> are kept, and handlers that share a subscription are still
     /// checked with their own policies. With <see cref="TimeSpan.Zero"/>, retries run within one
     /// <see cref="FoundatioTestHarness.ProcessPendingAsync(System.TimeSpan?, System.Threading.CancellationToken)"/> call,

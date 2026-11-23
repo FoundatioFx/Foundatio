@@ -67,6 +67,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     private readonly SemaphoreSlim _startLock = new(1, 1);
     private readonly CancellationTokenSource _disposed = new();
     private MessageProcessor? _processor;
+    private volatile MessageProcessor[] _processors = [];
     private int _typeMisses;
 
     /// <summary>A legacy bus on <paramref name="transport"/> that shares nothing with <see cref="IMessageClient"/>.</summary>
@@ -78,6 +79,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     /// <exception cref="ArgumentException"><see cref="LegacyMessageBusOptions.MigratedMessageTypes"/> has a null entry.</exception>
     public LegacyMessageBusAdapter(MessagingRuntime runtime, SharedMessageBusOptions options) : this(runtime.Transport, runtime, options)
     {
+        runtime.LegacyBus = this;
     }
 
     private LegacyMessageBusAdapter(IMessageTransport transport, MessagingRuntime? runtime, SharedMessageBusOptions options)
@@ -97,6 +99,9 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
         _loggerFactory = options.LoggerFactory;
         _logger = options.LoggerFactory.CreateLogger<LegacyMessageBusAdapter>();
     }
+
+    /// <summary>The processors receiving for its subscribers: the legacy topic's and each shared topic's.</summary>
+    internal MessageProcessor[] GetProcessors() => _processors;
 
     /// <summary>How many legacy type names are cached; misses are bounded so foreign names cannot grow it without limit.</summary>
     internal int CachedTypeCount => _types.Count;
@@ -205,6 +210,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
 
             _processor = null;
             _sharedTopics.Clear();
+            _processors = [];
         }
         finally
         {
@@ -353,7 +359,18 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
         var processor = new MessageProcessor(_transport, MessageSource.InstanceSubscription(topic, "legacy-bus"), settings, new DeliveryHandler(this, isSharedTopic),
             new ProcessingStatusTracker(_timeProvider), _timeProvider, _loggerFactory);
 
-        await processor.StartAsync(cancellationToken).AnyContext();
+        // Listed before it starts receiving, so the test harness knows its receives from the first.
+        _processors = [.. _processors, processor];
+        try
+        {
+            await processor.StartAsync(cancellationToken).AnyContext();
+        }
+        catch
+        {
+            _processors = [.. _processors.Where(p => p != processor)];
+            throw;
+        }
+
         return processor;
     }
 

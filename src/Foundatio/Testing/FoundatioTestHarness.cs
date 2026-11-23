@@ -123,7 +123,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
     /// Stops handlers and the job worker from starting new work, and waits for the work already running to finish.
     /// Messages and jobs then wait, so a test can assert what is queued, until it runs them with
     /// <see cref="ProcessPendingAsync(TimeSpan?, CancellationToken)"/> or calls <see cref="ResumeProcessing"/>.
-    /// Receivers stay open, so subscriptions keep receiving published events.
+    /// Receivers stay open, so subscriptions keep receiving published events. <see cref="IMessageAdmin"/> still reads
+    /// and replays dead letters, and <c>AddLegacyMessageBus()</c> subscribers keep running; every wait and step waits for those.
     /// </summary>
     /// <exception cref="TimeoutException">Running work did not finish within <paramref name="timeout"/> (default 30 seconds).</exception>
     /// <exception cref="InvalidOperationException">The harness runs on a transport or job store shared with other hosts.</exception>
@@ -199,7 +200,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
         ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
         ThrowIfNotPaused();
 
-        // Only the app's handlers take steps, not the legacy message bus, which receives on the same transport.
+        // Only the app's handlers take steps, not the legacy message bus, which receives on the same transport and is never paused.
         var sources = Messaging?.GetProcessors().Select(p => p.Source).ToHashSet() ?? [];
         return ProcessAsync(new ProcessingScope(sources, null, count), "the next messages and jobs", timeout, cancellationToken);
     }
@@ -393,6 +394,17 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     void IMessagingObserver.OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error, MessageContext? context)
     {
+        // Released unstarted behind an earlier message of its group, which will be delivered again: no handler ran, so
+        // it is not recorded, and a ProcessNextAsync step gets back the budget it reserved for it.
+        if (outcome == "held")
+        {
+            if (_paused && _allowed is { } allowed && allowed.Includes(source) && allowed.Refund(1))
+                Registration?.Transport.NotifyReceiveGateChanged();
+
+            NotifyChanged();
+            return;
+        }
+
         string messageType = message.Headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty;
         MessageHandlerRegistration[] handlers = [];
         if (context is not null && _completedHandlers.TryGetValue(context, out var completed))
@@ -553,6 +565,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
                     busy.Add($"{processor.Source} is handling {inFlight} message(s)");
             }
 
+            AddLegacyBusWork(transport, busy, includeDelayed: true);
+
             if (busy.Count > 0 && messaging.HostState != ProcessingState.Running && GetRegisteredSources(messaging).Count > 0)
                 busy.Add(DescribeNotRunning("message handlers", messaging.HostState));
         }
@@ -680,6 +694,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
                 if (inFlight > 0)
                     pending.Add($"{processor.Source} is handling {inFlight} message(s)");
             }
+
+            AddLegacyBusWork(transport, pending, includeDelayed: false);
         }
 
         if (Jobs is { Store: InMemoryJobStore store } jobs)
@@ -700,6 +716,24 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
         }
 
         return pending.Count == 0 ? null : String.Join("; ", pending);
+    }
+
+    /// <summary>
+    /// Adds what the legacy message bus's subscribers have waiting or running. They are never paused, and steps do not
+    /// count them, but every wait waits for them, so a test that publishes on <see cref="IMessageBus"/> sees them run.
+    /// </summary>
+    private void AddLegacyBusWork(InMemoryMessageTransport transport, List<string> work, bool includeDelayed)
+    {
+        foreach (var processor in GetLegacyBusProcessors())
+        {
+            var (due, delayed, leased) = transport.CountByState(processor.Source);
+            int inFlight = Math.Max(leased, processor.InFlight);
+            int waiting = includeDelayed ? due + delayed : due;
+            if (waiting > 0)
+                work.Add($"the legacy message bus has {waiting} message(s) waiting on {processor.Source}");
+            if (inFlight > 0)
+                work.Add($"the legacy message bus is handling {inFlight} message(s) from {processor.Source}");
+        }
     }
 
     /// <summary>Describes the deliveries and job runs in progress, or returns null when there are none.</summary>
@@ -759,7 +793,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     int InMemoryMessageTransport.IReceiveGate.Reserve(MessageSource source, int maxMessages)
     {
-        if (!_paused)
+        if (!_paused || IsNeverPaused(source))
             return maxMessages;
 
         return _allowed is { } allowed && allowed.Includes(source) ? allowed.Reserve(maxMessages) : 0;
@@ -767,8 +801,17 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     bool InMemoryMessageTransport.IReceiveGate.Release(MessageSource source, int reserved, int taken)
     {
-        return _paused && _allowed is { } allowed && allowed.Includes(source) && allowed.Release(reserved, taken);
+        return _paused && !IsNeverPaused(source) && _allowed is { } allowed && allowed.Includes(source) && allowed.Release(reserved, taken);
     }
+
+    /// <summary>
+    /// Pausing holds the app's handlers, not <see cref="IMessageAdmin"/>'s reads of dead letters or the legacy message
+    /// bus's subscribers (cache invalidations, for one), which run on the same transport.
+    /// </summary>
+    private bool IsNeverPaused(MessageSource source) => source.Kind == MessageSourceKind.DeadLetter || GetLegacyBusProcessors().Any(p => p.Source.Equals(source));
+
+    /// <summary>The processors of <c>AddLegacyMessageBus()</c>'s subscribers, once it has any.</summary>
+    private MessageProcessor[] GetLegacyBusProcessors() => Messaging?.LegacyBus?.GetProcessors() ?? [];
 
     private bool CanClaim(string jobName) => !_paused || _allowed?.Includes(jobName) == true;
 
@@ -902,7 +945,6 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
         {
             "lease-lost" => "The lease was lost",
             "settle-failed" => "The message could not be settled",
-            "held" => "Released behind an earlier message of its group that will be delivered again",
             _ => "Interrupted by shutdown"
         },
         _ => reason ?? (error is null ? "Retry requested" : $"{error.GetType().Name}: {error.Message}")
@@ -971,6 +1013,16 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
                 Interlocked.Add(ref _reserved, -take);
             }
+        }
+
+        /// <summary>Gives back <paramref name="count"/> that were taken but did not run. Returns whether that made more available.</summary>
+        public bool Refund(int count)
+        {
+            if (budget is null)
+                return false;
+
+            Interlocked.Add(ref _remaining, count);
+            return true;
         }
 
         /// <summary>Gives back what a reservation did not use. Returns whether that made more available.</summary>

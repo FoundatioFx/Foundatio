@@ -257,7 +257,8 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         TimeSpan? retryIn;
         try
         {
-            retryIn = policy.CanRetry(error, context.Attempt) ? context.RetryDelay ?? policy.GetDelay(context.Attempt) : null;
+            // The test harness's RetryDelay also replaces a delay the handler asked for.
+            retryIn = policy.CanRetry(error, context.Attempt) ? context.RetryDelay is { } requested ? _runtime.Options.TestRetryDelay ?? requested : policy.GetDelay(context.Attempt) : null;
         }
         catch (Exception ex)
         {
