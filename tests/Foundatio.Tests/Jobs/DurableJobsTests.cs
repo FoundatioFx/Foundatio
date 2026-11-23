@@ -811,6 +811,40 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal(2, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
     }
 
+    /// <summary>
+    /// A schedule whose job name has 10,000 queued jobs: the overlap check reads occurrences' jobs by id, including on
+    /// a scheduler that just started and missed the previous occurrence, and never lists the name's queued jobs.
+    /// (It used to page through every queued job of the name, so a big backlog stalled the scheduler.)
+    /// </summary>
+    [Fact]
+    public async Task Cron_OverABacklogOfItsJobName_ChecksTheOccurrencesByIdWithoutListingQueuedJobs()
+    {
+        var store = new QueryCountingJobStore(_store);
+        await using var host = await StartAsync(j => j.AddCronJob("* * * * * *", new ResizeImage("cron.png", 1)), store: store, startHostedServices: false);
+        string name = JobNaming.GetName(typeof(ResizeImage));
+        for (int i = 0; i < 10_000; i++)
+            await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), new EnqueueOptions { RunAt = DateTimeOffset.UtcNow.AddHours(1) }, TestCancellationToken);
+        var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        await host.CreateScheduler().RunDueAsync(start, TestCancellationToken);
+        await host.CreateScheduler().RunDueAsync(start.AddSeconds(10), TestCancellationToken);
+        Assert.Equal(10_001, await _store.CountAsync(JobState.Queued, name, TestCancellationToken));
+
+        var first = (await _store.ClaimAsync(new JobClaimRequest { Names = [name], WorkerId = "test", LeaseDuration = TimeSpan.FromMinutes(1) }, TestCancellationToken))!;
+        Assert.Equal($"cron:{name}:20260101T000000Z", first.Id);
+        await _store.CompleteAsync(first.Id, first.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
+        await host.CreateScheduler().RunDueAsync(start.AddSeconds(20), TestCancellationToken);
+        var scheduler = host.CreateScheduler();
+        for (int second = 21; second <= 30; second++)
+            await scheduler.RunDueAsync(start.AddSeconds(second), TestCancellationToken);
+
+        Assert.Equal(10_001, await _store.CountAsync(JobState.Queued, name, TestCancellationToken));
+        Assert.Equal(1, await _store.CountAsync(JobState.Succeeded, name, TestCancellationToken));
+        Assert.NotNull(await _store.GetAsync($"cron:{name}:20260101T000020Z", TestCancellationToken));
+        // Only the first scheduler, which knew nothing of the schedule, listed running jobs, of which there are few.
+        Assert.Equal([JobState.Running], store.Queries.Select(q => q.State));
+    }
+
     [Fact]
     public async Task Cron_WithArguments_EnqueuesTheArgumentsJob()
     {
@@ -1351,6 +1385,18 @@ public class DurableJobsTests : TestWithLoggingBase
         public override Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default) => Store.CompleteAsync(jobId, claimToken, completion, cancellationToken);
         public override Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default) => Store.RequestCancellationAsync(jobId, retainFor, cancellationToken);
         public override Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => Store.DeleteAsync(jobId, cancellationToken);
+    }
+
+    /// <summary>Records each query.</summary>
+    private sealed class QueryCountingJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        public ConcurrentQueue<JobQuery> Queries { get; } = new();
+
+        public override Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
+        {
+            Queries.Enqueue(query);
+            return base.QueryAsync(query, cancellationToken);
+        }
     }
 
     /// <summary>Records each batch claim's requested and claimed counts.</summary>

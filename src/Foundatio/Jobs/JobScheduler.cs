@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Jobs.Store;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,9 @@ namespace Foundatio.Jobs;
 internal sealed class JobScheduler
 {
     private static readonly TimeSpan MaxSleep = TimeSpan.FromMinutes(1);
+
+    // How many skipped or missed occurrences the overlap check reads back when it doesn't know a schedule's newest job.
+    private const int MaxOccurrencesToCheck = 32;
 
     private readonly JobsRuntime _runtime;
     private readonly JobClient _client;
@@ -132,40 +136,65 @@ internal sealed class JobScheduler
         _logger.LogDebug("Scheduled {Schedule} occurrence {Occurrence} as job {JobId}", schedule.Name, due, jobId);
     }
 
-    /// <summary>Whether an earlier occurrence of the schedule is still queued or running, whichever instance created it.</summary>
+    /// <summary>
+    /// Whether an earlier occurrence of the schedule is still queued or running, whichever instance created it. Only
+    /// the newest of a schedule's jobs can be: without <see cref="CronJobOptions.AllowConcurrent"/>, each is created
+    /// only once the one before it has finished. Occurrence ids are the same on every instance, so the check reads jobs
+    /// by id and never lists the job name's jobs, however many of them are queued.
+    /// </summary>
     private async Task<bool> IsPreviousOccurrenceActiveAsync(CronSchedule schedule, DateTimeOffset due, CancellationToken cancellationToken)
     {
-        // Normally one read: the job of the occurrence just before this one. It is the newest job that can be active,
-        // and its id is the same on every instance, so instances agree even when a different one created it.
-        string? previousJobId = schedule.GetPreviousOccurrence(due) is { } previous ? schedule.GetJobId(previous) : null;
-        if (previousJobId is not null && await _runtime.Store.GetAsync(previousJobId, cancellationToken).AnyContext() is { } previousJob)
+        // Normally one read: the job of the occurrence just before this one.
+        var previous = schedule.GetPreviousOccurrence(due);
+        if (previous is { } previousOccurrence && await _runtime.Store.GetAsync(schedule.GetJobId(previousOccurrence), cancellationToken).AnyContext() is { } previousJob)
         {
-            _lastJobIds[schedule.Name] = previousJobId;
+            _lastJobIds[schedule.Name] = previousJob.Id;
             return !previousJob.State.IsTerminal();
         }
 
-        // The previous occurrence was skipped or missed, so an older one may still be running.
-        if (_lastJobIds.TryGetValue(schedule.Name, out string? lastJobId) && lastJobId != previousJobId
-            && await _runtime.Store.GetAsync(lastJobId, cancellationToken).AnyContext() is { } last && !last.State.IsTerminal())
+        // The previous occurrence was skipped or missed. The newest job is usually the last one this instance created
+        // or found running.
+        JobInfo? last = null;
+        if (_lastJobIds.TryGetValue(schedule.Name, out string? lastJobId))
         {
-            return true;
+            last = await _runtime.Store.GetAsync(lastJobId, cancellationToken).AnyContext();
+            if (last is not null && !last.State.IsTerminal())
+                return true;
         }
 
-        foreach (var status in new[] { JobState.Running, JobState.Queued })
+        // Another instance may have created a newer one: read the jobs of the occurrences since, up to a bound.
+        var ids = new List<string>(MaxOccurrencesToCheck);
+        for (var occurrence = previous; occurrence is { } before && ids.Count < MaxOccurrencesToCheck && (last is null || before > last.ScheduledFor);)
         {
-            string? continuation = null;
-            do
+            occurrence = schedule.GetPreviousOccurrence(before);
+            if (occurrence is { } older && (last is null || older > last.ScheduledFor))
+                ids.Add(schedule.GetJobId(older));
+        }
+
+        var jobs = await Task.WhenAll(ids.Select(id => _runtime.Store.GetAsync(id, cancellationToken))).AnyContext();
+        if (jobs.FirstOrDefault(j => j is not null) is { } newest)
+        {
+            _lastJobIds[schedule.Name] = newest.Id;
+            return !newest.State.IsTerminal();
+        }
+
+        if (last is not null)
+            return false;
+
+        // Nothing is known of this schedule here (this instance just started): an occurrence from longer ago may still be
+        // running. Running jobs are bounded by the workers' concurrency, unlike queued ones, so list those.
+        string? continuation = null;
+        do
+        {
+            var page = await _runtime.Store.QueryAsync(new JobQuery { Name = schedule.JobName, State = JobState.Running, Limit = 100, ContinuationToken = continuation }, cancellationToken).AnyContext();
+            if (page.Jobs.FirstOrDefault(j => j.ScheduleName == schedule.Name) is { } running)
             {
-                var page = await _runtime.Store.QueryAsync(new JobQuery { Name = schedule.JobName, State = status, Limit = 100, ContinuationToken = continuation }, cancellationToken).AnyContext();
-                if (page.Jobs.FirstOrDefault(j => j.ScheduleName == schedule.Name) is { } active)
-                {
-                    _lastJobIds[schedule.Name] = active.Id;
-                    return true;
-                }
+                _lastJobIds[schedule.Name] = running.Id;
+                return true;
+            }
 
-                continuation = page.ContinuationToken;
-            } while (continuation is not null);
-        }
+            continuation = page.ContinuationToken;
+        } while (continuation is not null);
 
         return false;
     }
