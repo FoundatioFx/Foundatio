@@ -248,7 +248,11 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         }
 
         if (error is null && context.DeadLetterReason is { } reason)
+        {
+            _logger.LogWarning("{MessageType} message {MessageId} from {Source} was dead-lettered by its handler on attempt {Attempt}: {Reason}",
+                context.MessageType, message.MessageId, _sourceName, context.Attempt, reason);
             return await DeadLetterOrDropAsync(delivery, reason, abortToken).AnyContext();
+        }
 
         if (error is null && !context.RetryRequested)
             return await CompleteAsync(delivery).AnyContext() ? ("success", null) : ("settle-failed", null);

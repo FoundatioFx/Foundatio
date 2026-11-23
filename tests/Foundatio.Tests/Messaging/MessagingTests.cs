@@ -540,6 +540,9 @@ public class MessagingTests : TestWithLoggingBase
         Assert.Equal([1, 1, 2], attempts.Order());
         var deadLetters = await ReceiveDeadLettersAsync(MessageSource.Queue(QueueName<PlaceOrder>()));
         Assert.Equal("negative order id", Assert.Single(deadLetters).Headers[KnownHeaders.DeadLetterReason]);
+        var warning = Assert.Single(Log.LogEntries, e => e.Message.Contains("dead-lettered by its handler", StringComparison.Ordinal));
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Warning, warning.LogLevel);
+        Assert.Contains("negative order id", warning.Message);
     }
 
     [Fact]
