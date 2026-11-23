@@ -122,6 +122,7 @@ public sealed class RedisJobStore : IJobStore
         AddIfPresent(values, "schedule", job.ScheduleName);
         AddIfPresent(values, "started", job.StartedAt);
         AddIfPresent(values, "completed", job.CompletedAt);
+        AddIfPresent(values, "retain", job.RetainUntil);
         AddIfPresent(values, "progress", job.Progress?.ToString(CultureInfo.InvariantCulture));
         AddIfPresent(values, "message", job.Message);
         AddIfPresent(values, "error", job.Error);
@@ -658,6 +659,7 @@ public sealed class RedisJobStore : IJobStore
             CreatedAt = Time("created") ?? default,
             AvailableAt = Time("available") ?? default,
             ScheduledFor = Time("scheduled") ?? Time("available") ?? default,
+            RetainUntil = Time("retain"),
             UpdatedAt = Time("updated") ?? default,
             StartedAt = Time("started"),
             CompletedAt = Time("completed"),

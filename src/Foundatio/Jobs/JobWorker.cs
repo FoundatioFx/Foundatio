@@ -467,10 +467,6 @@ internal sealed class JobWorker
     /// <param name="context">The run's context, whose last progress message the store holds as the job's message unless <paramref name="completion"/> sets one.</param>
     private async Task CompleteAsync(JobInfo job, JobCompletion completion, JobRunContext? context = null)
     {
-        // However short the retention, a CRON occurrence's job outlives the time a scheduler could create it again.
-        if (GetSchedule(job) is { } schedule && completion.State != JobState.Queued)
-            completion = completion.RetainingAtLeast(schedule.GetKeepUntil(job.ScheduledFor) - _runtime.TimeProvider.GetUtcNow());
-
         for (int attempt = 1; ; attempt++)
         {
             try

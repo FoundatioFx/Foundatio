@@ -1,9 +1,10 @@
 -- KEYS: job, running, queued, expiring, running index, running name index, target status index, target status name
 --       index, holders (the name's concurrency keys), waiting (the name's jobs waiting for a concurrency key)
 -- ARGV: id, claim token, status, retry delay us, refund attempt, retain us, has message, message, has error, error, name
--- Releases the job's concurrency key, making the job waiting longest for it claimable.
+-- Releases the job's concurrency key, making the job waiting longest for it claimable. A finished job is kept for the
+-- retention given, or until its 'retain' time if later.
 local id, status = ARGV[1], ARGV[3]
-local job = redis.call('HMGET', KEYS[1], 'status', 'token', 'name', 'index', 'attempt', 'available', 'scheduled', 'ckey')
+local job = redis.call('HMGET', KEYS[1], 'status', 'token', 'name', 'index', 'attempt', 'available', 'scheduled', 'ckey', 'retain')
 local concurrencyKey = present(job[8])
 if job[1] ~= RUNNING or job[2] ~= ARGV[2] or job[3] ~= ARGV[11] then
     return 0
@@ -31,7 +32,7 @@ if status == QUEUED then
     end
     redis.call('ZADD', KEYS[3], availableAt, id)
 else
-    local expiresAt = now + tonumber(ARGV[6])
+    local expiresAt = math.max(now + tonumber(ARGV[6]), tonumber(job[9] or 0))
     redis.call('HSET', KEYS[1], 'completed', str(now), 'expires', str(expiresAt))
     if ARGV[7] == '1' then
         redis.call('HSET', KEYS[1], 'message', ARGV[8])

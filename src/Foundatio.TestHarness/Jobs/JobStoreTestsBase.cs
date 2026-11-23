@@ -1115,6 +1115,37 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(job.Id, await Store.CreateAsync(job, TestCancellationToken));
     }
 
+    /// <summary>
+    /// A job created with <see cref="JobInfo.RetainUntil"/> is kept until then once it finishes, however short the
+    /// retention it finishes with: succeeded, failed or cancelled while queued. Without it, zero retention removes it.
+    /// </summary>
+    [Fact]
+    public async Task CompleteAndCancel_OfAJobWithRetainUntil_KeepTheJobUntilThen()
+    {
+        string name = NewName();
+        var retainUntil = DateTimeOffset.UtcNow.AddMinutes(10);
+        var succeeded = NewJob(name) with { RetainUntil = retainUntil };
+        var failed = NewJob(name) with { RetainUntil = retainUntil, AvailableAt = succeeded.AvailableAt.AddSeconds(1) };
+        var cancelled = NewJob(name) with { RetainUntil = retainUntil, AvailableAt = DateTimeOffset.UtcNow.AddHours(1) };
+        var expired = NewJob(name) with { RetainUntil = DateTimeOffset.UtcNow.AddMinutes(-1), AvailableAt = failed.AvailableAt.AddSeconds(1) };
+        foreach (var job in new[] { succeeded, failed, cancelled, expired })
+            await Store.CreateAsync(job, TestCancellationToken);
+
+        AssertClose(retainUntil, (await Store.GetAsync(succeeded.Id, TestCancellationToken))!.RetainUntil!.Value);
+        var claimed = await Store.ClaimBatchAsync(Claim(name), 3, TestCancellationToken);
+        Assert.Equal([succeeded.Id, failed.Id, expired.Id], claimed.Select(j => j.Id));
+        Assert.True(await Store.CompleteAsync(succeeded.Id, claimed[0].ClaimToken!, JobCompletion.Succeeded(TimeSpan.Zero), TestCancellationToken));
+        Assert.True(await Store.CompleteAsync(failed.Id, claimed[1].ClaimToken!, JobCompletion.Failed(TimeSpan.Zero, "failed"), TestCancellationToken));
+        Assert.True(await Store.CompleteAsync(expired.Id, claimed[2].ClaimToken!, JobCompletion.Succeeded(TimeSpan.Zero), TestCancellationToken));
+        Assert.True(await Store.RequestCancellationAsync(cancelled.Id, TimeSpan.Zero, TestCancellationToken));
+
+        Assert.Equal(JobState.Succeeded, (await Store.GetAsync(succeeded.Id, TestCancellationToken))?.State);
+        Assert.Equal(JobState.Failed, (await Store.GetAsync(failed.Id, TestCancellationToken))?.State);
+        Assert.Equal(JobState.Cancelled, (await Store.GetAsync(cancelled.Id, TestCancellationToken))?.State);
+        Assert.Null(await Store.GetAsync(expired.Id, TestCancellationToken));
+        Assert.Null(await Store.CreateAsync(succeeded, TestCancellationToken));
+    }
+
     /// <summary>A job name no other test uses.</summary>
     protected static string NewName() => $"job-{Guid.NewGuid():N}"[..16];
 

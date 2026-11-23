@@ -217,7 +217,7 @@ await jobs.EnqueueAsync<LegacyJob<QueueStatsJob>>();
 
 Finished jobs stay in the store so you can read their results: succeeded jobs for `JobWorkerOptions.RetainSucceededFor` (1 day by default), failed and cancelled jobs for `RetainFailedFor` (7 days). A succeeded job's arguments are dropped when it finishes; failed and cancelled jobs keep theirs so you can see what they were given.
 
-A job type's `JobTypeOptions.RetainSucceededFor` overrides the worker's for its jobs, and a schedule's `CronJobOptions.RetainSucceededFor` overrides both for the jobs it creates. Zero stops reads returning a job once it succeeds, so `WaitForCompletionAsync` can't see the result; use it for jobs nobody reads back. They apply in the process that runs the job, so register a schedule in the processes that run its job, as `AddCronJob<TJob>` does.
+A job type's `JobTypeOptions.RetainSucceededFor` overrides the worker's for its jobs, and a schedule's `CronJobOptions.RetainSucceededFor` overrides both for the jobs it creates. Zero stops reads returning a job once it succeeds, so `WaitForCompletionAsync` can't see the result; use it for jobs nobody reads back. They apply in the process that runs the job, so a schedule's `RetainSucceededFor` takes effect where the schedule is also registered, as `AddCronJob<TJob>` does.
 
 Every retained job takes memory in the store. With a 55-character correlation id, a `traceparent` header and a short message, a succeeded job measured about 1.6 KB in Redis, a failed job with 200 bytes of arguments about 2 KB, and a job in the in-memory store about 1.2 KB. Longer messages, errors and headers add to that. Memory grows with rate × retention: at 10 jobs a second, a day of succeeded jobs is 864,000 jobs, about 1.4 GB in Redis; at 100 a second, about 14 GB. In Redis, all of a store's jobs live on one cluster shard, so size that shard for it. Redis job keys carry no TTL; each process that runs workers deletes the expired ones about once a second, up to 5,000 at a time. Shorten retention for high-volume jobs:
 
@@ -229,7 +229,7 @@ j.Configure(o =>
 });
 ```
 
-A process that runs a schedule's jobs keeps each occurrence's job, however short the retention, until no scheduler can create that occurrence again: until the next occurrence is due, or `MisfireThreshold` has passed if sooner, plus a minute for clocks that differ. A process that schedules a job it doesn't run can't do that for the process that runs it, so startup checks that the schedule's `MisfireThreshold` is shorter than its own `RetainSucceededFor` and `RetainFailedFor`, which are assumed to match there.
+Each occurrence's job is kept, however short the retention, until no scheduler can create that occurrence again: until the next occurrence is due, or `MisfireThreshold` has passed if sooner, plus a minute for clocks that differ. The scheduler stores that time on the job and the store enforces it, so this holds whichever process runs the job and whatever retention it has.
 
 ## Startup
 

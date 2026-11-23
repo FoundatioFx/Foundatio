@@ -55,15 +55,6 @@ public static class JobsServiceCollectionExtensions
         var options = services.GetRequiredService<IOptions<JobWorkerOptions>>().Value;
         options.Validate();
 
-        // The worker here keeps the jobs of schedules it runs for as long as they could be created again; a schedule
-        // whose job runs elsewhere relies on the retention there, which is assumed to match this process's.
-        foreach (var schedule in registrations.Schedules.Values.Where(s => !registrations.Jobs.ContainsKey(s.JobName)))
-        {
-            var retention = options.RetainSucceededFor < options.RetainFailedFor ? options.RetainSucceededFor : options.RetainFailedFor;
-            if (schedule.Options.MisfireThreshold >= retention)
-                throw new InvalidOperationException($"The misfire threshold of schedule {schedule.Name} ({schedule.Options.MisfireThreshold}) must be shorter than job retention ({retention}), or an occurrence could run twice.");
-        }
-
         var store = services.GetService<TestHarnessRegistration>()?.Store
             ?? services.GetService<IJobStore>()
             ?? throw new InvalidOperationException("No job store is configured. Inside AddFoundatioJobs, call UseInMemory(), UseRedis() from Foundatio.Redis, or UseStore().");

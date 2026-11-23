@@ -400,7 +400,7 @@ public sealed class InMemoryJobStore : IJobStore
                     Error = completion.Error ?? (succeeded ? null : job.Error),
                     Payload = succeeded ? ReadOnlyMemory<byte>.Empty : job.Payload
                 });
-                Expire(entry, now.Add(completion.RetainFor));
+                Expire(entry, RetainedUntil(entry, now.Add(completion.RetainFor)));
             }
 
             return Task.FromResult(true);
@@ -422,7 +422,7 @@ public sealed class InMemoryJobStore : IJobStore
                 Unschedule(entry);
                 ReleaseQueued(entry);
                 Update(entry, entry.Job with { State = JobState.Cancelled, CancellationRequested = true, CompletedAt = now, UpdatedAt = now });
-                Expire(entry, now.Add(retainFor));
+                Expire(entry, RetainedUntil(entry, now.Add(retainFor)));
             }
             else
             {
@@ -516,6 +516,9 @@ public sealed class InMemoryJobStore : IJobStore
 
         entry.IsScheduled = false;
     }
+
+    /// <summary>When a finished job's retention runs out: <paramref name="expiresAt"/>, or its <see cref="JobInfo.RetainUntil"/> if later.</summary>
+    private static DateTimeOffset RetainedUntil(Entry entry, DateTimeOffset expiresAt) => entry.Job.RetainUntil > expiresAt ? entry.Job.RetainUntil.Value : expiresAt;
 
     private void Expire(Entry entry, DateTimeOffset expiresAt)
     {

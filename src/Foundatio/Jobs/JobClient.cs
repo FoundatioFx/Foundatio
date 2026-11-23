@@ -103,7 +103,7 @@ internal sealed class JobClient : IJobClient
         return true;
     }
 
-    internal async Task<JobHandle> CreateAsync(string name, ReadOnlyMemory<byte> payload, EnqueueOptions? options, CancellationToken cancellationToken, string? scheduleName = null)
+    internal async Task<JobHandle> CreateAsync(string name, ReadOnlyMemory<byte> payload, EnqueueOptions? options, CancellationToken cancellationToken, string? scheduleName = null, DateTimeOffset? retainUntil = null)
     {
         if (options?.JobId is { } requestedId)
             ArgumentException.ThrowIfNullOrWhiteSpace(requestedId, nameof(options));
@@ -131,7 +131,8 @@ internal sealed class JobClient : IJobClient
             CreatedAt = now,
             UpdatedAt = now,
             AvailableAt = availableAt,
-            ScheduledFor = runAt ?? default
+            ScheduledFor = runAt ?? default,
+            RetainUntil = retainUntil
         };
 
         // An immediate or delayed job is timed by the store's clock; this process's may be off it.

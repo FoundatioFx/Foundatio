@@ -60,6 +60,13 @@ public sealed record JobInfo
     /// </summary>
     public DateTimeOffset ScheduledFor { get; init; }
 
+    /// <summary>
+    /// When set, the store keeps the job at least until this time once it finishes, however short the retention it
+    /// finishes with. A CRON occurrence's job carries it, so no scheduler creates the occurrence again whichever
+    /// process runs the job and whatever its retention. Set at creation and never changed.
+    /// </summary>
+    public DateTimeOffset? RetainUntil { get; init; }
+
     /// <summary>When the store last changed the job.</summary>
     public DateTimeOffset UpdatedAt { get; init; }
 

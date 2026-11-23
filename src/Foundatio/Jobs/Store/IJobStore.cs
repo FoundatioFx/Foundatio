@@ -104,14 +104,16 @@ public interface IJobStore
     /// Finishes or requeues a running job if <paramref name="claimToken"/> still holds it, even when its lease has
     /// expired, as long as no other worker has claimed it since. Clears the claim. A job that succeeds drops its
     /// <see cref="JobInfo.Payload"/> and keeps the rest of its record until <see cref="JobCompletion.RetainFor"/> runs
-    /// out (at once for a zero <see cref="JobCompletion.RetainFor"/>), so retained history costs little; failed
+    /// out (at once for a zero <see cref="JobCompletion.RetainFor"/>), or until <see cref="JobInfo.RetainUntil"/> if that is
+    /// later, so retained history costs little; failed
     /// and cancelled jobs keep their payload. Releases the job's <see cref="JobInfo.ConcurrencyKey"/>, so the next job
     /// waiting for it becomes claimable.
     /// </summary>
     Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Cancels a queued job immediately (retaining it for <paramref name="retainFor"/> and releasing its
+    /// Cancels a queued job immediately (retaining it for <paramref name="retainFor"/>, or until
+    /// <see cref="JobInfo.RetainUntil"/> if that is later, and releasing its
     /// <see cref="JobInfo.DeduplicationKey"/>), or flags a running job so <see cref="RenewAsync"/> reports
     /// <see cref="JobLeaseStatus.CancellationRequested"/>. Returns false for finished or missing jobs.
     /// </summary>

@@ -700,23 +700,33 @@ public class DurableJobsTests : TestWithLoggingBase
         }
     }
 
-    [Fact]
-    public void MisfireThreshold_LongerThanRetention_ThrowsOnlyForASchedulesWhoseJobRunsElsewhere()
+    /// <summary>
+    /// A schedule of arguments registered in a process that doesn't run its job, run by a worker whose job type keeps
+    /// nothing: the occurrence's job carries how long it must be kept, so a scheduler that starts again within the
+    /// misfire threshold (a restart, a new instance) finds it and doesn't create it again.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Cron_OccurrenceRunByAWorkerWithoutTheSchedule_RunsOnceAfterASchedulerRestart(bool failed)
     {
-        var registered = new ServiceCollection().AddSingleton(_probe).AddFoundatioJobs(j => j
-            .UseInMemory()
-            .Configure(o => o.RetainSucceededFor = TimeSpan.FromMinutes(10))
-            .AddCronJob<TickJob>("* * * * *", new CronJobOptions { RetainSucceededFor = TimeSpan.Zero }));
-        using var provider = registered.BuildServiceProvider();
-        Assert.NotNull(provider.GetRequiredService<IJobClient>());
+        await using var scheduler = await StartAsync(j => j
+            .Configure(o => o.RetainSucceededFor = o.RetainFailedFor = TimeSpan.FromMinutes(1))
+            .AddCronJob("0 * * * *", new Flaky(failed ? 1 : 0)), startHostedServices: false);
+        await using var worker = await StartAsync(j => j
+            .Configure(o => o.RetainFailedFor = TimeSpan.FromMilliseconds(1))
+            .AddJob<FlakyJob>(new JobTypeOptions { RetainSucceededFor = TimeSpan.Zero, RetryPolicy = RetryPolicy.None }));
+        string name = JobNaming.GetName(typeof(Flaky));
 
-        var elsewhere = new ServiceCollection().AddFoundatioJobs(j => j
-            .UseInMemory()
-            .Configure(o => o.RetainSucceededFor = TimeSpan.FromMinutes(10))
-            .AddCronJob("* * * * *", new ResizeImage("a.png", 1)));
-        using var producer = elsewhere.BuildServiceProvider();
-        var error = Assert.Throws<InvalidOperationException>(() => producer.GetRequiredService<IJobClient>());
-        Assert.Contains("misfire threshold", error.Message);
+        var now = DateTimeOffset.UtcNow;
+        await scheduler.CreateScheduler().RunDueAsync(now, TestCancellationToken);
+        await WaitForAsync(async () => _probe.Runs.Count == 1 && await _store.CountAsync(JobState.Running, name, TestCancellationToken) == 0);
+
+        await scheduler.CreateScheduler().RunDueAsync(now.AddSeconds(5), TestCancellationToken);
+        await Task.Delay(500, TestCancellationToken);
+
+        Assert.Single(_probe.Runs);
+        Assert.Equal(1, await _store.CountAsync(failed ? JobState.Failed : JobState.Succeeded, name, TestCancellationToken));
     }
 
     [Fact]
