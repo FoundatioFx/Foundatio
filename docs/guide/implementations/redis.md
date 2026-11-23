@@ -326,7 +326,7 @@ await messageBus.SubscribeAsync<OrderCreatedEvent>(HandleOrder);
 
 ## Messages and Durable Jobs
 
-`RedisMessageTransport` runs [Messaging](/guide/messaging) on Redis Streams, and `RedisJobStore` stores [Durable Jobs](/guide/durable-jobs). Register both with `UseRedis`, which uses the `IConnectionMultiplexer` registered in DI:
+`RedisMessageTransport` runs [Messaging](/guide/messaging) on Redis Streams, and `RedisJobStore` stores [Durable Jobs](/guide/durable-jobs). `RedisJobStore` is the only job store instances share, so an app whose messaging runs on another transport stores its jobs here too. Register both with `UseRedis`, which uses the `IConnectionMultiplexer` registered in DI:
 
 ```csharp
 builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));

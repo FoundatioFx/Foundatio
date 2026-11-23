@@ -196,6 +196,8 @@ builder.Services.AddFoundatioMessaging(m => m
 
 See [Using SQS](/guide/messaging#using-sqs) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for options, delays, quotas and IAM actions.
 
+There is no SQS job store: store [Durable Jobs](/guide/durable-jobs#using-redis) in Redis, the only job store instances share, alongside this transport.
+
 ### Monitoring Messages
 
 The transport's `GetStatsAsync` reads SQS's approximate counts for the source's queue and its `-dlq` queue, two `GetQueueAttributes` calls. They can take a minute to catch up after sends and settlements.

@@ -72,6 +72,8 @@ Queues and subscriptions are quorum queues, topics are fanout exchanges, and ins
 
 See [Using RabbitMQ](/guide/messaging#using-rabbitmq) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ#message-transport-preview) for options, names and limits.
 
+There is no RabbitMQ job store: store [Durable Jobs](/guide/durable-jobs#using-redis) in Redis, the only job store instances share, alongside this transport.
+
 ## Monitoring
 
 `RabbitMQMessageTransport.GetStatsAsync(source)` counts a queue's or durable subscription's messages without declaring anything:

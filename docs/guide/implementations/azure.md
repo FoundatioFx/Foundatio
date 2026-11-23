@@ -149,6 +149,8 @@ builder.Services.AddFoundatioMessaging(m => m
 
 See [Using Azure Service Bus](/guide/messaging#using-azure-service-bus) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for the mapping, sessions, sizes and limits.
 
+There is no Service Bus or Storage job store: store [Durable Jobs](/guide/durable-jobs#using-redis) in Redis, the only job store instances share, alongside this transport.
+
 ### Monitoring Messages
 
 The transport's `GetStatsAsync` reads the queue's or subscription's runtime properties, one administration call.
