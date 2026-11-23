@@ -39,15 +39,42 @@ internal static class RedisConnectionRegistration
 
     /// <summary>
     /// Connects without failing when Redis is down at startup (it reconnects in the background), unless the connection
-    /// string sets <c>abortConnect</c>.
+    /// string sets <c>abortConnect</c>. The connection logs only its warnings and errors: StackExchange.Redis logs about
+    /// a hundred Information lines for each connect and disconnect, including a <c>SocketClosed</c> exception for each
+    /// socket on a normal shutdown. To see them, register an <see cref="IConnectionMultiplexer"/> whose
+    /// <see cref="ConfigurationOptions.LoggerFactory"/> is set and call <c>UseRedis()</c>.
     /// </summary>
     private static ConnectionMultiplexer Connect(string connectionString, ILoggerFactory? loggerFactory)
     {
         var configuration = ConfigurationOptions.Parse(connectionString);
         if (!connectionString.Contains("abortConnect", StringComparison.OrdinalIgnoreCase))
             configuration.AbortOnConnectFail = false;
-        configuration.LoggerFactory ??= loggerFactory;
+        if (loggerFactory is not null)
+            configuration.LoggerFactory ??= new WarningLoggerFactory(loggerFactory);
         return ConnectionMultiplexer.Connect(configuration);
+    }
+
+    /// <summary>Passes on only the log entries at <see cref="LogLevel.Warning"/> and above.</summary>
+    private sealed class WarningLoggerFactory(ILoggerFactory inner) : ILoggerFactory
+    {
+        public ILogger CreateLogger(string categoryName) => new WarningLogger(inner.CreateLogger(categoryName));
+
+        public void AddProvider(ILoggerProvider provider) => inner.AddProvider(provider);
+
+        public void Dispose() { }
+
+        private sealed class WarningLogger(ILogger inner) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => inner.BeginScope(state);
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning && inner.IsEnabled(logLevel);
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                if (IsEnabled(logLevel))
+                    inner.Log(logLevel, eventId, state, exception, formatter);
+            }
+        }
     }
 
     /// <summary>Marks the connection string the registered connection was made for. Never printed, as it may hold a password.</summary>

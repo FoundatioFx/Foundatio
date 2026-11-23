@@ -103,6 +103,47 @@ public class RedisMessagingBuilderExtensionsTests(ITestOutputHelper output) : Te
     }
 
     [Fact]
+    public async Task UseRedis_WithAConnectionString_LogsOnlyTheConnectionsWarningsAndErrors()
+    {
+        // Arrange
+        string? connectionString = Configuration.GetConnectionString("RedisConnectionString");
+        Assert.SkipWhen(String.IsNullOrEmpty(connectionString), "RedisConnectionString is not configured.");
+        var log = new TestLogger(o => o.DefaultLogLevel = LogLevel.Trace);
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(log);
+        services.AddFoundatioJobs(j => j.UseRedis(connectionString));
+        var provider = services.BuildServiceProvider();
+
+        // Act
+        var connection = provider.GetRequiredService<IConnectionMultiplexer>();
+        bool connected = connection.IsConnected;
+        await provider.DisposeAsync();
+
+        // Assert
+        Assert.True(connected);
+        Assert.DoesNotContain(log.LogEntries, e => e.CategoryName.StartsWith("StackExchange.Redis", StringComparison.Ordinal) && e.LogLevel < LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task UseRedis_WithAConnectionStringToADownServer_LogsTheConnectionErrors()
+    {
+        // Arrange
+        var log = new TestLogger(o => o.DefaultLogLevel = LogLevel.Trace);
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(log);
+        services.AddFoundatioJobs(j => j.UseRedis("127.0.0.1:1,connectTimeout=200,connectRetry=0"));
+        await using var provider = services.BuildServiceProvider();
+
+        // Act
+        var connection = provider.GetRequiredService<IConnectionMultiplexer>();
+
+        // Assert
+        Assert.False(connection.IsConnected);
+        Assert.Contains(log.LogEntries, e => e.CategoryName.StartsWith("StackExchange.Redis", StringComparison.Ordinal) && e.LogLevel >= LogLevel.Warning);
+        Assert.DoesNotContain(log.LogEntries, e => e.CategoryName.StartsWith("StackExchange.Redis", StringComparison.Ordinal) && e.LogLevel < LogLevel.Warning);
+    }
+
+    [Fact]
     public void UseRedis_WithAConnectionStringAndAnotherConnection_Throws()
     {
         var registered = new ServiceCollection();
