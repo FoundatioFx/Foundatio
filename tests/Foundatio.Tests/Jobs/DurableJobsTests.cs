@@ -1048,6 +1048,25 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal(["cancelled"], _probe.Events);
     }
 
+    /// <summary>
+    /// The first renewal hangs, ignoring its token, and every later one works: the hung call is given up on and retried
+    /// before the lease is lost, so the job keeps running and succeeds on its first attempt.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_WhenOneLeaseRenewalHangs_RetriesItBeforeTheLeaseIsLost()
+    {
+        var store = new HangingRenewalJobStore(_store);
+        await using var host = await StartAsync(j => j.Configure(o => o.LeaseDuration = TimeSpan.FromSeconds(3)).AddJob<LingerJob>(), store: store);
+
+        // Renewals every second; the worker would give up on the lease 2.25 s after its last renewal.
+        var handle = await host.Jobs.EnqueueAsync(new Linger(4000), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(15), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(1, job.Attempt);
+        Assert.True(store.Renewals >= 3, $"{store.Renewals} renewals");
+    }
+
     [Fact]
     public async Task Cron_WithoutConcurrencyOnTwoInstances_DoesNotStartAnOccurrenceWhileAnotherRuns()
     {
@@ -1468,6 +1487,21 @@ public class DurableJobsTests : TestWithLoggingBase
         public override Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default) => Store.CompleteAsync(jobId, claimToken, completion, cancellationToken);
         public override Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default) => Store.RequestCancellationAsync(jobId, retainFor, cancellationToken);
         public override Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => Store.DeleteAsync(jobId, cancellationToken);
+    }
+
+    /// <summary>A store whose first renewal never returns, ignoring its token.</summary>
+    private sealed class HangingRenewalJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        private int _renewals;
+
+        public int Renewals => Volatile.Read(ref _renewals);
+
+        public override Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+        {
+            return Interlocked.Increment(ref _renewals) == 1
+                ? new TaskCompletionSource<JobLeaseStatus>().Task
+                : base.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
+        }
     }
 
     /// <summary>Records each query.</summary>

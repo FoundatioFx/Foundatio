@@ -18,6 +18,7 @@ namespace Foundatio.Jobs;
 internal sealed class JobLeaseRenewer
 {
     private static readonly TimeSpan MaxRenewInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MaxRenewTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan TimerResolution = TimeSpan.FromMilliseconds(5);
 
     private readonly IJobStore _store;
@@ -27,6 +28,7 @@ internal sealed class JobLeaseRenewer
     private readonly long _interval;
     private readonly long _heldFor;
     private readonly long _timerResolution;
+    private readonly long _maxRenewTimeout;
     private readonly object _lock = new();
     private readonly HashSet<RunningJob> _jobs = [];
     private readonly ITimer _timer;
@@ -45,6 +47,7 @@ internal sealed class JobLeaseRenewer
         _interval = ToTimestamp(TimeSpan.FromTicks(Math.Min(leaseDuration.Ticks / 3, MaxRenewInterval.Ticks)));
         _heldFor = ToTimestamp(leaseDuration - TimeSpan.FromTicks(Math.Min(leaseDuration.Ticks / 4, MaxRenewInterval.Ticks)));
         _timerResolution = ToTimestamp(TimerResolution);
+        _maxRenewTimeout = ToTimestamp(MaxRenewTimeout);
 
         // Renewals must not run in the context (activity, job context) of whoever started the worker.
         if (ExecutionContext.IsFlowSuppressed())
@@ -190,7 +193,8 @@ internal sealed class JobLeaseRenewer
 
                 if (job.RenewAt <= now + _timerResolution)
                 {
-                    var cancellation = new CancellationTokenSource();
+                    // Give the call half of what is left, so a hung call is retried before the lease is lost.
+                    var cancellation = new CancellationTokenSource(ToTimeSpan(Math.Min((job.LostAt - now) / 2, _maxRenewTimeout)), _timeProvider);
                     job.RenewalCancellation = cancellation;
                     job.Renewal = Task.Run(() => RenewAsync(job, cancellation), CancellationToken.None);
                 }
@@ -221,7 +225,12 @@ internal sealed class JobLeaseRenewer
         Exception? error = null;
         try
         {
-            status = await _store.RenewAsync(job.Job.Id, job.Job.ClaimToken!, _leaseDuration, cancellation.Token).AnyContext();
+            // Stop waiting at the timeout even if the store ignores the token.
+            var renewal = _store.RenewAsync(job.Job.Id, job.Job.ClaimToken!, _leaseDuration, cancellation.Token);
+            if (!renewal.IsCompleted)
+                _ = renewal.ContinueWith(static task => _ = task.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+            status = await renewal.WaitAsync(cancellation.Token).AnyContext();
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -252,7 +261,8 @@ internal sealed class JobLeaseRenewer
                     if (status == JobLeaseStatus.CancellationRequested && !job.CancellationRequested)
                         cancel = job.CancellationRequested = true;
 
-                    job.RenewAt = now + _interval;
+                    // A failed or timed-out renewal is retried within what is left of the lease, not a full interval later.
+                    job.RenewAt = now + (status is null ? Math.Min(_interval, Math.Max(0, job.LostAt - now) / 2) : _interval);
                     ScheduleLocked(Math.Min(job.RenewAt, job.LostAt), now);
                 }
             }
@@ -264,6 +274,8 @@ internal sealed class JobLeaseRenewer
 
         if (error is not null)
             _logger.LogWarning(error, "Could not renew the lease on job {JobId}", job.Job.Id);
+        else if (status is null && !lost)
+            _logger.LogWarning("Renewing the lease on job {JobId} timed out; retrying", job.Job.Id);
 
         if (cancel)
         {
@@ -290,6 +302,8 @@ internal sealed class JobLeaseRenewer
         _timerDueAt = dueAt;
         _timer.Change(TimeSpan.FromTicks(Math.Max(0, (long)((dueAt - now) * ((double)TimeSpan.TicksPerSecond / _timeProvider.TimestampFrequency)))), Timeout.InfiniteTimeSpan);
     }
+
+    private TimeSpan ToTimeSpan(long timestamp) => TimeSpan.FromTicks(Math.Max(1, (long)(timestamp * ((double)TimeSpan.TicksPerSecond / _timeProvider.TimestampFrequency))));
 
     private long ToTimestamp(TimeSpan span) => (long)(span.Ticks * ((double)_timeProvider.TimestampFrequency / TimeSpan.TicksPerSecond));
 
