@@ -41,7 +41,7 @@ public static class MessagingServiceCollectionExtensions
             services.AddOptions();
             services.TryAddSingleton(WorkTracker.Create);
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
-            services.TryAddSingleton<IMessageClient>(sp => new MessageClient(sp.GetRequiredService<MessagingRuntime>(), registrations.Handlers));
+            services.TryAddSingleton(sp => CreateClient(sp, registrations));
             services.TryAddSingleton<IMessageAdmin>(sp => new MessageAdmin(sp.GetRequiredService<MessagingRuntime>(), registrations.Handlers));
             services.TryAddSingleton(sp => new MessagingStatus(sp.GetRequiredService<MessagingRuntime>(), registrations));
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, MessagingHostedService>());
@@ -49,6 +49,15 @@ public static class MessagingServiceCollectionExtensions
 
         configure?.Invoke(new FoundatioMessagingBuilder(services, registrations));
         return services;
+    }
+
+    private static IMessageClient CreateClient(IServiceProvider services, MessagingRegistrations registrations)
+    {
+        IMessageClient client = new MessageClient(services.GetRequiredService<MessagingRuntime>(), registrations.Handlers);
+        foreach (var decorate in registrations.ClientDecorators)
+            client = decorate(services, client);
+
+        return client;
     }
 
     private static MessagingRuntime CreateRuntime(IServiceProvider services, MessagingRegistrations registrations)

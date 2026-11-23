@@ -425,7 +425,7 @@ Assert.Equal(5, deadLetter.Attempt);           // the default policy's attempts,
 - `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored. While processing is [paused](#running-work-step-by-step), it runs the work until the app is idle and pauses again, so a base class shared by paused and running tests can call it either way.
 - `Reset()` forgets everything recorded, so counts and waits start again. When tests share a host, call `WaitForIdleAsync()` and then `Reset()` at the start of each test.
 
-To make a send or publish fail in a test, wrap the client in a `MessageClientDecorator` and override only that call; the other calls and overloads pass through:
+To make a send or publish fail in a test, write a `MessageClientDecorator` that overrides only that call (the other calls and overloads pass through), and register it with `DecorateClient`, so your handlers and endpoints get it when they resolve `IMessageClient`:
 
 ```csharp
 sealed class FailFirstPublish(IMessageClient inner) : MessageClientDecorator(inner)
@@ -437,13 +437,17 @@ sealed class FailFirstPublish(IMessageClient inner) : MessageClientDecorator(inn
             ? Task.FromException<string>(new InvalidOperationException("Simulated failure"))
             : base.PublishAsync(message, options, cancellationToken);
 }
+
+builder.Services.AddFoundatioMessaging(m => m.DecorateClient<FailFirstPublish>());   // or m.DecorateClient(inner => new FailFirstPublish(inner))
 ```
+
+`DecorateClient<T>()` creates the decorator with the client it wraps and any other constructor arguments from the service provider; each call wraps the client the calls before it made. The harness records what reaches the inner client, so the failed publish isn't recorded. The legacy `IMessageBus` doesn't go through the decorator.
 
 ### Clocks and retries
 
 The harness runs messaging, jobs, its transport and its store on the system clock, whatever `TimeProvider` your app registers, so a test that moves the app's clock doesn't leave messages leased or retries waiting for the time it moved. Waits always use real time.
 
-- `o.RetryDelay` replaces the delay of every retry policy: the defaults and each handler's and job's own, so a retried message or job runs again after that delay instead of its production backoff. Attempts and `ShouldRetry` are kept.
+- `o.RetryDelay` replaces the delay of every retry policy: the defaults and each handler's and job's own, and the delay a handler asks for with `context.Retry(delay)`, so a retried message or job runs again after that delay instead of its production backoff. Attempts and `ShouldRetry` are kept.
 - `o.TimeProvider = fakeTimeProvider` runs them on a clock the test moves instead: advance it to make delayed messages, delayed jobs and retries due.
 - Outside the harness, `MessagingOptions.TimeProvider` and `JobWorkerOptions.TimeProvider` (set with `m.Configure(...)` and `j.Configure(...)`) do the same for the app: they default to the registered `TimeProvider`.
 
@@ -480,9 +484,10 @@ Assert.Equal(JobState.Succeeded, Assert.Single(rest.JobRuns).State);
   await harness.ProcessNextAsync<ImportBatch>();                       // item 2
   ```
 
-  With `RetryDelay = TimeSpan.Zero`, each retry is the next step, and the last one dead-letters it. It throws unless processing is paused.
+  With `RetryDelay = TimeSpan.Zero`, each retry is the next step, and the last one dead-letters it. A step counts handler runs: a message of an ordered group that is handed back unstarted, because an earlier one of its group failed, isn't a step and isn't recorded. It throws unless processing is paused.
 - Delayed messages and jobs, and retries waiting out their delay, are not due: set `RetryDelay`, or advance a fake `TimeProvider`, then call it again.
 - While paused, receivers stay open, so subscriptions, instance subscriptions included, keep receiving what is published. `WaitForIdleAsync()` runs everything, delayed work and retries included, until the app is idle, then pauses again. `ResumeProcessing()` lets everything run on its own again.
+- Pausing holds your handlers and jobs only. `IMessageAdmin` still peeks and replays dead letters, and `AddLegacyMessageBus()` subscribers (`IMessageBus.SubscribeAsync`, which `HybridCacheClient` uses) keep running. Steps don't count their deliveries, but `WaitForIdleAsync()`, `ProcessPendingAsync()` and `ProcessNextAsync()` wait for them, so a test that publishes on `IMessageBus` sees its subscribers finish.
 
 ### Several hosts on one transport
 

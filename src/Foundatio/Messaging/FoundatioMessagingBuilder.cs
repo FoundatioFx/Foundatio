@@ -66,6 +66,36 @@ public sealed class FoundatioMessagingBuilder
     }
 
     /// <summary>
+    /// Wraps the <see cref="IMessageClient"/> the service provider gives out, so handlers, endpoints and jobs that
+    /// resolve it get <paramref name="decorate"/>'s client, for example a <see cref="MessageClientDecorator"/> that
+    /// fails a publish in a test. Each call wraps the client the calls before it made. The test harness records what
+    /// reaches the inner client, so a send the decorator fails is not recorded. The legacy <see cref="IMessageBus"/> of
+    /// <see cref="AddLegacyMessageBus"/> does not go through it.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// services.AddFoundatioMessaging(m => m.DecorateClient(inner => new FailFirstPublish(inner)));
+    /// </code>
+    /// </example>
+    public FoundatioMessagingBuilder DecorateClient(Func<IMessageClient, IMessageClient> decorate)
+    {
+        ArgumentNullException.ThrowIfNull(decorate);
+        _registrations.ClientDecorators.Add((_, inner) => decorate(inner) ?? throw new InvalidOperationException("A DecorateClient callback returned null."));
+        return this;
+    }
+
+    /// <summary>
+    /// Wraps the <see cref="IMessageClient"/> the service provider gives out in a <typeparamref name="TDecorator"/>,
+    /// created with the client it wraps and its other constructor arguments from the service provider; see
+    /// <see cref="DecorateClient(Func{IMessageClient, IMessageClient})"/>.
+    /// </summary>
+    public FoundatioMessagingBuilder DecorateClient<TDecorator>() where TDecorator : class, IMessageClient
+    {
+        _registrations.ClientDecorators.Add((services, inner) => ActivatorUtilities.CreateInstance<TDecorator>(services, inner));
+        return this;
+    }
+
+    /// <summary>
     /// Changes <see cref="MessagingOptions"/>. The same as <c>services.Configure&lt;MessagingOptions&gt;(configure)</c>:
     /// callbacks from both, and options bound from configuration, run in the order they were added when messaging is
     /// first resolved.

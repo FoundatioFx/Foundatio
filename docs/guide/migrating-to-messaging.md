@@ -214,4 +214,4 @@ The test harness replaces stepping a job by hand. With `AddFoundatioTestHarness(
 | Resetting queues between tests | `harness.Reset()` |
 | Calling a job's `RunAsync()` for a CRON job | `await harness.TriggerCronJobAsync("schedule-name")` |
 
-Without `StartPaused`, handlers run on their own; wait for them with `harness.WaitForHandledAsync<T>()` or `harness.WaitForIdleAsync()`. `WaitForIdleAsync()` also works while paused: it runs everything and pauses again, so a base class shared by paused and running tests needs no branch. See [Testing](./messaging#testing) and [Running work step by step](./messaging#running-work-step-by-step).
+Without `StartPaused`, handlers run on their own; wait for them with `harness.WaitForHandledAsync<T>()` or `harness.WaitForIdleAsync()`. `WaitForIdleAsync()` also works while paused: it runs everything and pauses again, so a base class shared by paused and running tests needs no branch. Subscribers of the legacy `IMessageBus` from `AddLegacyMessageBus()` are never paused, and every wait and step waits for them too. See [Testing](./messaging#testing) and [Running work step by step](./messaging#running-work-step-by-step).

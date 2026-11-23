@@ -53,6 +53,48 @@ public class MessageClientDecoratorTests : TestWithLoggingBase
         await host.StopAsync(TestCancellationToken);
     }
 
+    [Fact]
+    public async Task DecorateClient_GivesHandlersTheDecoratedClient_InTheOrderTheyWereAdded()
+    {
+        var calls = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders().AddTestLogger(_output);
+        builder.Services.AddSingleton(calls);
+        builder.Services.AddFoundatioMessaging(m => m
+            .UseServiceName("orders")
+            .AddConsumer<ShipOrder>(async (order, context, ct) => await context.Services.GetRequiredService<IMessageClient>().PublishAsync(new OrderCancelled(order.OrderId), cancellationToken: ct))
+            .DecorateClient<FailFirstPublish>()
+            .DecorateClient(inner => new RecordingClient(inner, calls)));
+        builder.Services.AddFoundatioTestHarness(o => o.RetryDelay = TimeSpan.Zero);
+        using var host = builder.Build();
+        await host.StartAsync(TestCancellationToken);
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        var client = Assert.IsType<RecordingClient>(host.Services.GetRequiredService<IMessageClient>());
+        await client.SendAsync(new ShipOrder(1), cancellationToken: TestCancellationToken);
+        await harness.WaitForIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal([MessageOutcome.Retried, MessageOutcome.Completed], harness.HandledMessages.Select(m => m.Outcome));
+        Assert.Equal([1], harness.Published<OrderCancelled>().Select(o => o.OrderId));
+        Assert.Equal(["send", "publish", "publish"], calls);
+        await host.StopAsync(TestCancellationToken);
+    }
+
+    private sealed class RecordingClient(IMessageClient inner, System.Collections.Concurrent.ConcurrentQueue<string> calls) : MessageClientDecorator(inner)
+    {
+        public override Task<string> SendAsync<T>(T message, SendOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            calls.Enqueue("send");
+            return base.SendAsync(message, options, cancellationToken);
+        }
+
+        public override Task<string> PublishAsync<T>(T message, PublishOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            calls.Enqueue("publish");
+            return base.PublishAsync(message, options, cancellationToken);
+        }
+    }
+
     private sealed class FailFirstPublish(IMessageClient inner) : MessageClientDecorator(inner)
     {
         private int _publishes;
