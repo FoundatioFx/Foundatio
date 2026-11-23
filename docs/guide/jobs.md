@@ -122,10 +122,10 @@ public class MaintenanceJob : JobWithLockBase
 
     protected override Task<ILock?> GetLockAsync(CancellationToken cancellationToken)
     {
-        // Pass an already-cancelled token so AcquireAsync attempts the lock
+        // Pass an already-cancelled token so TryAcquireAsync attempts the lock
         // exactly once without waiting. If the lock is held by another instance,
         // it returns null immediately and this run is skipped.
-        return _lockProvider.AcquireAsync(
+        return _lockProvider.TryAcquireAsync(
             nameof(MaintenanceJob),
             timeUntilExpires: TimeSpan.FromMinutes(15),
             cancellationToken: new CancellationToken(true));
@@ -140,12 +140,12 @@ public class MaintenanceJob : JobWithLockBase
 }
 ```
 
-> **Why `new CancellationToken(true)`?** `ILockProvider.AcquireAsync` uses the cancellation token to decide whether to wait for a busy lock. A token that is already cancelled tells the provider "try once — if the lock is held, return `null` immediately." This is the standard pattern for jobs that run on an interval and should simply skip the current iteration if another instance is already running.
+> **Why `TryAcquireAsync` with `new CancellationToken(true)`?** `ILockProvider.TryAcquireAsync` uses the cancellation token to decide whether to wait for a busy lock. A token that is already cancelled tells the provider "try once — if the lock is held, return `null` immediately." `AcquireAsync` would throw `LockAcquisitionTimeoutException` instead. This is the standard pattern for jobs that run on an interval and should simply skip the current iteration if another instance is already running.
 
 **`JobWithLockBase` vs manual locking in `JobBase`:**
 
 - Use **`JobWithLockBase`** when the *entire run* must be single-instance. The lock wraps the full execution and is released automatically — even on exceptions. Set `timeUntilExpires` in `GetLockAsync` to at least 2-3x your expected run duration so the lock self-heals after a crash but doesn't expire during normal operation.
-- Use **manual `ILockProvider.AcquireAsync`** inside `JobBase` when you need finer-grained control — for example, locking individual resources while allowing the job itself to run on multiple servers:
+- Use **manual `ILockProvider.TryAcquireAsync`** inside `JobBase` when you need finer-grained control — for example, locking individual resources while allowing the job itself to run on multiple servers:
 
 ```csharp
 public class ResourceSyncJob : JobBase
@@ -177,7 +177,7 @@ public class ResourceSyncJob : JobBase
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            await using var lck = await _locker.AcquireAsync(
+            await using var lck = await _locker.TryAcquireAsync(
                 $"resource-sync:{resource.Id}",
                 cancellationToken: new CancellationToken(true));
 
