@@ -1373,16 +1373,18 @@ public class MessageProcessorTests : TestWithLoggingBase
         var processor = GetProcessor(consumer);
         await WaitForAsync(() => Volatile.Read(ref handled) == 2 && processor.InFlight == 0 && transport.ReceivesInFlight == 1, TimeSpan.FromSeconds(5));
 
-        // The idle long poll outlasts the lock before a message arrives, so the message reports a lease that is already over.
+        // The idle long poll outlasts the lock before a message arrives, so the message reports a lease that is already
+        // over. It counts as lost, so it is released without running its handler.
         time.Advance(lockDuration + TimeSpan.FromSeconds(1));
         await consumer.Client.SendAsync(new RenewedCommand(-3), cancellationToken: TestCancellationToken);
-        await WaitForAsync(() => Volatile.Read(ref handled) == 3 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+        await WaitForAsync(() => transport.ReceivesInFlight == 1 && processor.InFlight == 0 && Log.LogEntries.Any(e => e.Message.StartsWith("Lost the lease", StringComparison.Ordinal)), TimeSpan.FromSeconds(5));
+        Assert.Equal(2, Volatile.Read(ref handled));
 
         await consumer.Client.SendBatchAsync(Enumerable.Range(0, 4).Select(i => new RenewedCommand(i)), cancellationToken: TestCancellationToken);
         await WaitForAsync(() => Volatile.Read(ref running) == 2 && processor.GetStatus().Buffered > 0, TimeSpan.FromSeconds(5));
 
         gate.SetResult();
-        await WaitForAsync(() => Volatile.Read(ref handled) == 7 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
+        await WaitForAsync(() => Volatile.Read(ref handled) == 6 && processor.InFlight == 0, TimeSpan.FromSeconds(5));
     }
 
     [Fact]
