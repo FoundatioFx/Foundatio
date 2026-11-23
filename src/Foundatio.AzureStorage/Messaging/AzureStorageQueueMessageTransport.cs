@@ -165,16 +165,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
                     break;
                 default:
                     var subscriptions = await GetSubscriptionQueuesAsync(destination.Name, cancellationToken).AnyContext();
-                    if (subscriptions.Count == 1)
-                    {
-                        await SendToQueueAsync(subscriptions[0], encoded, null, cancellationToken).AnyContext();
-                    }
-                    else if (subscriptions.Count > 1)
-                    {
-                        await Parallel.ForEachAsync(subscriptions, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, MaxRequestsInFlight / encoded.Length), CancellationToken = cancellationToken },
-                            (queue, token) => new ValueTask(SendToQueueAsync(queue, encoded, null, token))).AnyContext();
-                    }
-
+                    await PublishAsync(destination.Name, subscriptions, encoded, cancellationToken).AnyContext();
                     break;
             }
         }
@@ -355,6 +346,8 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
 
     internal static bool IsQueueNotFound(RequestFailedException ex) => ex.Status == 404 && ex.ErrorCode == QueueErrorCode.QueueNotFound.ToString();
 
+    private static bool IsQueueBeingDeleted(RequestFailedException ex) => ex.Status == 409 && ex.ErrorCode == QueueErrorCode.QueueBeingDeleted.ToString();
+
     /// <summary>Sends a dead letter, which never expires, whatever <see cref="AzureStorageQueueMessageTransportOptions.MessageTimeToLive"/> is: it is kept until it is replayed or deleted.</summary>
     internal async Task SendDeadLetterAsync(string deadLetterName, MessageSource source, string text, CancellationToken cancellationToken)
     {
@@ -453,10 +446,58 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     }
 
     /// <summary>
-    /// Sends the messages to the queue, as many at once as <see cref="MaxRequestsInFlight"/> allows, creating the queue
-    /// with <paramref name="metadata"/> when Storage reports it missing (or with the subscription's when null).
+    /// Sends a copy of the messages to each of the topic's subscription queues. An instance subscription queue removed
+    /// since the listing (its receiver was disposed, or it was swept) is skipped, and a durable one is created again. A
+    /// publish is not atomic: one queue failing does not stop the others, and once every send has finished, the failures
+    /// are thrown together, naming their queues; the other subscriptions got the messages, so a retry sends them a second copy.
     /// </summary>
-    private async Task SendToQueueAsync(string queueName, IReadOnlyList<AzureStorageQueueEncodedMessage> messages, Func<IDictionary<string, string>>? metadata, CancellationToken cancellationToken, TimeSpan? timeToLive = null)
+    private async Task PublishAsync(string topic, IReadOnlyList<AzureStorageQueueSubscriptionQueue> subscriptions, IReadOnlyList<AzureStorageQueueEncodedMessage> messages, CancellationToken cancellationToken)
+    {
+        if (subscriptions.Count == 1)
+        {
+            await SendToSubscriptionQueueAsync(topic, subscriptions[0], messages, cancellationToken).AnyContext();
+            return;
+        }
+
+        if (subscriptions.Count == 0)
+            return;
+
+        var failures = new ConcurrentQueue<(string QueueName, Exception Error)>();
+        await Parallel.ForEachAsync(subscriptions, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, MaxRequestsInFlight / messages.Count), CancellationToken = cancellationToken }, async (subscription, token) =>
+        {
+            try
+            {
+                await SendToSubscriptionQueueAsync(topic, subscription, messages, token).AnyContext();
+            }
+            catch (Exception ex) when (!token.IsCancellationRequested)
+            {
+                failures.Enqueue((subscription.QueueName, ex));
+            }
+        }).AnyContext();
+
+        if (failures.IsEmpty)
+            return;
+
+        var failed = failures.ToArray();
+        throw new MessageBusException($"Could not publish to {failed.Length} of the {subscriptions.Count} subscription queues of topic {topic} ({String.Join(", ", failed.Select(f => f.QueueName))}); " +
+            $"the others got the message, so a retry sends them a second copy: {failed[0].Error.Message}", new AggregateException(failed.Select(f => f.Error)));
+    }
+
+    private Task SendToSubscriptionQueueAsync(string topic, AzureStorageQueueSubscriptionQueue subscription, IReadOnlyList<AzureStorageQueueEncodedMessage> messages, CancellationToken cancellationToken)
+    {
+        if (subscription.IsInstance)
+            return SendToQueueAsync(subscription.QueueName, messages, null, cancellationToken, skipIfMissing: true);
+
+        return SendToQueueAsync(subscription.QueueName, messages, subscription.Subscription is { } name ? () => SubscriptionMetadata(topic, name) : null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends the messages to the queue, as many at once as <see cref="MaxRequestsInFlight"/> allows, creating the queue
+    /// with <paramref name="metadata"/> when Storage reports it missing, or, with <paramref name="skipIfMissing"/>,
+    /// sending nothing more to it; otherwise a missing queue throws.
+    /// </summary>
+    private async Task SendToQueueAsync(string queueName, IReadOnlyList<AzureStorageQueueEncodedMessage> messages, Func<IDictionary<string, string>>? metadata, CancellationToken cancellationToken,
+        TimeSpan? timeToLive = null, bool skipIfMissing = false)
     {
         var queue = GetQueue(queueName);
         var messageTimeToLive = timeToLive ?? TimeToLive;
@@ -468,6 +509,11 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
                 try
                 {
                     await queue.SendMessageAsync(message.Text, message.Delay > TimeSpan.Zero ? message.Delay : null, messageTimeToLive, token).AnyContext();
+                    return;
+                }
+                catch (RequestFailedException ex) when (skipIfMissing && (IsQueueNotFound(ex) || IsQueueBeingDeleted(ex)))
+                {
+                    Logger.LogDebug("Instance subscription queue {QueueName} was removed during a publish; skipping it", queueName);
                     return;
                 }
                 catch (RequestFailedException ex) when (IsQueueNotFound(ex) && attempt < 3 && metadata is not null)
@@ -516,9 +562,9 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     /// Lists the queues subscribed to the topic, with one call (a page per 5,000 queues), skipping instance subscription
     /// queues whose heartbeat lapsed and removing them in the background.
     /// </summary>
-    private async Task<IReadOnlyList<string>> GetSubscriptionQueuesAsync(string topic, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<AzureStorageQueueSubscriptionQueue>> GetSubscriptionQueuesAsync(string topic, CancellationToken cancellationToken)
     {
-        var queues = new List<string>();
+        var queues = new List<AzureStorageQueueSubscriptionQueue>();
         List<string>? stale = null;
         await foreach (var page in Service.GetQueuesAsync(QueueTraits.Metadata, _names.TopicPrefix(topic), cancellationToken).AsPages().ConfigureAwait(false))
         {
@@ -534,7 +580,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
         return queues;
     }
 
-    private static void AddSubscriptionQueues(IEnumerable<QueueItem> items, string topic, long staleBefore, List<string> queues, ref List<string>? stale)
+    private static void AddSubscriptionQueues(IEnumerable<QueueItem> items, string topic, long staleBefore, List<AzureStorageQueueSubscriptionQueue> queues, ref List<string>? stale)
     {
         foreach (var item in items)
         {
@@ -544,7 +590,8 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
             TryGet(item.Metadata, KindMetadata, out string? kind);
             if (kind == SubscriptionKind)
             {
-                queues.Add(item.Name);
+                TryGet(item.Metadata, NameMetadata, out string? subscription);
+                queues.Add(new AzureStorageQueueSubscriptionQueue(item.Name, IsInstance: false, subscription));
             }
             else if (kind == InstanceKind)
             {
@@ -553,7 +600,7 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
                 if (isStale)
                     (stale ??= []).Add(item.Name);
                 else
-                    queues.Add(item.Name);
+                    queues.Add(new AzureStorageQueueSubscriptionQueue(item.Name, IsInstance: true, null));
             }
         }
     }
@@ -680,6 +727,9 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
 
 /// <summary>Storage's time as a response's <c>Date</c> gave it, and the <see cref="Stopwatch"/> timestamp when it was read.</summary>
 internal sealed record AzureStorageQueueClockReading(DateTimeOffset Date, long Timestamp);
+
+/// <summary>A queue a publish sends a copy to: an instance subscription's, or the durable subscription's named <paramref name="Subscription"/>.</summary>
+internal readonly record struct AzureStorageQueueSubscriptionQueue(string QueueName, bool IsInstance, string? Subscription);
 
 /// <summary>A message's text, and how long it stays invisible after it is sent.</summary>
 internal sealed record AzureStorageQueueEncodedMessage(string Text, TimeSpan Delay);

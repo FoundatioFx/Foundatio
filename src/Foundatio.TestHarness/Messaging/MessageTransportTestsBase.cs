@@ -931,6 +931,51 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertOnlyReceivedAsync(late, "id-late");
     }
 
+    /// <summary>
+    /// Publishes succeed while instance subscribers of the topic open and close in another process, as they do on every
+    /// deploy and scale-in, and an instance subscription open throughout gets every one of them.
+    /// </summary>
+    [Fact]
+    public async Task Publish_WhileInstanceSubscribersComeAndGo_SucceedsAndReachesTheOpenOnes()
+    {
+        string topic = NewName("churn");
+        await using var steady = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "steady"));
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        var published = new ConcurrentBag<string>();
+        var publishers = Enumerable.Range(0, 2).Select(publisher => Task.Run(async () =>
+        {
+            for (int i = 0; i < 200 && !stop.IsCancellationRequested; i++)
+            {
+                string id = $"churn-{publisher}-{i}";
+                await Transport.SendAsync(MessageDestination.Topic(topic), [Message("churn", id)], TestCancellationToken);
+                published.Add(id);
+                await Task.Delay(TimeSpan.FromMilliseconds(10), TestCancellationToken);
+            }
+        }, TestCancellationToken)).ToList();
+
+        for (int i = 0; i < 5; i++)
+        {
+            var instance = await PeerTransport.CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "churn"), new ReceiverOptions(), TestCancellationToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), TestCancellationToken);
+            await instance.DisposeAsync();
+        }
+
+        await stop.CancelAsync();
+        await Task.WhenAll(publishers);
+
+        var received = new HashSet<string>(StringComparer.Ordinal);
+        var deadline = DateTime.UtcNow + DeliveryTimeout;
+        while (!published.All(received.Contains))
+        {
+            Assert.True(DateTime.UtcNow < deadline, $"The open instance subscription got {received.Count} of {published.Count} publishes within {DeliveryTimeout}.");
+            foreach (var message in await steady.ReceiveAsync(100, TimeSpan.FromSeconds(1), TestCancellationToken))
+            {
+                received.Add(message.MessageId);
+                await steady.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+    }
+
     /// <summary>Publishing to a topic without subscriptions succeeds.</summary>
     [Fact]
     public Task Publish_WithoutSubscriptions_Succeeds()

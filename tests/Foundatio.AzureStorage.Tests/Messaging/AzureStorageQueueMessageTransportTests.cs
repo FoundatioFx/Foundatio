@@ -399,6 +399,29 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
     }
 
     [Fact]
+    public async Task Publish_WhenOneSubscriptionQueueFails_SendsToTheOthersAndNamesTheFailedQueue()
+    {
+        // Arrange: sends to the billing subscription's queue are refused.
+        string topic = NewName("partial");
+        string failing = Names.Subscription(topic, "billing");
+        var refuse = new RefuseSendsTo(failing);
+        await using var transport = new AzureStorageQueueMessageTransport(CreateOptions() with { ConfigureClient = o => o.AddPolicy(refuse, HttpPipelinePosition.PerCall) });
+        await using var billing = await CreateReceiverAsync(MessageSource.Subscription(topic, "billing"));
+        await using var shipping = await CreateReceiverAsync(MessageSource.Subscription(topic, "shipping"));
+        await using var instance = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "live"));
+
+        // Act
+        var ex = await Assert.ThrowsAsync<MessageBusException>(() => ((IMessageTransport)transport).SendAsync(MessageDestination.Topic(topic), [Message("event", "id-event")], TestCancellationToken));
+
+        // Assert
+        Assert.Contains(failing, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("1 of the 3", ex.Message, StringComparison.Ordinal);
+        await AssertOnlyReceivedAsync(shipping, "id-event");
+        await AssertOnlyReceivedAsync(instance, "id-event");
+        await AssertNothingReceivedAsync(billing, TimeSpan.FromMilliseconds(500));
+    }
+
+    [Fact]
     public async Task DisposingAnInstanceReceiver_DeletesItsQueue()
     {
         string topic = NewName("instance-gone");
@@ -560,6 +583,17 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
             string? value = System.Web.HttpUtility.ParseQueryString(uri.Query)["visibilitytimeout"];
             lock (Seconds)
                 Seconds.Add(Int32.Parse(value!, CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>Sends the requests that put messages on one queue to an invalid queue name instead, which Storage refuses.</summary>
+    private sealed class RefuseSendsTo(string queueName) : HttpPipelineSynchronousPolicy
+    {
+        public override void OnSendingRequest(HttpMessage message)
+        {
+            var uri = message.Request.Uri.ToUri();
+            if (message.Request.Method == RequestMethod.Post && uri.AbsolutePath.EndsWith($"/{queueName}/messages", StringComparison.Ordinal))
+                message.Request.Uri.Reset(new Uri(uri.ToString().Replace($"/{queueName}/", "/Invalid--Name/", StringComparison.Ordinal)));
         }
     }
 
