@@ -487,6 +487,31 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
     }
 
     [Fact]
+    public async Task AbandonAndRenew_OfAMessageExpiringSooner_KeepItInvisibleOnlyUntilJustBeforeItExpires()
+    {
+        // Arrange: Storage refuses a visibility timeout past a message's expiry (Azurite does not check it).
+        var updates = new MessageUpdateVisibilityTimeouts();
+        await using var transport = new AzureStorageQueueMessageTransport(CreateOptions() with
+        {
+            MessageTimeToLive = TimeSpan.FromSeconds(20),
+            ConfigureClient = o => o.AddPolicy(updates, HttpPipelinePosition.PerCall)
+        });
+        var source = MessageSource.Queue(NewName("expiring"));
+        DeleteAfterTest(source);
+        await using var receiver = await ((IMessageTransport)transport).CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(60) }, TestCancellationToken);
+        await ((IMessageTransport)transport).SendAsync(MessageDestination.Queue(source.Name), [Message("expiring")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+
+        // Act
+        await receiver.RenewAsync(message, TestCancellationToken);
+        await receiver.AbandonAsync(message, TimeSpan.FromMinutes(5), TestCancellationToken);
+
+        // Assert
+        Assert.Equal(2, updates.Seconds.Count);
+        Assert.All(updates.Seconds, seconds => Assert.InRange(seconds, 15, 19));
+    }
+
+    [Fact]
     public async Task Send_WithoutATimeToLive_KeepsTheMessageUntilItIsReceived()
     {
         var source = MessageSource.Queue(NewName("no-ttl"));
@@ -519,6 +544,23 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
             names.Add(queue.Name);
 
         return names;
+    }
+
+    /// <summary>Records the visibility timeout of each Update Message request.</summary>
+    private sealed class MessageUpdateVisibilityTimeouts : HttpPipelineSynchronousPolicy
+    {
+        public List<int> Seconds { get; } = [];
+
+        public override void OnSendingRequest(HttpMessage message)
+        {
+            var uri = message.Request.Uri.ToUri();
+            if (message.Request.Method != RequestMethod.Put || !uri.AbsolutePath.Contains("/messages/", StringComparison.Ordinal))
+                return;
+
+            string? value = System.Web.HttpUtility.ParseQueryString(uri.Query)["visibilitytimeout"];
+            lock (Seconds)
+                Seconds.Add(Int32.Parse(value!, CultureInfo.InvariantCulture));
+        }
     }
 
     private sealed class SkewedTimeProvider(TimeSpan skew) : TimeProvider

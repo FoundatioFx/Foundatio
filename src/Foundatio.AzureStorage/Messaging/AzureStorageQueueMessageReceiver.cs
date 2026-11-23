@@ -133,13 +133,17 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
         }, cancellationToken);
     }
 
-    /// <remarks>Storage keeps a message invisible for at most 7 days, so a longer delay is shortened to that.</remarks>
+    /// <remarks>
+    /// Storage keeps a message invisible for at most 7 days, and not past its expiry, so a longer delay is shortened to
+    /// end a second before whichever comes first.
+    /// </remarks>
     public async Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
     {
         var delivery = GetDelivery(message);
         var visibility = AzureStorageQueueMessageTransport.ToVisibilityTimeout(delay);
         await SettleAsync(delivery, "abandon", settles: true, async () =>
         {
+            visibility = LimitToExpiry(delivery, visibility) ?? TimeSpan.Zero;
             await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: visibility, cancellationToken: CancellationToken.None).AnyContext();
         }, cancellationToken).AnyContext();
 
@@ -158,8 +162,7 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
         return SettleAsync(delivery, "dead-letter", settles: true, async () =>
         {
             // Renewing first proves the lease is still held, so a stale delivery is not copied to the dead-letter queue.
-            var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: _lease, cancellationToken: CancellationToken.None).AnyContext();
-            delivery.PopReceipt = renewed.Value.PopReceipt;
+            await RenewLeaseAsync(delivery).AnyContext();
 
             string text = EncodeDeadLetter(delivery, reason ?? String.Empty);
             await _transport.SendDeadLetterAsync(_deadLetterName, Source, text, CancellationToken.None).AnyContext();
@@ -188,11 +191,39 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
     public Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default)
     {
         var delivery = GetDelivery(message);
-        return SettleAsync(delivery, "renew", settles: false, async () =>
+        return SettleAsync(delivery, "renew", settles: false, () => RenewLeaseAsync(delivery), cancellationToken);
+    }
+
+    /// <summary>
+    /// Extends the lease and records the new pop receipt. Storage does not keep a message invisible past its expiry, so
+    /// a message expiring within the lease gets a shorter one, and one expiring within a second has its lease lost.
+    /// </summary>
+    private async Task RenewLeaseAsync(AzureStorageQueueIncomingMessage delivery)
+    {
+        if (LimitToExpiry(delivery, _lease) is not { } lease || lease <= TimeSpan.Zero)
         {
-            var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: _lease, cancellationToken: CancellationToken.None).AnyContext();
-            delivery.PopReceipt = renewed.Value.PopReceipt;
-        }, cancellationToken);
+            delivery.Settled = true;
+            throw new MessageLeaseLostException($"Message {delivery.MessageId} from {Source} expires at {delivery.ExpiresOn:O}, before its lease could be renewed.");
+        }
+
+        var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: lease, cancellationToken: CancellationToken.None).AnyContext();
+        delivery.PopReceipt = renewed.Value.PopReceipt;
+    }
+
+    /// <summary>
+    /// <paramref name="visibility"/>, in whole seconds ending a second before the message expires when it would end
+    /// later: Storage refuses a visibility timeout past a message's expiry. Null when the message expires within a second.
+    /// </summary>
+    private TimeSpan? LimitToExpiry(AzureStorageQueueIncomingMessage delivery, TimeSpan visibility)
+    {
+        if (delivery.ExpiresOn is not { } expiresOn)
+            return visibility;
+
+        var left = expiresOn - _transport.GetStorageNow() - TimeSpan.FromSeconds(1);
+        if (left >= visibility)
+            return visibility;
+
+        return left < TimeSpan.FromSeconds(1) ? null : TimeSpan.FromSeconds(Math.Floor(left.TotalSeconds));
     }
 
     public async ValueTask DisposeAsync()
@@ -311,6 +342,7 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
                 GroupKey = groupKey,
                 DeliveryCount = (int)Math.Min(message.DequeueCount, Int32.MaxValue),
                 EnqueuedAt = message.InsertedOn,
+                ExpiresOn = message.ExpiresOn,
                 ForeignText = isEnvelope ? null : message.Body
             };
 
@@ -496,6 +528,9 @@ internal sealed class AzureStorageQueueIncomingMessage : IncomingMessage
 
     /// <summary>Changed by each renewal; read and written only while <see cref="Gate"/> is held.</summary>
     public required string PopReceipt { get; set; }
+
+    /// <summary>When Storage removes the message; null or far off when it never expires.</summary>
+    public DateTimeOffset? ExpiresOn { get; init; }
 
     /// <summary>The message text as Storage holds it, when another producer wrote it, so a dead letter can keep it whole.</summary>
     public BinaryData? ForeignText { get; init; }
