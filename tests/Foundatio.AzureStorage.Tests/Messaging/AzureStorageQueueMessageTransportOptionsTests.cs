@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using Azure.Storage.Queues;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Xunit;
 
@@ -71,6 +72,43 @@ public class AzureStorageQueueMessageTransportOptionsTests
 
         Assert.Contains("ConnectionString", ex.Message, StringComparison.Ordinal);
         Assert.Contains("ServiceUri", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Constructor_WithAConnectionStringAndAServiceUri_ThrowsInsteadOfPickingOne()
+    {
+        var options = new AzureStorageQueueMessageTransportOptions { ConnectionString = "UseDevelopmentStorage=true", ServiceUri = new Uri("https://myaccount.queue.core.windows.net") };
+
+        var ex = Assert.Throws<ArgumentException>(() => new AzureStorageQueueMessageTransport(options));
+
+        Assert.Contains("not both", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("prod")]
+    [InlineData("prod-")]
+    public void GetQueueName_WithAPrefix_SeparatesItAndKeepsTheTopicAndSubscriptionReadable(string prefix)
+    {
+        var transport = new AzureStorageQueueMessageTransport(new QueueServiceClient("UseDevelopmentStorage=true"), new AzureStorageQueueMessageTransportOptions { Prefix = prefix });
+
+        Assert.Matches("^prod-orders-[0-9a-f]{8}$", transport.GetQueueName(MessageSource.Queue("orders")));
+        Assert.Matches("^prod-shop-orders-[0-9a-f]{8}-billing-[0-9a-f]{8}$", transport.GetQueueName(MessageSource.Subscription("shop-orders", "billing")));
+        Assert.Equal(transport.GetQueueName(MessageSource.Queue("orders")) + "-poison", transport.GetQueueName(MessageSource.DeadLetter(MessageSource.Queue("orders"))));
+        Assert.Throws<ArgumentException>(() => transport.GetQueueName(MessageSource.InstanceSubscription("shop-orders", "web")));
+    }
+
+    [Fact]
+    public void GetQueueName_WithTheLongestPrefixAndNames_StaysWithinStorageLimits()
+    {
+        var transport = new AzureStorageQueueMessageTransport(new QueueServiceClient("UseDevelopmentStorage=true"), new AzureStorageQueueMessageTransportOptions { Prefix = "abcdefghijklmnop" });
+        string longName = new('x', 200);
+
+        foreach (var source in new[] { MessageSource.Queue(longName), MessageSource.Subscription(longName, longName), MessageSource.Subscription("t", longName) })
+        {
+            string deadLetter = transport.GetQueueName(MessageSource.DeadLetter(source));
+            Assert.True(deadLetter.Length <= 63, $"{deadLetter} is {deadLetter.Length} characters.");
+            Assert.Matches("^[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]$", deadLetter);
+        }
     }
 
     [Fact]

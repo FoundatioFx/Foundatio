@@ -12,7 +12,7 @@ public sealed record AzureStorageQueueMessageTransportOptions
 {
     /// <summary>
     /// The storage account's connection string, for example <c>UseDevelopmentStorage=true</c> for Azurite. Set this, or
-    /// <see cref="ServiceUri"/> with <see cref="Credential"/>.
+    /// <see cref="ServiceUri"/> with <see cref="Credential"/>, not both.
     /// </summary>
     public string? ConnectionString { get; init; }
 
@@ -21,13 +21,15 @@ public sealed record AzureStorageQueueMessageTransportOptions
 
     /// <summary>
     /// The Microsoft Entra credential used with <see cref="ServiceUri"/>, for example a <c>DefaultAzureCredential</c>.
-    /// The identity needs the Storage Queue Data Contributor role, which also lets it create queues.
+    /// The identity needs the Storage Queue Data Contributor role: receivers create queues and set their metadata, and
+    /// publishes list queues, which the Message Processor and Sender roles do not allow.
     /// </summary>
     public TokenCredential? Credential { get; init; }
 
     /// <summary>
-    /// Prepended to every queue name, so several environments can share a storage account. At most 16 lowercase
-    /// letters, digits and single hyphens, starting with a letter or digit, for example <c>prod-</c>.
+    /// Prepended to every queue name, with a hyphen after it, so several environments can share a storage account. At
+    /// most 16 lowercase letters, digits and single hyphens, starting with a letter or digit, for example <c>prod</c>,
+    /// which names queues <c>prod-orders-1a2b3c4d</c>.
     /// </summary>
     public string Prefix { get; init; } = String.Empty;
 
@@ -51,7 +53,8 @@ public sealed record AzureStorageQueueMessageTransportOptions
     /// <summary>
     /// The longest a receive waits between polls of an empty queue, and so about the longest a message sent from
     /// another process waits before it is received. Each poll is a billed storage transaction: one idle receiver
-    /// polls about 43,000 times a day at 2 seconds.
+    /// polls about 43,000 times a day at 2 seconds. An idle durable subscription receiver also checks every few seconds
+    /// that its subscription was not deleted, about 20,000 more a day.
     /// </summary>
     public TimeSpan MaxPollInterval { get; init; } = TimeSpan.FromSeconds(2);
 

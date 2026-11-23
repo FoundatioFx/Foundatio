@@ -162,7 +162,8 @@ m.UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions
 - Without a connection in the options (`UseAzureStorageQueues()`), it uses the `QueueServiceClient` registered in DI, which stays yours.
 - It doesn't order groups or deduplicate. Delays and leases are visibility timeouts, of up to 7 days. Messages never expire unless you set `MessageTimeToLive`.
 - Storage can't long-poll, so receivers poll, backing off to `MaxPollInterval` (2 seconds) while the queue is empty: a message sent from another process can wait that long, and each idle receiver makes a billed request every 2 seconds. Sends through the same process wake its receivers at once.
-- Messages can be 46 KiB with their headers; store larger payloads with `IFileStorage` and send a reference. Dead letters go to a `-poison` queue.
+- Messages can be 46 KiB with their headers; store larger payloads with `IFileStorage` and send a reference. Dead letters go to a `-poison` queue and never expire.
+- A publish lists the topic's queues and sends to each, so it takes two round trips, and it isn't atomic: when one subscription's send fails, the others still get the message and the publish throws, so a retry sends them a second copy.
 - See the [Azure Storage README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureStorage#message-transport-preview) for names, polling cost, counts and Azurite.
 
 ### Using RabbitMQ

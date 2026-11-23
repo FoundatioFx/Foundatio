@@ -5,11 +5,13 @@ using System.Text;
 namespace Foundatio.Messaging.Transport;
 
 /// <summary>
-/// Maps sources to Storage queue names, which are 3 to 63 lowercase letters, digits and single hyphens. Each name is a
-/// readable form of the source's names, shortened to fit, followed by a hash of the exact names and the kind of source,
-/// so names that differ only in case or punctuation, or past the length limit, get their own queues, and a queue and a
-/// topic of the same name stay apart. A subscription's queue starts with its topic's name and hash, so a publish finds
-/// the topic's subscriptions with one listing; a dead-letter queue is its source's queue name plus <c>-poison</c>.
+/// Maps sources to Storage queue names, which are 3 to 63 lowercase letters, digits and single hyphens. Each name is
+/// the prefix, with a hyphen after it, then a readable form of the source's names, shortened to fit, followed by a hash
+/// of the exact names and the kind of source, so names that differ only in case or punctuation, or past the length
+/// limit, get their own queues, and a queue and a topic of the same name stay apart. A subscription's queue starts with
+/// its topic's name and hash, so a publish finds the topic's subscriptions with one listing; the topic and the
+/// subscription share the room left by the prefix and hashes, and a short topic leaves the rest to the subscription. A
+/// dead-letter queue is its source's queue name plus <c>-poison</c>.
 /// </summary>
 internal sealed class AzureStorageQueueMessageTransportNames
 {
@@ -17,13 +19,18 @@ internal sealed class AzureStorageQueueMessageTransportNames
     private const int MaxQueueNameLength = 63;
     private const int HashLength = 8;
     private const string DeadLetterSuffix = "-poison";
-    private const int MaxTopicLength = 18;
 
     private readonly string _prefix;
+    private readonly int _maxTopicLength;
 
     public AzureStorageQueueMessageTransportNames(string prefix)
     {
-        _prefix = prefix;
+        _prefix = prefix.Length == 0 || prefix.EndsWith('-') ? prefix : prefix + "-";
+
+        // A subscription's queue is the prefix, the topic and its hash, the subscription and its hash, and the
+        // dead-letter suffix; the topic gets at most half the readable room, since a topic prefix cannot depend on its subscriptions.
+        int readableRoom = MaxQueueNameLength - DeadLetterSuffix.Length - _prefix.Length - 2 * (HashLength + 1) - 1;
+        _maxTopicLength = readableRoom / 2 + HashLength + 1;
     }
 
     /// <summary>The queue of a queue source.</summary>
@@ -74,7 +81,7 @@ internal sealed class AzureStorageQueueMessageTransportNames
             throw new ArgumentException($"The prefix \"{prefix}\" is not valid. Use at most {MaxPrefixLength} lowercase letters, digits and single hyphens, starting with a letter or digit.", parameterName);
     }
 
-    private string Topic(string topic) => Build(topic, MaxTopicLength, "topic", topic);
+    private string Topic(string topic) => Build(topic, _maxTopicLength, "topic", topic);
 
     private string Build(string name, int maxReadableLength, string kind, params string[] parts) =>
         _prefix + Readable(name, maxReadableLength - HashLength - 1) + "-" + Hash(kind, parts);

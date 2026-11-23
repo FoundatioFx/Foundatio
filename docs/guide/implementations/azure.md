@@ -173,7 +173,9 @@ builder.Services.AddFoundatioMessaging(m => m
 ```
 
 - Storage has no topics: each durable or instance subscription is a queue named after its topic, and a publish lists them and sends a copy to each. Dead letters go to the source's queue name plus `-poison`.
-- Leases, delays and retries are visibility timeouts, of up to 7 days. Messages never expire unless `MessageTimeToLive` is set.
+- Leases, delays and retries are visibility timeouts, of up to 7 days. Messages never expire unless `MessageTimeToLive` is set, and dead letters never expire.
+- A publish is a `List Queues` call and then a send per subscription queue. It isn't atomic: an instance queue removed meanwhile is skipped, and if a send fails the rest still finish and the publish throws, naming the failed queues.
+- The identity needs the Storage Queue Data Contributor role, since receivers create queues and publishes list them.
 - Receivers poll, since Storage can't long-poll, backing off to `MaxPollInterval` (2 seconds) while the queue is empty.
 - Messages can be 46 KiB with their headers. It doesn't order groups or deduplicate.
 - `GetStatsAsync` reports Storage's approximate count as `Queued`, which includes messages being handled and delayed ones, and the `-poison` queue's as `DeadLettered`.

@@ -138,6 +138,18 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
     internal TimeSpan TimeToLive { get; }
     internal bool IsDisposed => Volatile.Read(ref _disposed) == 1;
 
+    /// <summary>
+    /// The name of the Storage queue that holds <paramref name="source"/>'s messages, for infrastructure as code,
+    /// alerts and Storage Explorer; for a dead-letter source, the <c>-poison</c> queue. Instance subscriptions get a new
+    /// queue per receiver, so they have no fixed name.
+    /// </summary>
+    /// <exception cref="ArgumentException">The source is an instance subscription.</exception>
+    public string GetQueueName(MessageSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return _names.Source(source);
+    }
+
     /// <inheritdoc />
     async Task IMessageTransport.SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
     {
@@ -729,7 +741,12 @@ public sealed class AzureStorageQueueMessageTransport : IMessageTransport
         clientOptions.MessageEncoding = QueueMessageEncoding.None;
 
         if (!String.IsNullOrEmpty(options.ConnectionString))
+        {
+            if (options.ServiceUri is not null || options.Credential is not null)
+                throw new ArgumentException("Set either ConnectionString, or ServiceUri with a Credential, in the Azure Storage Queues transport options, not both.", nameof(options));
+
             return new QueueServiceClient(options.ConnectionString, clientOptions);
+        }
 
         if (options.ServiceUri is null)
             throw new ArgumentException("Set ConnectionString, or ServiceUri with a Credential, in the Azure Storage Queues transport options.", nameof(options));
