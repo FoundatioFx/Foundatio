@@ -22,6 +22,7 @@ taskset -c 6-9 $B --transport redis --api v2 --scenario consume --concurrency 16
 | `--payload` | body size in bytes |
 | `--groups`, `--delay-ms`, `--work-ms` | ordered groups, delayed delivery, handler time |
 | `--alloc-types` | print the types allocated during the measurement |
+| `--kafka-linger-ms` | the Kafka producers' `linger.ms` (v2 and raw); without it, the transport's default |
 
 Broker calls are counted from the client: Redis commands through the StackExchange.Redis profiler, SQS requests by
 `X-Amz-Target`, Storage queue requests by method and target (`GET messages` receives, `DELETE message` completes), Service Bus operations from the SDK's EventSource, and RabbitMQ message counts from the management API
@@ -31,3 +32,8 @@ Broker calls are counted from the client: Redis commands through the StackExchan
 The raw targets are careful hand-written consumers (batched receives, group-committed acknowledgements where the broker
 has them) without leases, retries, dead letters or delays, so they are a floor, not a like-for-like replacement. Pin
 the process with `taskset`, run one broker at a time, and interleave the configurations you compare.
+
+Size runs so that start-up and JIT warm-up don't dominate: a `consume` result's throughput is measured from the first
+handled message, and `StartMs` (receiver start) and `FirstMessageMs` are reported separately, but a short run is still
+mostly warm-up. Use at least 1,000,000 messages on Kafka and 300,000 on Redis; at 60,000, Kafka v2 looks less than half
+as fast as it is. The raw Kafka target reads its four partitions with one consumer each.
