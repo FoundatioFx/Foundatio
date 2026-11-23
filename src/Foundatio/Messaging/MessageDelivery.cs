@@ -23,7 +23,6 @@ internal sealed class MessageDelivery
     private readonly TimeProvider? _slotClock;
     private CancellationTokenSource? _handlerCancellation;
     private int _leaseLost;
-    private DateTimeOffset _lostAt;
     private long _lostAtTicks;
     private int _settling;
 
@@ -64,12 +63,8 @@ internal sealed class MessageDelivery
     internal DateTimeOffset LeaseExpiresAt { get; set; }
     internal DateTimeOffset LostAt
     {
-        get => _lostAt;
-        set
-        {
-            _lostAt = value;
-            Volatile.Write(ref _lostAtTicks, value.UtcTicks);
-        }
+        get => new(Volatile.Read(ref _lostAtTicks), TimeSpan.Zero);
+        set => Volatile.Write(ref _lostAtTicks, value.UtcTicks);
     }
 
     /// <summary><see cref="LostAt"/> in UTC ticks, readable without the renewer's lock.</summary>
