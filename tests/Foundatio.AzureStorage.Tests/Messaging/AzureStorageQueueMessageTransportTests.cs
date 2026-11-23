@@ -7,6 +7,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Azure;
+using Azure.Core;
+using Azure.Core.Pipeline;
 using Azure.Storage.Queues;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
@@ -82,6 +84,34 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
 
         // Assert
         await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Renew_CancelledAfterStorageAppliedIt_LetsTheCompleteUseItsPopReceipt()
+    {
+        // Arrange: Storage applies the renewal, then its response is slow, and the caller stops waiting for it, as core
+        // does when the handler returns while a renewal is in flight.
+        var slow = new SlowMessageUpdateResponses();
+        await using var transport = new AzureStorageQueueMessageTransport(CreateOptions() with { ConfigureClient = o => o.AddPolicy(slow, HttpPipelinePosition.PerRetry) });
+        var source = MessageSource.Queue(NewName("renew-cancel"));
+        DeleteAfterTest(source);
+        await using var receiver = await ((IMessageTransport)transport).CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+        await ((IMessageTransport)transport).SendAsync(MessageDestination.Queue(source.Name), [Message("renewed", "id-renewed")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+        slow.Enabled = true;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        // Act
+        var stopwatch = Stopwatch.StartNew();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receiver.RenewAsync(message, cancellation.Token));
+        var cancelledAfter = stopwatch.Elapsed;
+        slow.Enabled = false;
+        await receiver.CompleteAsync(message, TestCancellationToken);
+
+        // Assert
+        Assert.True(cancelledAfter < TimeSpan.FromMilliseconds(400), $"The cancelled renewal returned after {cancelledAfter}, not when it was cancelled.");
+        var queue = Service.GetQueueClient(Names.Queue(source.Name));
+        Assert.Equal(0, (await queue.GetPropertiesAsync(TestCancellationToken)).Value.ApproximateMessagesCount);
     }
 
     [Fact]
@@ -385,6 +415,21 @@ public class AzureStorageQueueMessageTransportTests(ITestOutputHelper output) : 
             names.Add(queue.Name);
 
         return names;
+    }
+
+    /// <summary>Delays the responses of Update Message requests after Storage has applied them.</summary>
+    private sealed class SlowMessageUpdateResponses : HttpPipelinePolicy
+    {
+        public volatile bool Enabled;
+
+        public override void Process(HttpMessage message, ReadOnlyMemory<HttpPipelinePolicy> pipeline) => throw new NotSupportedException();
+
+        public override async ValueTask ProcessAsync(HttpMessage message, ReadOnlyMemory<HttpPipelinePolicy> pipeline)
+        {
+            await ProcessNextAsync(message, pipeline);
+            if (Enabled && message.Request.Method == RequestMethod.Put && message.Request.Uri.ToUri().AbsolutePath.Contains("/messages/", StringComparison.Ordinal))
+                await Task.Delay(TimeSpan.FromMilliseconds(500), message.CancellationToken);
+        }
     }
 
     internal static string GetConnectionString() =>

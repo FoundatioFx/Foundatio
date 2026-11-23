@@ -127,9 +127,9 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
     public Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default)
     {
         var delivery = GetDelivery(message);
-        return SettleAsync(delivery, "complete", settles: true, async token =>
+        return SettleAsync(delivery, "complete", settles: true, async () =>
         {
-            await _queue.DeleteMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, token).AnyContext();
+            await _queue.DeleteMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, CancellationToken.None).AnyContext();
         }, cancellationToken);
     }
 
@@ -138,9 +138,9 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
     {
         var delivery = GetDelivery(message);
         var visibility = AzureStorageQueueMessageTransport.ToVisibilityTimeout(delay);
-        await SettleAsync(delivery, "abandon", settles: true, async token =>
+        await SettleAsync(delivery, "abandon", settles: true, async () =>
         {
-            await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: visibility, cancellationToken: token).AnyContext();
+            await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: visibility, cancellationToken: CancellationToken.None).AnyContext();
         }, cancellationToken).AnyContext();
 
         if (visibility == TimeSpan.Zero)
@@ -155,24 +155,24 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
             throw new InvalidOperationException($"{Source.Kind} sources do not have a dead-letter queue.");
 
         var delivery = GetDelivery(message);
-        return SettleAsync(delivery, "dead-letter", settles: true, async token =>
+        return SettleAsync(delivery, "dead-letter", settles: true, async () =>
         {
             // Renewing first proves the lease is still held, so a stale delivery is not copied to the dead-letter queue.
-            var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: _lease, cancellationToken: token).AnyContext();
+            var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: _lease, cancellationToken: CancellationToken.None).AnyContext();
             delivery.PopReceipt = renewed.Value.PopReceipt;
 
             string text = AzureStorageQueueMessageTransportCodec.EncodeDeadLetter(delivery, reason ?? String.Empty);
-            await _transport.SendDeadLetterAsync(_deadLetterName, Source, text, token).AnyContext();
-            await _queue.DeleteMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, token).AnyContext();
+            await _transport.SendDeadLetterAsync(_deadLetterName, Source, text, CancellationToken.None).AnyContext();
+            await _queue.DeleteMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, CancellationToken.None).AnyContext();
         }, cancellationToken);
     }
 
     public Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default)
     {
         var delivery = GetDelivery(message);
-        return SettleAsync(delivery, "renew", settles: false, async token =>
+        return SettleAsync(delivery, "renew", settles: false, async () =>
         {
-            var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: _lease, cancellationToken: token).AnyContext();
+            var renewed = await _queue.UpdateMessageAsync(delivery.QueueMessageId, delivery.PopReceipt, visibilityTimeout: _lease, cancellationToken: CancellationToken.None).AnyContext();
             delivery.PopReceipt = renewed.Value.PopReceipt;
         }, cancellationToken);
     }
@@ -207,16 +207,41 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
     /// or the lease was lost, the receiver forgets the delivery; one that failed otherwise leaves it to be delivered
     /// again when its lease expires.
     /// </summary>
-    private async Task SettleAsync(AzureStorageQueueIncomingMessage delivery, string operation, bool settles, Func<CancellationToken, Task> settle, CancellationToken cancellationToken)
+    /// <remarks>
+    /// Cancelling stops the caller waiting, not the request: Storage may already have applied it and given the message
+    /// a new pop receipt, which the next settlement needs. The request runs to completion while it holds the gate, so a
+    /// complete after a cancelled renewal waits for the renewal and uses its receipt.
+    /// </remarks>
+    private async Task SettleAsync(AzureStorageQueueIncomingMessage delivery, string operation, bool settles, Func<Task> settle, CancellationToken cancellationToken)
     {
         await delivery.Gate.WaitAsync(cancellationToken).AnyContext();
+        var settling = RunSettlementAsync(delivery, operation, settles, settle);
+        if (!cancellationToken.CanBeCanceled || settling.IsCompleted)
+        {
+            await settling.AnyContext();
+            return;
+        }
+
+        try
+        {
+            await settling.WaitAsync(cancellationToken).AnyContext();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _ = ObserveAbandonedSettlementAsync(settling, delivery, operation);
+            throw;
+        }
+    }
+
+    private async Task RunSettlementAsync(AzureStorageQueueIncomingMessage delivery, string operation, bool settles, Func<Task> settle)
+    {
         try
         {
             ThrowIfDisposed();
             if (delivery.Settled)
                 throw new MessageLeaseLostException($"Message {delivery.MessageId} from {Source} was already settled.");
 
-            await settle(cancellationToken).AnyContext();
+            await settle().AnyContext();
             if (settles)
                 delivery.Settled = true;
         }
@@ -235,6 +260,18 @@ internal sealed class AzureStorageQueueMessageReceiver : IMessageReceiver
                 _inFlight.TryRemove(delivery, out _);
 
             delivery.Gate.Release();
+        }
+    }
+
+    private async Task ObserveAbandonedSettlementAsync(Task settling, AzureStorageQueueIncomingMessage delivery, string operation)
+    {
+        try
+        {
+            await settling.AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _transport.Logger.LogDebug(ex, "A cancelled {Operation} of message {MessageId} from {Source} failed after the caller stopped waiting", operation, delivery.MessageId, Source);
         }
     }
 
