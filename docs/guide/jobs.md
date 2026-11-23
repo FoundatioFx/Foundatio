@@ -44,7 +44,7 @@ You can implement `IJob` directly, but in practice you'll derive from one of the
 
 [View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Jobs/JobBase.cs)
 
-`JobBase` provides structured logging (`_logger`), a `TimeProvider`, and a `ResiliencePolicyProvider`. All base classes accept optional `TimeProvider` and `IResiliencePolicyProvider` constructor parameters (defaulting to `TimeProvider.System` and `DefaultResiliencePolicyProvider.Instance`). You override `RunInternalAsync` and receive a `JobContext`:
+`JobBase` provides structured logging (`_logger`), a `TimeProvider`, and a `ResiliencePolicyProvider`. All base classes accept optional `TimeProvider` and `IResiliencePolicyProvider` constructor parameters (defaulting to `TimeProvider.System` and `DefaultResiliencePolicyProvider.Instance`). Nothing registers either service by default, so keep them optional (`= null`) in your job's constructor, as the samples here do, or the job fails to resolve; register them (for example with `AddResilience`) to override the defaults. You override `RunInternalAsync` and receive a `JobContext`:
 
 ```csharp
 using Foundatio.Jobs;
@@ -52,9 +52,9 @@ using Foundatio.Jobs;
 public class CleanupJob : JobBase
 {
     public CleanupJob(
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory) { }
 
     protected override async Task<JobResult> RunInternalAsync(JobContext context)
@@ -113,9 +113,9 @@ public class MaintenanceJob : JobWithLockBase
     public MaintenanceJob(
         ICacheClient cache,
         IMessageBus messageBus,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory) : base(timeProvider, resiliencePolicyProvider, loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null) : base(timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _lockProvider = new CacheLockProvider(cache, messageBus, loggerFactory);
     }
@@ -156,9 +156,9 @@ public class ResourceSyncJob : JobBase
     public ResourceSyncJob(
         ILockProvider locker,
         IResourceRepository repository,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _locker = locker;
@@ -287,9 +287,9 @@ public class OrderProcessorJob : QueueJobBase<OrderWorkItem>
     public OrderProcessorJob(
         IQueue<OrderWorkItem> queue,
         IOrderService orderService,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _orderService = orderService;
@@ -569,9 +569,9 @@ Configure job behavior declaratively with the `[Job]` attribute. These values be
 public class MyJob : JobBase
 {
     public MyJob(
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory) { }
 
     protected override Task<JobResult> RunInternalAsync(JobContext context)
@@ -789,9 +789,9 @@ public class ImportJob : JobBase
 
     public ImportJob(
         IMessageBus messageBus,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _messageBus = messageBus;
