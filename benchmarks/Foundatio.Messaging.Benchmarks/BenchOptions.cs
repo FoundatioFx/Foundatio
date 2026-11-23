@@ -29,6 +29,7 @@ public sealed record BenchOptions
     public TimeSpan WorkTime { get; init; }
     public bool Fifo { get; init; }
     public bool KafkaConsumerProtocol { get; init; }
+    public int? KafkaLingerMs { get; init; }
     public string? Output { get; init; }
     public string? Tag { get; init; }
     public bool AllocationTypes { get; init; }
@@ -78,6 +79,7 @@ public sealed record BenchOptions
             IdleBeforeFirst = GetTime("idle-ms", TimeSpan.Zero),
             Fifo = values.ContainsKey("fifo"),
             KafkaConsumerProtocol = values.ContainsKey("kip848"),
+            KafkaLingerMs = values.TryGetValue("kafka-linger-ms", out string? linger) ? Int32.Parse(linger, CultureInfo.InvariantCulture) : null,
             Output = values.TryGetValue("out", out string? output) ? output : null,
             AllocationTypes = values.ContainsKey("alloc-types"),
             Tag = values.TryGetValue("tag", out string? tag) && tag != "true" ? tag : null,
@@ -86,7 +88,7 @@ public sealed record BenchOptions
     }
 
     public string Describe() =>
-        $"{Transport}{(KafkaConsumerProtocol ? "/kip848" : "")}{(Fifo ? "/fifo" : "")} {Api} {Pattern} {Scenario} c={Concurrency} p={Payload}B" +
+        $"{Transport}{(KafkaConsumerProtocol ? "/kip848" : "")}{(KafkaLingerMs is { } linger ? $"/linger{linger}" : "")}{(Fifo ? "/fifo" : "")} {Api} {Pattern} {Scenario} c={Concurrency} p={Payload}B" +
         (Groups > 0 ? $" groups={Groups}" : "") + (Delay > TimeSpan.Zero ? $" delay={Delay.TotalMilliseconds}ms" : "") +
         (WorkTime > TimeSpan.Zero ? $" work={WorkTime.TotalMilliseconds}ms" : "");
 }

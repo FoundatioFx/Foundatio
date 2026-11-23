@@ -157,7 +157,8 @@ public sealed class V2Target(BenchOptions options, BrokerCalls calls) : BenchTar
                     BootstrapServers = Options.Kafka,
                     Prefix = "bench-" + Options.Name,
                     ReplicationFactor = 1,
-                    ConfigureConsumer = Options.KafkaConsumerProtocol ? c => c.GroupProtocol = GroupProtocol.Consumer : null
+                    ConfigureConsumer = Options.KafkaConsumerProtocol ? c => c.GroupProtocol = GroupProtocol.Consumer : null,
+                    ConfigureProducer = Options.KafkaLingerMs is { } linger ? c => c.LingerMs = linger : null
                 });
                 break;
             case "servicebus":

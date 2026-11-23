@@ -44,7 +44,11 @@ public sealed record KafkaMessageTransportOptions
     /// <summary>librdkafka properties applied to every producer, consumer and admin client (security, SASL, client id).</summary>
     public IReadOnlyDictionary<string, string>? ClientConfig { get; init; }
 
-    /// <summary>Adjusts the producer configuration after the transport's defaults are applied.</summary>
+    /// <summary>
+    /// Adjusts the producer configuration after the transport's defaults are applied. The defaults are idempotent
+    /// sends with <c>acks=all</c> and <see cref="ProducerConfig.LingerMs"/> of 0, because every send waits for its
+    /// record to be written.
+    /// </summary>
     public Action<ProducerConfig>? ConfigureProducer { get; init; }
 
     /// <summary>

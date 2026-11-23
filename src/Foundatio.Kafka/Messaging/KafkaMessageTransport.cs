@@ -1067,6 +1067,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
             EnableIdempotence = true,
             Partitioner = Confluent.Kafka.Partitioner.Murmur2Random,
             MessageMaxBytes = (int)Options.MaxMessageSize,
+            // Every send waits for its record to be written, so lingering only delays it: librdkafka's 5 ms cap one
+            // sender at about 200 sends a second. Records queued while earlier ones are in flight still go in batches.
+            LingerMs = 0,
             // Topics are created explicitly; never let a send recreate a deleted topic with broker defaults.
             AllowAutoCreateTopics = false
         };
