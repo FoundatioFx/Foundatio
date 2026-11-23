@@ -7,6 +7,7 @@ The original queue, message bus and job APIs keep working alongside the new ones
 Check these first; work that depends on them stays on the original APIs for now:
 
 - **One transport per app.** Every queue and topic uses the transport you choose with `Use...()`, and `AddLegacyMessageBus()` runs on it too. You can't keep queues on one broker and pub/sub on another.
+- **Jobs are shared through Redis only.** Redis is the only job store that instances share; `UseInMemory()` keeps jobs in each process, so every instance runs its own CRON occurrences. An app on SQS, Kafka, Azure Service Bus, Azure Storage Queues or RabbitMQ that runs durable jobs on more than one instance adds `Foundatio.Redis` and `j.UseRedis(...)` for them. Messaging and jobs don't need the same backend.
 - **Run once and exit.** There is no "run this job, then stop the process" mode for a Kubernetes CronJob. Host the schedule with `AddCronJob` in a long-running process instead.
 
 ## What moves where

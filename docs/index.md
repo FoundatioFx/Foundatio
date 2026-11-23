@@ -22,13 +22,13 @@ features:
     details: Fast, consistent caching with InMemory, Redis, and Hybrid implementations. Includes scoped cache support.
   - icon: 📡
     title: Messaging
-    details: Commands and events with handler classes, retries, dead letters and durable subscriptions on InMemory, Redis, AWS SQS/SNS, Kafka, Azure Service Bus and RabbitMQ.
+    details: Commands and events with handler classes, retries, dead letters and durable subscriptions on InMemory, Redis, AWS SQS/SNS, Kafka, Azure Service Bus, Azure Storage Queues and RabbitMQ.
   - icon: 🔒
     title: Locks
     details: Distributed locking with cache-based and throttling implementations for cross-machine coordination.
   - icon: 💼
     title: Durable Jobs
-    details: Stored background jobs with arguments, progress, cancellation, retries and CRON schedules, on InMemory or Redis.
+    details: Stored background jobs with arguments, progress, cancellation, retries and CRON schedules, on InMemory or Redis (the shared store, whatever your messaging transport).
   - icon: 📬
     title: Queues and Message Bus
     details: The original IQueue<T>, IMessageBus and hosted jobs, still supported, with InMemory, Redis, Azure, AWS, Kafka and RabbitMQ implementations.
@@ -75,7 +75,7 @@ var value = await cache.GetAsync<int>("test");
 using Foundatio.Messaging;
 
 builder.Services.AddFoundatioMessaging(m => m
-    .UseInMemory()                       // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...), UseRabbitMQ(...)
+    .UseInMemory()                       // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...), UseAzureStorageQueues(...), UseRabbitMQ(...)
     .AddConsumer<SendReceiptHandler>());
 
 public record SendReceipt(int OrderId);
@@ -98,7 +98,7 @@ await messages.SendAsync(new SendReceipt(42));
 using Foundatio.Jobs;
 
 builder.Services.AddFoundatioJobs(j => j
-    .UseInMemory()                       // or UseRedis()
+    .UseInMemory()                       // or UseRedis(), the shared job store with any transport
     .AddJob<GenerateReportJob>());
 
 public record GenerateReport(string Format);

@@ -54,7 +54,7 @@ A job with arguments is named after its arguments record, which is why `[Job(Nam
 
 ## Using Redis
 
-`UseInMemory()` keeps jobs in the process, so they are lost when it stops and other instances never see them. To share jobs between instances and keep them across restarts, store them in Redis with `dotnet add package Foundatio.Redis`:
+`UseInMemory()` keeps jobs in the process, so they are lost when it stops and other instances never see them. To share jobs between instances and keep them across restarts, store them in Redis with `dotnet add package Foundatio.Redis`. Redis is the only shared job store today, so an app whose messaging runs on another transport (SQS, Kafka, Azure Service Bus, Azure Storage Queues, RabbitMQ) adds Redis for its jobs; messaging and jobs don't need the same backend:
 
 ```csharp
 builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));

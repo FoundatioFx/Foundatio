@@ -23,8 +23,10 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 | [**Caching**](https://foundatio.dev/guide/caching) | In-memory, Redis, and hybrid caching with automatic invalidation |
 | [**Queues**](https://foundatio.dev/guide/queues) | Reliable message queuing with Redis, Azure, AWS SQS |
 | [**Locks**](https://foundatio.dev/guide/locks) | Distributed locking and throttling |
-| [**Messaging**](https://foundatio.dev/guide/messaging) | Pub/sub with Redis, RabbitMQ, Kafka, Azure Service Bus |
+| [**Message Bus (legacy)**](https://foundatio.dev/guide/message-bus) | `IMessageBus` pub/sub with Redis, AWS SNS/SQS, RabbitMQ, Kafka, Azure Service Bus |
 | [**Jobs**](https://foundatio.dev/guide/jobs) | Background job processing with queue integration |
+| [**Messaging**](https://foundatio.dev/guide/messaging) | Send commands and publish events to DI handlers, with retries and dead letters |
+| [**Durable Jobs**](https://foundatio.dev/guide/durable-jobs) | Tracked background jobs with arguments, progress, cancellation and CRON |
 | [**File Storage**](https://foundatio.dev/guide/storage) | Unified file API for disk, S3, Azure Blob, and more |
 | [**Resilience**](https://foundatio.dev/guide/resilience) | Retry policies, circuit breakers, and timeouts |
 

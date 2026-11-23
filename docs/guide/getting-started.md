@@ -133,7 +133,7 @@ builder.Services.AddFoundatioMessaging(m => m
     .AddSubscriber<OrderPlacedHandler>());  // an IMessageHandler<OrderPlaced>
 
 builder.Services.AddFoundatioJobs(j => j
-    .UseInMemory()                          // or UseRedis()
+    .UseInMemory()                          // or UseRedis(), the shared job store with any transport
     .AddJob<GenerateReportJob>());          // an IJobHandler<GenerateReport>
 ```
 
