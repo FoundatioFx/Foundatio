@@ -65,7 +65,7 @@ internal sealed class JobScheduler
             try
             {
                 await CreateDueOccurrenceAsync(schedule, now, cancellationToken).AnyContext();
-                if (schedule.Expression.GetNextOccurrence(now, schedule.TimeZone) is { } next && next < nextWake)
+                if (schedule.GetNextOccurrence(now) is { } next && next < nextWake)
                     nextWake = next;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

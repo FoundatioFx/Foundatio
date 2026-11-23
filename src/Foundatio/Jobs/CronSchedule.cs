@@ -23,7 +23,7 @@ internal sealed record CronSchedule(string Name, string JobName, Cronos.CronExpr
     public DateTimeOffset GetKeepUntil(DateTimeOffset occurrence)
     {
         var until = occurrence + Options.MisfireThreshold;
-        if (Expression.GetNextOccurrence(occurrence, TimeZone, inclusive: false) is { } next && next < until)
+        if (GetNextOccurrence(occurrence, inclusive: false) is { } next && next < until)
             until = next;
 
         return until + ClockMargin;
@@ -35,7 +35,7 @@ internal sealed record CronSchedule(string Name, string JobName, Cronos.CronExpr
     /// </summary>
     public DateTimeOffset? GetLatestOccurrence(DateTimeOffset from, DateTimeOffset to)
     {
-        if (!(Expression.GetNextOccurrence(from, TimeZone, inclusive: true) <= to))
+        if (!(GetNextOccurrence(from, inclusive: true) <= to))
             return null;
 
         // The next occurrence from `low` is never after `to`, and none is from `high` to `to`. Occurrences are at least
@@ -45,13 +45,45 @@ internal sealed record CronSchedule(string Name, string JobName, Cronos.CronExpr
         while (high - low > TimeSpan.TicksPerSecond)
         {
             long middle = low + (high - low) / 2;
-            if (Expression.GetNextOccurrence(new DateTimeOffset(middle, TimeSpan.Zero), TimeZone, inclusive: true) <= to)
+            if (GetNextOccurrence(new DateTimeOffset(middle, TimeSpan.Zero), inclusive: true) <= to)
                 low = middle;
             else
                 high = middle;
         }
 
-        return Expression.GetNextOccurrence(new DateTimeOffset(low, TimeSpan.Zero), TimeZone, inclusive: true);
+        return GetNextOccurrence(new DateTimeOffset(low, TimeSpan.Zero), inclusive: true);
+    }
+
+    /// <summary>
+    /// The first occurrence after <paramref name="from"/>, or at it when <paramref name="inclusive"/>; null when there is
+    /// none. Cronos returns an earlier time when the local time it finds was skipped by a change of the zone's base
+    /// offset, which .NET doesn't report as an invalid time (Samoa skipped 2011-12-30); the search then starts again
+    /// where the offset changed, so occurrences never go back in time.
+    /// </summary>
+    public DateTimeOffset? GetNextOccurrence(DateTimeOffset from, bool inclusive = false)
+    {
+        var next = Expression.GetNextOccurrence(from, TimeZone, inclusive);
+        if (next is not { } found || found > from || inclusive && found == from)
+            return next;
+
+        // The local time found, read with the offset in use at `from`, is after the change: find the change to the second.
+        var offset = TimeZone.GetUtcOffset(from);
+        long low = from.UtcTicks;
+        long high = new DateTimeOffset(found.DateTime, offset).UtcTicks;
+        if (high <= low || TimeZone.GetUtcOffset(new DateTimeOffset(high, TimeSpan.Zero)) == offset)
+            return null;
+
+        while (high - low > TimeSpan.TicksPerSecond)
+        {
+            long middle = low + (high - low) / 2;
+            if (TimeZone.GetUtcOffset(new DateTimeOffset(middle, TimeSpan.Zero)) == offset)
+                low = middle;
+            else
+                high = middle;
+        }
+
+        next = Expression.GetNextOccurrence(new DateTimeOffset(high, TimeSpan.Zero), TimeZone, inclusive: true);
+        return next > from ? next : null;
     }
 
     /// <summary>The latest occurrence before <paramref name="before"/>, or null when there is none in the previous 30 years.</summary>
@@ -61,7 +93,7 @@ internal sealed record CronSchedule(string Name, string JobName, Cronos.CronExpr
         // then narrow it to the latest start whose next occurrence is still before `before`. Occurrences are at
         // least a second apart, so a start within a second of that boundary finds the latest one.
         var window = TimeSpan.FromSeconds(1);
-        while (!(Expression.GetNextOccurrence(before - window, TimeZone, inclusive: true) < before))
+        while (!(GetNextOccurrence(before - window, inclusive: true) < before))
         {
             if (window >= MaxLookBack)
                 return null;
@@ -74,12 +106,12 @@ internal sealed record CronSchedule(string Name, string JobName, Cronos.CronExpr
         while (high - low > TimeSpan.TicksPerSecond)
         {
             long middle = low + (high - low) / 2;
-            if (Expression.GetNextOccurrence(new DateTimeOffset(middle, TimeSpan.Zero), TimeZone, inclusive: true) < before)
+            if (GetNextOccurrence(new DateTimeOffset(middle, TimeSpan.Zero), inclusive: true) < before)
                 low = middle;
             else
                 high = middle;
         }
 
-        return Expression.GetNextOccurrence(new DateTimeOffset(low, TimeSpan.Zero), TimeZone, inclusive: true);
+        return GetNextOccurrence(new DateTimeOffset(low, TimeSpan.Zero), inclusive: true);
     }
 }

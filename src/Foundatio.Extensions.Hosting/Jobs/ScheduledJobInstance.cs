@@ -111,13 +111,13 @@ internal class ScheduledJobInstance
             return null;
 
         var lastRun = LastRun ?? _timeProvider.GetUtcNowDateTime(false).AddSeconds(-5);
-        var nextRun = _cronExpression.GetNextOccurrence(lastRun, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
+        var nextRun = GetNextOccurrence(_cronExpression, lastRun, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
         if (nextRun == null)
             return null;
 
         if (nextRun < _timeProvider.GetUtcNowDateTime(false))
         {
-            var futureRun = _cronExpression.GetNextOccurrence(_timeProvider.GetUtcNowDateTime(false), _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
+            var futureRun = GetNextOccurrence(_cronExpression, _timeProvider.GetUtcNowDateTime(false), _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
 
             // if next run is more than an hour in the past, use the future run
             if (_timeProvider.GetUtcNowDateTime(false).Subtract(nextRun.Value) > TimeSpan.FromHours(1))
@@ -129,6 +129,37 @@ internal class ScheduledJobInstance
         }
 
         return nextRun;
+    }
+
+    /// <summary>
+    /// The first occurrence after <paramref name="fromUtc"/>. Cronos returns an earlier time when the local time it finds
+    /// was skipped by a change of the zone's base offset, which .NET doesn't report as an invalid time (Samoa skipped
+    /// 2011-12-30); the search then starts again where the offset changed.
+    /// </summary>
+    private static DateTime? GetNextOccurrence(CronExpression expression, DateTime fromUtc, TimeZoneInfo zone)
+    {
+        var next = expression.GetNextOccurrence(fromUtc, zone);
+        if (next is not { } found || found > fromUtc)
+            return next;
+
+        // Base offsets change by at most a day, so the change is within two days of `from`; find it to the second.
+        var offset = zone.GetUtcOffset(fromUtc);
+        long low = fromUtc.Ticks;
+        long high = fromUtc.AddDays(2).Ticks;
+        if (zone.GetUtcOffset(new DateTime(high, DateTimeKind.Utc)) == offset)
+            return null;
+
+        while (high - low > TimeSpan.TicksPerSecond)
+        {
+            long middle = low + (high - low) / 2;
+            if (zone.GetUtcOffset(new DateTime(middle, DateTimeKind.Utc)) == offset)
+                low = middle;
+            else
+                high = middle;
+        }
+
+        next = expression.GetNextOccurrence(new DateTime(high, DateTimeKind.Utc), zone, inclusive: true);
+        return next > fromUtc ? next : null;
     }
 
     internal bool ShouldRun()

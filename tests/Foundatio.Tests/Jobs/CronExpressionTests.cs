@@ -1,7 +1,11 @@
 using System;
 using System.Globalization;
 using System.Linq;
+using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Jobs.Cronos;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs;
@@ -61,6 +65,64 @@ public class CronExpressionTests
                 Assert.Equal(expected, schedule.GetLatestOccurrence(from, to));
             }
         }
+    }
+
+    /// <summary>
+    /// Samoa skipped 2011-12-30 by moving its base offset from -10:00 to +14:00, which .NET doesn't report as invalid
+    /// times. Cronos then returns a time before the search's start for an occurrence on the skipped day, and enumerating
+    /// from it never moves on; the scheduler's searches must still only move forward.
+    /// </summary>
+    [Theory]
+    [InlineData("30 1 * * *", "2011-12-30T06:50:00Z", "2011-12-30T11:30:00Z")]
+    [InlineData("0 * * * *", "2011-12-30T09:30:00Z", "2011-12-30T10:00:00Z")]
+    [InlineData("*/15 * * * *", "2011-12-30T09:50:00Z", "2011-12-30T10:00:00Z")]
+    [InlineData("30 1 * * *", "2011-12-29T10:00:00Z", "2011-12-29T11:30:00Z")]
+    public void CronSchedule_GetNextOccurrence_AcrossADayAZoneSkipped_IsAfterTheStart(string expression, string from, string expected)
+    {
+        var cron = CronExpression.Parse(expression, CronFormat.Standard);
+        var start = DateTimeOffset.Parse(from, CultureInfo.InvariantCulture);
+        var schedule = new Foundatio.Jobs.CronSchedule("schedule", "job", cron, null, new Foundatio.Jobs.CronJobOptions { TimeZone = Samoa });
+
+        Assert.Equal(DateTimeOffset.Parse(expected, CultureInfo.InvariantCulture), schedule.GetNextOccurrence(start, inclusive: true));
+        Assert.Equal(DateTimeOffset.Parse(expected, CultureInfo.InvariantCulture), schedule.GetNextOccurrence(start));
+    }
+
+    [Theory]
+    [InlineData("30 1 * * *")]
+    [InlineData("0 * * * *")]
+    [InlineData("*/20 * * * *")]
+    [InlineData("0 0 * * *")]
+    public void CronSchedule_AroundADayAZoneSkipped_FindsOnlyOccurrencesInTheWindowAndMovesForward(string expression)
+    {
+        var cron = CronExpression.Parse(expression, CronFormat.Standard);
+        var schedule = new Foundatio.Jobs.CronSchedule("schedule", "job", cron, null, new Foundatio.Jobs.CronJobOptions { TimeZone = Samoa });
+        var skipped = new DateTimeOffset(2011, 12, 30, 10, 0, 0, TimeSpan.Zero);
+        for (var to = skipped.AddHours(-24); to <= skipped.AddHours(6); to = to.AddMinutes(7))
+        {
+            var next = schedule.GetNextOccurrence(to, inclusive: true);
+            Assert.True(next >= to, $"Next occurrence from {to:O} is {next:O}");
+
+            foreach (var window in new[] { TimeSpan.FromMinutes(10), TimeSpan.FromHours(1), TimeSpan.FromHours(3) })
+            {
+                var latest = schedule.GetLatestOccurrence(to - window, to);
+                Assert.True(latest is null || latest >= to - window && latest <= to, $"Latest occurrence in [{to - window:O}, {to:O}] is {latest:O}");
+            }
+
+            var previous = schedule.GetPreviousOccurrence(to);
+            Assert.True(previous < to, $"Previous occurrence before {to:O} is {previous:O}");
+        }
+    }
+
+    [Fact]
+    public void LegacyScheduledJob_AcrossADayAZoneSkipped_NextRunIsAfterNow()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2011, 12, 30, 6, 50, 0, TimeSpan.Zero));
+        using var services = new ServiceCollection().AddSingleton<TimeProvider>(time).BuildServiceProvider();
+        var manager = new JobManager(services, NullLoggerFactory.Instance);
+        manager.AddOrUpdate("daily", b => b.CronTimeZone(Samoa).CronSchedule("0 0 1 1 *").JobAction(() => { }));
+        manager.AddOrUpdate("daily", b => b.CronSchedule("30 1 * * *"));
+
+        Assert.Equal(new DateTime(2011, 12, 30, 11, 30, 0, DateTimeKind.Utc), manager.GetJobStatus("daily").NextRun);
     }
 
     [Theory]
