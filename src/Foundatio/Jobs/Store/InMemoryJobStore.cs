@@ -192,8 +192,13 @@ public sealed class InMemoryJobStore : IJobStore
         {
             var now = RemoveExpired();
             List<JobInfo>? claimed = null;
-            while ((claimed?.Count ?? 0) < maxCount && ClaimNextLocked(request, now) is { } job)
+            Dictionary<string, int>? claimedByName = request.MaxPerName is { Count: > 0 } ? new(StringComparer.Ordinal) : null;
+            while ((claimed?.Count ?? 0) < maxCount && ClaimNextLocked(request, now, claimedByName) is { } job)
+            {
                 (claimed ??= new List<JobInfo>(maxCount)).Add(job);
+                if (claimedByName is not null)
+                    claimedByName[job.Name] = claimedByName.GetValueOrDefault(job.Name) + 1;
+            }
 
             return Task.FromResult<IReadOnlyList<JobInfo>>(claimed ?? (IReadOnlyList<JobInfo>)[]);
         }
@@ -207,13 +212,18 @@ public sealed class InMemoryJobStore : IJobStore
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.LeaseDuration, TimeSpan.Zero, nameof(request));
     }
 
-    private JobInfo? ClaimNextLocked(JobClaimRequest request, DateTimeOffset now)
+    /// <param name="request">What to claim.</param>
+    /// <param name="now">The store's time.</param>
+    /// <param name="claimedByName">For a batch with <see cref="JobClaimRequest.MaxPerName"/>, how many of each name it has claimed so far.</param>
+    private JobInfo? ClaimNextLocked(JobClaimRequest request, DateTimeOffset now, Dictionary<string, int>? claimedByName = null)
     {
         Entry? next = null;
         var claimFilter = ClaimFilter;
         foreach (string name in request.Names)
         {
             if (claimFilter is not null && !claimFilter(name))
+                continue;
+            if (claimedByName is not null && request.MaxPerName!.TryGetValue(name, out int max) && claimedByName.GetValueOrDefault(name) >= max)
                 continue;
 
             if (FirstClaimable(name, now.UtcTicks) is { } first && (next is null || DueComparer.Instance.Compare(first, next) < 0))

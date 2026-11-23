@@ -80,7 +80,8 @@ public interface IJobStore
     /// <summary>
     /// Claims up to <paramref name="maxCount"/> jobs at once, each as <see cref="ClaimAsync"/> claims one and with its
     /// own <see cref="JobInfo.ClaimToken"/>, those due longest first, never two with the same name and
-    /// <see cref="JobInfo.ConcurrencyKey"/>. Returns an empty list when none is due, and may
+    /// <see cref="JobInfo.ConcurrencyKey"/>, and no more of a name than <see cref="JobClaimRequest.MaxPerName"/> allows (a
+    /// limited name's other due jobs don't keep jobs of other names out of the batch). Returns an empty list when none is due, and may
     /// return fewer than are due. Workers call this to fill their free slots, so a store with a network round trip
     /// should claim the batch in one; the default claims one job with <see cref="ClaimAsync"/>.
     /// </summary>

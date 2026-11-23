@@ -845,6 +845,37 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal([JobState.Running], store.Queries.Select(q => q.State));
     }
 
+    /// <summary>
+    /// A job type limited to one at a time, with nothing queued, doesn't limit how many jobs of other types a claim
+    /// takes: the worker's batches still fill its free slots.
+    /// </summary>
+    [Fact]
+    public async Task ClaimBatch_WithOneJobTypeLimitedToOne_StillFillsBatchesWithOtherTypes()
+    {
+        var counting = new ClaimCountingJobStore(_store);
+        await using var host = await StartAsync(j => j
+            .Configure(o => o.MaxConcurrency = 16)
+            .AddJob<ResizeImageJob>()
+            .AddJob<TickJob>(new JobTypeOptions { MaxConcurrency = 1 }), store: counting, startHostedServices: false);
+        for (int i = 0; i < 200; i++)
+            await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), cancellationToken: TestCancellationToken);
+
+        var worker = new JobWorker(host.Services.GetRequiredService<JobsRuntime>());
+        worker.Start();
+        try
+        {
+            await WaitForAsync(async () => await _store.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) == 200);
+        }
+        finally
+        {
+            await worker.StopAsync(TestCancellationToken);
+        }
+
+        var claims = counting.Claims.ToList();
+        Assert.True(claims.Max(c => c.MaxCount) > 1, $"{claims.Count} claims, each of at most {claims.Max(c => c.MaxCount)}");
+        Assert.True(claims.Max(c => c.Claimed) > 1, $"{claims.Count} claims, the largest of {claims.Max(c => c.Claimed)} jobs");
+    }
+
     [Fact]
     public async Task Cron_WithArguments_EnqueuesTheArgumentsJob()
     {

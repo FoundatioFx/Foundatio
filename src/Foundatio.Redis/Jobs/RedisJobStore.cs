@@ -243,13 +243,19 @@ public sealed class RedisJobStore : IJobStore
             SweepIfDue();
             string[] names = request.Names.Distinct(StringComparer.Ordinal).ToArray();
             var setKeys = names.SelectMany(n => new RedisKey[] { QueuedKey(n), RunningKey(n) }).ToArray();
-            int candidateCount = ClaimCandidates + Math.Min(maxCount, MaxClaimBatch);
+            int claimCount = Math.Min(maxCount, MaxClaimBatch);
+            int candidateCount = ClaimCandidates + claimCount;
+            var maxPerName = names.Select(n => request.MaxPerName is { } limits && limits.TryGetValue(n, out int max) ? Math.Clamp(max, 0, claimCount) : claimCount).ToArray();
+            var candidateValues = new RedisValue[1 + names.Length];
+            candidateValues[0] = candidateCount;
+            for (int i = 0; i < names.Length; i++)
+                candidateValues[1 + i] = Math.Min(candidateCount, ClaimCandidates + maxPerName[i]);
 
             // Find the jobs due longest, then claim those of them that no other worker has taken in the meantime.
             // Two scripts, because a script can only touch the jobs whose keys it is given.
             for (int round = 0; round < MaxClaimRounds; round++)
             {
-                var candidates = (RedisResult[])(await EvaluateScriptAsync(CandidatesScript, setKeys, [candidateCount]).AnyContext())!;
+                var candidates = (RedisResult[])(await EvaluateScriptAsync(CandidatesScript, setKeys, candidateValues).AnyContext())!;
                 if (candidates.Length == 0)
                     return [];
 
@@ -260,11 +266,12 @@ public sealed class RedisJobStore : IJobStore
                         HoldersKey(name), WaitingKey(name), PendingKey(name)]);
                 }
 
-                var values = new List<RedisValue>(5 + names.Length + candidates.Length)
+                var values = new List<RedisValue>(5 + 2 * names.Length + candidates.Length)
                 {
-                    request.WorkerId, ToMicroseconds(request.LeaseDuration), Guid.NewGuid().ToString("N")[..ClaimTokenPrefixLength], names.Length, Math.Min(maxCount, MaxClaimBatch)
+                    request.WorkerId, ToMicroseconds(request.LeaseDuration), Guid.NewGuid().ToString("N")[..ClaimTokenPrefixLength], names.Length, claimCount
                 };
                 values.AddRange(names.Select(n => (RedisValue)n));
+                values.AddRange(maxPerName.Select(max => (RedisValue)max));
                 for (int i = 0; i + 2 < candidates.Length; i += 3)
                 {
                     string id = (string)candidates[i]!;

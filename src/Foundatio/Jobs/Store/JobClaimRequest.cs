@@ -14,4 +14,11 @@ public sealed record JobClaimRequest
     public required string WorkerId { get; init; }
     /// <summary>How long the claim lasts unless renewed. Afterwards another worker may claim the job.</summary>
     public required TimeSpan LeaseDuration { get; init; }
+
+    /// <summary>
+    /// The most jobs of a name one <see cref="IJobStore.ClaimBatchAsync"/> may take, for names whose job type limits how
+    /// many of it run at once; names not in it are limited only by the batch's count. Null when no name is limited.
+    /// A single <see cref="IJobStore.ClaimAsync"/> can ignore it: a worker only requests names it has room for.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? MaxPerName { get; init; }
 }

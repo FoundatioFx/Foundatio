@@ -125,9 +125,9 @@ internal sealed class JobWorker
                 slots++;
 
             var names = _allNames;
-            int maxCount = slots;
+            Dictionary<string, int>? maxPerName = null;
             if (_limitsByName)
-                (names, maxCount) = GetClaimableNames(slots);
+                (names, maxPerName) = GetClaimableNames(slots);
 
             IReadOnlyList<JobInfo> jobs = [];
             var workAvailable = _runtime.WorkAvailable;
@@ -136,8 +136,8 @@ internal sealed class JobWorker
             {
                 if (names.Count > 0)
                 {
-                    var request = new JobClaimRequest { Names = names, WorkerId = _runtime.WorkerId, LeaseDuration = _runtime.Options.LeaseDuration };
-                    jobs = await _runtime.Store.ClaimBatchAsync(request, maxCount, token).AnyContext();
+                    var request = new JobClaimRequest { Names = names, WorkerId = _runtime.WorkerId, LeaseDuration = _runtime.Options.LeaseDuration, MaxPerName = maxPerName };
+                    jobs = await _runtime.Store.ClaimBatchAsync(request, slots, token).AnyContext();
                 }
 
                 Status.RecordSuccess();
@@ -185,14 +185,11 @@ internal sealed class JobWorker
         }
     }
 
-    /// <summary>
-    /// The job names under their type's concurrency limit, and how many jobs a claim of them may take: no more than
-    /// <paramref name="slots"/>, nor than any of those limited types has room for, since every job claimed could be of that type.
-    /// </summary>
-    private (List<string> Names, int MaxCount) GetClaimableNames(int slots)
+    /// <summary>The job names under their type's concurrency limit, and how many jobs of each limited one a claim may take.</summary>
+    private (List<string> Names, Dictionary<string, int>? MaxPerName) GetClaimableNames(int slots)
     {
         var names = new List<string>(_allNames.Count);
-        int maxCount = slots;
+        Dictionary<string, int>? maxPerName = null;
         foreach (var registration in _runtime.Jobs.Values)
         {
             if (registration.Options.MaxConcurrency is not { } limit)
@@ -206,10 +203,11 @@ internal sealed class JobWorker
                 continue;
 
             names.Add(registration.Name);
-            maxCount = Math.Min(maxCount, room);
+            if (room < slots)
+                (maxPerName ??= new Dictionary<string, int>(StringComparer.Ordinal))[registration.Name] = room;
         }
 
-        return (names, maxCount);
+        return (names, maxPerName);
     }
 
     private async Task RunClaimedAsync(JobInfo claimed, long claimSent)

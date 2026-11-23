@@ -1,8 +1,8 @@
 -- KEYS: queued index, running index, then queued, running, queued name index, running name index, holders (the
 --       name's concurrency keys and the jobs holding them), waiting (the name's jobs waiting for a concurrency key)
 --       and pending (the name's deduplication keys) for each name, then each candidate's job
--- ARGV: worker id, lease us, claim token prefix (24 characters), name count, most jobs to claim, the names, then id,
---       name ordinal and '1' when queued for each candidate, in the order to try them
+-- ARGV: worker id, lease us, claim token prefix (24 characters), name count, most jobs to claim, the names, the most
+--       jobs to claim of each name, then id, name ordinal and '1' when queued for each candidate, in the order to try them
 -- Claims the candidates that are still due, in order, up to the most jobs to claim, and returns each claimed job's
 -- fields; an empty list when other workers took them all. A queued candidate whose concurrency key another job holds
 -- moves to the waiting set instead. Each claim token is the prefix, the claim's number in 8 hex digits, then the
@@ -11,8 +11,9 @@ local worker, lease, tokenPrefix, nameCount, maxClaims = ARGV[1], tonumber(ARGV[
 local NAME_KEYS = 7
 local jobKeys = 2 + NAME_KEYS * nameCount
 local claimed = {}
+local claimedOfName = {}
 local candidate = 0
-for i = 6 + nameCount, #ARGV, 3 do
+for i = 6 + 2 * nameCount, #ARGV, 3 do
     if #claimed >= maxClaims then
         break
     end
@@ -22,7 +23,7 @@ for i = 6 + nameCount, #ARGV, 3 do
     local queued, running, holders = KEYS[nameKeys + 1], KEYS[nameKeys + 2], KEYS[nameKeys + 5]
     local key = KEYS[jobKeys + candidate]
     local source = fromQueued and queued or running
-    local due = redis.call('ZSCORE', source, id)
+    local due = (claimedOfName[n] or 0) < tonumber(ARGV[5 + nameCount + n]) and redis.call('ZSCORE', source, id)
     if due and tonumber(due) <= now then
         local job = redis.call('HMGET', key, 'ckey', 'dkey', 'status', 'index', 'started')
         local concurrencyKey, deduplicationKey = present(job[1]), present(job[2])
@@ -55,6 +56,7 @@ for i = 6 + nameCount, #ARGV, 3 do
             end
             redis.call('ZADD', running, leaseExpires, id)
             claimed[#claimed + 1] = redis.call('HGETALL', key)
+            claimedOfName[n] = (claimedOfName[n] or 0) + 1
         end
     end
 end

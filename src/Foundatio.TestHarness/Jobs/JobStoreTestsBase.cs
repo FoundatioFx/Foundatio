@@ -1116,6 +1116,29 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     }
 
     /// <summary>
+    /// A batch takes no more of a name than <see cref="JobClaimRequest.MaxPerName"/> allows, and fills the rest with
+    /// other names' jobs even when the limited name's are due longer.
+    /// </summary>
+    [Fact]
+    public async Task ClaimBatch_WithMaxPerName_TakesNoMoreOfALimitedNameAndFillsTheBatchWithOthers()
+    {
+        string limited = NewName(), other = NewName();
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < 5; i++)
+        {
+            await Store.CreateAsync(NewJob(limited) with { AvailableAt = now.AddMinutes(-10).AddSeconds(i) }, TestCancellationToken);
+            await Store.CreateAsync(NewJob(other) with { AvailableAt = now.AddMinutes(-5).AddSeconds(i) }, TestCancellationToken);
+        }
+
+        var request = Claim(limited, other) with { MaxPerName = new Dictionary<string, int> { [limited] = 2 } };
+        var claimed = await Store.ClaimBatchAsync(request, 6, TestCancellationToken);
+
+        Assert.Equal(2, claimed.Count(j => j.Name == limited));
+        Assert.Equal(4, claimed.Count(j => j.Name == other));
+        Assert.Equal(3, await Store.CountAsync(JobState.Queued, limited, TestCancellationToken));
+    }
+
+    /// <summary>
     /// A job created with <see cref="JobInfo.RetainUntil"/> is kept until then once it finishes, however short the
     /// retention it finishes with: succeeded, failed or cancelled while queued. Without it, zero retention removes it.
     /// </summary>

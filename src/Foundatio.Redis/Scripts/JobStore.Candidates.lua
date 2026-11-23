@@ -1,12 +1,12 @@
 -- KEYS: queued and running for each name, in pairs
--- ARGV: limit
+-- ARGV: limit, then the most candidates to take of each name
 -- Returns the jobs that have been due longest (queued and available, or running with an expired lease) as
 -- id, name ordinal, '1' when queued, up to limit of them. Changes nothing.
 local limit = tonumber(ARGV[1])
 local candidates = {}
 for n = 1, #KEYS / 2 do
     for set = 0, 1 do
-        local due = redis.call('ZRANGEBYSCORE', KEYS[2 * n - 1 + set], '-inf', now, 'WITHSCORES', 'LIMIT', 0, limit)
+        local due = redis.call('ZRANGEBYSCORE', KEYS[2 * n - 1 + set], '-inf', now, 'WITHSCORES', 'LIMIT', 0, tonumber(ARGV[1 + n]))
         for i = 1, #due, 2 do
             candidates[#candidates + 1] = { due[i], tonumber(due[i + 1]), n, set == 0 and '1' or '0' }
         end
