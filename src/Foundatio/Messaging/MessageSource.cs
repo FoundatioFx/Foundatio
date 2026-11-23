@@ -1,9 +1,11 @@
 using System;
+using System.Text.Json.Serialization;
 using Foundatio.Messaging.Transport;
 
 namespace Foundatio.Messaging;
 
 /// <summary>What a <see cref="MessageSource"/> receives from.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MessageSourceKind>))]
 public enum MessageSourceKind
 {
     /// <summary>Competing receivers share the messages sent to a queue.</summary>

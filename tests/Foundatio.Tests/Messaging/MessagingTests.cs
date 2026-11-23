@@ -23,6 +23,21 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public void StatusEnums_SerializeAsTheirNames_AndStillReadNumbers()
+    {
+        var status = new { Source = MessageSource.Queue("orders"), Outcome = Foundatio.Monitoring.WorkOutcome.DeadLettered, Recorded = Foundatio.Testing.MessageOutcome.Retried, Job = Foundatio.Jobs.JobState.Succeeded, State = Foundatio.Utility.ProcessingState.Running };
+
+        string json = System.Text.Json.JsonSerializer.Serialize(status);
+
+        Assert.Contains("\"Kind\":\"Queue\"", json);
+        Assert.Contains("\"Outcome\":\"DeadLettered\"", json);
+        Assert.Contains("\"Recorded\":\"Retried\"", json);
+        Assert.Contains("\"Job\":\"Succeeded\"", json);
+        Assert.Contains("\"State\":\"Running\"", json);
+        Assert.Equal(Foundatio.Jobs.JobState.Failed, System.Text.Json.JsonSerializer.Deserialize<Foundatio.Jobs.JobState>("3"));
+    }
+
+    [Fact]
     public async Task HandlerClass_IsResolvedFromANewScopePerMessage()
     {
         var recorder = new Recorder();

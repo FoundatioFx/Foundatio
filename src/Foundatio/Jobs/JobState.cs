@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace Foundatio.Jobs;
 
 /// <summary>Where a job is in its lifecycle.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<JobState>))]
 public enum JobState
 {
     /// <summary>Waiting to run, including delayed jobs and jobs waiting to retry.</summary>

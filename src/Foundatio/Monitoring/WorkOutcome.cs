@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace Foundatio.Monitoring;
 
 /// <summary>How a message delivery or a job run ended.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<WorkOutcome>))]
 public enum WorkOutcome
 {
     /// <summary>The handlers returned and the message was completed, or the job succeeded.</summary>

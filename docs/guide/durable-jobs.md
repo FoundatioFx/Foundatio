@@ -44,7 +44,7 @@ app.MapPost("/reports", async (IJobClient jobs) =>
 
 app.MapGet("/reports/{id}", async (string id, IJobClient jobs) =>
     await jobs.GetAsync(id) is { } job
-        ? Results.Ok(new { State = job.State.ToString(), job.Progress, job.Message })   // JobState serializes as a number otherwise
+        ? Results.Ok(new { job.State, job.Progress, job.Message })   // State serializes as its name, such as "Running"
         : Results.NotFound());
 ```
 

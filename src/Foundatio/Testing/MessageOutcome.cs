@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace Foundatio.Testing;
 
 /// <summary>How a delivery recorded by <see cref="FoundatioTestHarness"/> ended.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MessageOutcome>))]
 public enum MessageOutcome
 {
     /// <summary>Every handler returned, so the message was completed.</summary>

@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace Foundatio.Utility;
 
 /// <summary>What a background loop (a message processor, the job worker or the job scheduler) is doing.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ProcessingState>))]
 public enum ProcessingState
 {
     /// <summary>Waiting for the <see cref="IStartupGate"/>, or connecting for the first time.</summary>
