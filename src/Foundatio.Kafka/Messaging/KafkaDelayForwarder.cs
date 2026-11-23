@@ -15,27 +15,44 @@ namespace Foundatio.Messaging.Transport;
 /// consumer group for the tiers. A record is due in its tier at its append time plus the tier's delay; until then
 /// its partition is paused with the record held. A due record goes to its target when its delivery time has come,
 /// to a shorter tier when much of the delay remains, or is held in memory for the last fraction of the smallest tier.
+/// The forwarder writes on producers of its own, so a backlog it forwards never fills the queue the application
+/// sends on, and it stops reading while too many of its records are in flight.
 /// </summary>
 internal sealed class KafkaDelayForwarder : IAsyncDisposable
 {
     private static readonly TimeSpan MaxPollTimeout = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HandOffTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// A record only gets into a tier after its target and the tiers were created, so a topic the forwarder cannot
+    /// find was deleted. librdkafka waits 30 seconds by default before it fails a send to a topic it cannot find.
+    /// </summary>
+    private const int MissingTopicTimeoutMs = 1000;
+
+    private const long MaxInFlightBytes = 64 * 1024 * 1024;
 
     private readonly KafkaMessageTransport _transport;
     private readonly IReadOnlyDictionary<string, TimeSpan> _tiers;
     private readonly IConsumer<byte[]?, byte[]?> _consumer;
     private readonly ILogger _logger;
     private readonly object _lock = new();
-    private readonly Dictionary<TopicPartition, KafkaPartitionState> _partitions = [];
+    private readonly Dictionary<TopicPartition, TierPartition> _partitions = [];
     private readonly Dictionary<TopicPartition, Waiting> _paused = [];
+    private readonly HashSet<TopicPartition> _throttled = [];
     private readonly List<Waiting> _scheduled = [];
     private readonly ConcurrentQueue<Waiting> _retries = new();
     private readonly CancellationTokenSource _stopping = new();
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeSpan _retryDelay;
     private readonly int _maxAttempts;
+    private readonly int _maxInFlight;
+    private readonly IProducer<byte[]?, byte[]> _producer;
     private IProducer<byte[]?, byte[]>? _isolatedProducer;
+    private int _inFlight;
+    private long _inFlightBytes;
+    private bool _throttling;
     private bool _offsetsChanged;
     private string[] _heldTopics = [];
     private Exception? _injectedFailure;
@@ -49,6 +66,8 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
         _logger = transport.Logger;
         _retryDelay = transport.Options.DelayForwardRetryDelay;
         _maxAttempts = Math.Max(1, transport.Options.DelayForwardMaxAttempts);
+        _maxInFlight = Math.Max(1, transport.Options.DelayForwardMaxInFlight);
+        _producer = CreateProducer();
         _consumer = new ConsumerBuilder<byte[]?, byte[]?>(transport.CreateConsumerConfig(transport.Names.DelayGroup))
             .SetLogHandler((_, message) => transport.OnLog(message))
             .SetErrorHandler((_, error) => transport.OnError(error))
@@ -112,6 +131,7 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
                     throw failure;
 
                 StoreOffsets();
+                Throttle();
                 var now = _transport.TimeProvider.GetUtcNow();
                 var nextDue = ProcessWaiting(now);
 
@@ -149,6 +169,8 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
             }
 
             _consumer.Dispose();
+            _producer.Flush(DrainTimeout);
+            _producer.Dispose();
             if (_isolatedProducer is { } isolated)
             {
                 isolated.Flush(DrainTimeout);
@@ -169,12 +191,21 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
             return;
         }
 
-        KafkaPartitionState state;
+        if (_throttling)
+        {
+            // Read before the partition was paused, or assigned since: read it again once records in flight finish.
+            _consumer.Pause([partition]);
+            _consumer.Seek(result.TopicPartitionOffset);
+            _throttled.Add(partition);
+            return;
+        }
+
+        TierPartition state;
         lock (_lock)
         {
             if (!_partitions.TryGetValue(partition, out state!))
             {
-                state = new KafkaPartitionState(partition);
+                state = new TierPartition(partition);
                 _partitions[partition] = state;
             }
         }
@@ -191,7 +222,7 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
         }
 
         lock (_lock)
-            state.Read(result.Offset.Value);
+            state.Read(result);
 
         Route(waiting);
     }
@@ -213,10 +244,14 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
 
             _paused.Remove(partition);
             lock (_lock)
-                waiting.State.Read(waiting.Result.Offset.Value);
+                waiting.State.Read(waiting.Result);
 
             Route(waiting);
-            _consumer.Resume([partition]);
+            if (_throttling)
+                _throttled.Add(partition);
+            else
+                _consumer.Resume([partition]);
+
             PublishHeld();
         }
 
@@ -276,20 +311,64 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
 
     private void Produce(string topic, Message<byte[]?, byte[]> message, Waiting waiting, bool isTarget)
     {
+        long size = message.Value.Length + (message.Key?.Length ?? 0);
+        Interlocked.Increment(ref _inFlight);
+        Interlocked.Add(ref _inFlightBytes, size);
         try
         {
-            var producer = waiting.Isolated ? GetIsolatedProducer() : _transport.Producer;
-            producer.Produce(topic, message, report => OnDelivered(report.Error, topic, waiting, isTarget));
+            var producer = waiting.Isolated ? GetIsolatedProducer() : _producer;
+            producer.Produce(topic, message, report =>
+            {
+                Release(size);
+                OnDelivered(report.Error, topic, waiting, isTarget);
+            });
         }
         catch (ProduceException<byte[]?, byte[]> ex)
         {
+            Release(size);
             OnDelivered(ex.Error, topic, waiting, isTarget);
         }
         catch (Exception ex)
         {
+            Release(size);
             _logger.LogWarning(ex, "Could not forward delayed record {Offset} to {Topic}; retrying", waiting.Result.TopicPartitionOffset, topic);
             _retries.Enqueue(waiting);
         }
+    }
+
+    private void Release(long size)
+    {
+        Interlocked.Decrement(ref _inFlight);
+        Interlocked.Add(ref _inFlightBytes, -size);
+    }
+
+    /// <summary>
+    /// Stops reading the tiers while too many forwarded records are in flight (a slow broker, or a backlog that came
+    /// due at once), and reads them again once half of those have finished.
+    /// </summary>
+    private void Throttle()
+    {
+        int inFlight = Volatile.Read(ref _inFlight);
+        long inFlightBytes = Interlocked.Read(ref _inFlightBytes);
+        if (!_throttling)
+        {
+            if (inFlight < _maxInFlight && inFlightBytes < MaxInFlightBytes)
+                return;
+
+            _throttling = true;
+            var partitions = _consumer.Assignment.Where(p => !_paused.ContainsKey(p)).ToList();
+            _consumer.Pause(partitions);
+            _throttled.UnionWith(partitions);
+            _logger.LogDebug("Pausing the delay topics while {Count} forwarded records are in flight", inFlight);
+            return;
+        }
+
+        if (inFlight > _maxInFlight / 2 || inFlightBytes > MaxInFlightBytes / 2)
+            return;
+
+        _throttling = false;
+        _consumer.Resume(_throttled.ToList());
+        _throttled.Clear();
     }
 
     /// <summary>
@@ -346,10 +425,19 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
     /// <summary>A producer that sends every record in a batch of its own, for retrying records a target rejected.</summary>
     private IProducer<byte[]?, byte[]> GetIsolatedProducer()
     {
-        return _isolatedProducer ??= _transport.CreateProducer(c =>
+        return _isolatedProducer ??= CreateProducer(c =>
         {
             c.BatchNumMessages = 1;
             c.LingerMs = 0;
+        });
+    }
+
+    private IProducer<byte[]?, byte[]> CreateProducer(Action<ProducerConfig>? adjust = null)
+    {
+        return _transport.CreateProducer(c =>
+        {
+            c.TopicMetadataPropagationMaxMs = MissingTopicTimeoutMs;
+            adjust?.Invoke(c);
         });
     }
 
@@ -359,7 +447,7 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
     {
         lock (_lock)
         {
-            waiting.State.Pending.Remove(waiting.Result.Offset.Value);
+            waiting.State.Finish(waiting.Result.Offset.Value);
             _offsetsChanged = true;
         }
     }
@@ -401,15 +489,21 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
         lock (_lock)
         {
             foreach (var partition in partitions)
-                _partitions[partition] = new KafkaPartitionState(partition);
+                _partitions[partition] = new TierPartition(partition);
         }
     }
 
+    /// <summary>
+    /// Gives up partitions. A record the forwarder has not finished would hold the committed offset back, and the
+    /// partition's next owner would forward again every record after it, so what is still unfinished once the records
+    /// in flight had their time is copied back to the tiers and the offset committed past it. A record whose forward
+    /// was only slow is then delivered twice; one that pinned the offset would have had every record behind it delivered again.
+    /// </summary>
     private void OnRevoked(List<TopicPartition> partitions, bool commit)
     {
         // librdkafka keeps a revoked partition paused, so one assigned back would never be read again.
         var revoked = partitions.ToHashSet();
-        var paused = partitions.Where(_paused.Remove).ToList();
+        var paused = partitions.Where(p => _paused.Remove(p) | _throttled.Remove(p)).ToList();
         if (paused.Count > 0)
         {
             _consumer.Resume(paused);
@@ -417,13 +511,7 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
         }
 
         _scheduled.RemoveAll(w => revoked.Contains(w.State.TopicPartition));
-        if (commit)
-        {
-            _transport.Producer.Flush(DrainTimeout);
-            _isolatedProducer?.Flush(DrainTimeout);
-        }
-
-        List<TopicPartitionOffset> offsets = [];
+        List<TierPartition> states = [];
         lock (_lock)
         {
             foreach (var partition in partitions)
@@ -432,13 +520,29 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
                     continue;
 
                 state.Revoked = true;
-                if (state.CommitOffset is { } offset)
-                    offsets.Add(new TopicPartitionOffset(partition, offset));
+                states.Add(state);
             }
         }
 
         if (!commit)
             return;
+
+        if (UnfinishedCount(states) > 0)
+        {
+            _producer.Flush(DrainTimeout);
+            _isolatedProducer?.Flush(DrainTimeout);
+            HandOff(states);
+        }
+
+        List<TopicPartitionOffset> offsets = [];
+        lock (_lock)
+        {
+            foreach (var state in states)
+            {
+                if (state.CommitOffset is { } offset)
+                    offsets.Add(new TopicPartitionOffset(state.TopicPartition, offset));
+            }
+        }
 
         // librdkafka commits the stored offsets of partitions it unassigns, and Close those of the rest; a synchronous
         // commit here could block the rebalance without a bound.
@@ -455,11 +559,97 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
         }
     }
 
+    private int UnfinishedCount(List<TierPartition> states)
+    {
+        lock (_lock)
+            return states.Sum(s => s.Pending.Count);
+    }
+
+    /// <summary>Copies the unfinished records of revoked partitions back to the tiers, finishing each copy written.</summary>
+    private void HandOff(List<TierPartition> states)
+    {
+        List<(TierPartition State, ConsumeResult<byte[]?, byte[]?> Result)> unfinished;
+        lock (_lock)
+            unfinished = [.. states.SelectMany(s => s.Unfinished.Select(r => (s, r)))];
+
+        if (unfinished.Count == 0)
+            return;
+
+        var now = _transport.TimeProvider.GetUtcNow();
+        int handedOff = 0;
+        foreach (var (state, result) in unfinished)
+        {
+            var remaining = (KafkaMessageTransportCodec.GetTime(result, KafkaMessageTransportCodec.DeliverAtHeader) ?? now) - now;
+            string tier = _transport.Names.Delay(KafkaDelayTiers.Choose(remaining));
+            try
+            {
+                _producer.Produce(tier, KafkaMessageTransportCodec.Copy(result), report =>
+                {
+                    if (report.Error.IsError)
+                        return;
+
+                    lock (_lock)
+                        state.Finish(result.Offset.Value);
+
+                    Interlocked.Increment(ref handedOff);
+                });
+            }
+            catch (KafkaException ex)
+            {
+                _logger.LogDebug(ex, "Could not hand delayed record {Offset} back to {Topic}", result.TopicPartitionOffset, tier);
+            }
+        }
+
+        _producer.Flush(HandOffTimeout);
+        _logger.LogInformation("Handed {HandedOff} of {Count} unfinished delayed records back to the delay topics while releasing partitions",
+            Volatile.Read(ref handedOff), unfinished.Count);
+    }
+
     /// <summary>A record read from a tier and not finished, with the attempts its target rejected it alone.</summary>
-    private sealed record Waiting(ConsumeResult<byte[]?, byte[]?> Result, KafkaPartitionState State, DateTimeOffset Due)
+    private sealed record Waiting(ConsumeResult<byte[]?, byte[]?> Result, TierPartition State, DateTimeOffset Due)
     {
         public int Attempts { get; init; }
 
         public bool Isolated { get; init; }
+    }
+
+    /// <summary>
+    /// The records read from one assigned tier partition and not finished. The committed offset is the lowest
+    /// unfinished one. A new instance is created for every assignment. Guarded by the forwarder's lock.
+    /// </summary>
+    private sealed class TierPartition(TopicPartition topicPartition)
+    {
+        private readonly Dictionary<long, ConsumeResult<byte[]?, byte[]?>> _records = [];
+
+        public TopicPartition TopicPartition { get; } = topicPartition;
+
+        public SortedSet<long> Pending { get; } = [];
+
+        public IEnumerable<ConsumeResult<byte[]?, byte[]?>> Unfinished => _records.Values;
+
+        /// <summary>The offset after the last one read, or -1 before the first read.</summary>
+        public long NextOffset { get; private set; } = -1;
+
+        /// <summary>The last offset passed to the consumer's offset store, or -1.</summary>
+        public long StoredOffset { get; set; } = -1;
+
+        public bool Revoked { get; set; }
+
+        public long? CommitOffset => Pending.Count > 0 ? Pending.Min : NextOffset >= 0 ? NextOffset : null;
+
+        public void Read(ConsumeResult<byte[]?, byte[]?> result)
+        {
+            long offset = result.Offset.Value;
+            Pending.Add(offset);
+            _records[offset] = result;
+            if (offset >= NextOffset)
+                NextOffset = offset + 1;
+        }
+
+        public void Finish(long offset)
+        {
+            Pending.Remove(offset);
+            _records.Remove(offset);
+        }
     }
 }

@@ -432,6 +432,107 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task DeliverAt_ToADeletedQueueAheadOfOtherDelays_DeliversTheOthersOnceAcrossForwarderHandOvers()
+    {
+        var options = CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1 };
+        var transport = Track(new KafkaMessageTransport(options));
+        var deleted = MessageSource.Queue(NewName("deleted"));
+        var kept = MessageSource.Queue(NewName("kept"));
+        await using (await transport.CreateReceiverAsync(deleted, new ReceiverOptions(), TestCancellationToken))
+        {
+        }
+
+        await using var receiver = await transport.CreateReceiverAsync(kept, new ReceiverOptions(), TestCancellationToken);
+        var forwarder = await transport.GetForwarderAsync();
+        await WaitForAsync(() => forwarder.Assignment.Count == KafkaDelayTiers.All.Count, TimeSpan.FromSeconds(30));
+
+        // Ahead of the others in the 1s tier: a message whose queue is deleted while it waits. Behind it, messages that
+        // hop through the same tier and are forwarded while the forward to the deleted queue has not finished.
+        var now = DateTimeOffset.UtcNow;
+        await transport.SendAsync(MessageDestination.Queue(deleted.Name), [Message("deleted", "deleted") with { DeliverAt = now.AddSeconds(1.5) }], TestCancellationToken);
+        await transport.DeleteAsync(deleted, TestCancellationToken);
+        string[] ids = ["later-0", "later-1", "later-2"];
+        await transport.SendAsync(MessageDestination.Queue(kept.Name), ids.Select((id, i) => Message(id, id) with { DeliverAt = now.AddSeconds(3 + i) }).ToList(), TestCancellationToken);
+
+        // Two hand-overs of every tier, while the later messages are still hopping through it.
+        for (int i = 0; i < 2; i++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1.5), TestCancellationToken);
+            var next = Track(new KafkaMessageTransport(options));
+            var nextForwarder = await next.GetForwarderAsync();
+            await WaitForAsync(() => nextForwarder.Assignment.Count > 0, TimeSpan.FromSeconds(30));
+            await forwarder.DisposeAsync();
+            await WaitForAsync(() => nextForwarder.Assignment.Count == KafkaDelayTiers.All.Count, TimeSpan.FromSeconds(30));
+            forwarder = nextForwarder;
+        }
+
+        var received = await DrainAsync(receiver, ids.Length, TimeSpan.FromSeconds(30));
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(5));
+        Assert.Equal(ids, received.Order());
+    }
+
+    [Fact]
+    public async Task DeliverAt_ABacklogForADeletedQueue_DoesNotHoldUpSendsOrItsTier()
+    {
+        const int backlog = 5000;
+        var options = CreateOptions() with
+        {
+            Prefix = UniquePrefix(),
+            Partitions = 1,
+            DelayForwardMaxInFlight = 500,
+            // A small queue for every producer of the transport: the forwarder's backlog would fill a shared one.
+            ConfigureProducer = c => c.QueueBufferingMaxMessages = 2000
+        };
+        var source = MessageSource.Queue(NewName("sends"));
+        await using (var setup = new KafkaMessageTransport(options))
+        {
+            // Creates the tiers.
+            await setup.GetForwarderAsync();
+        }
+
+        string deleted = $"{options.Prefix}.queue.{NewName("deleted")}";
+        string tier = $"{options.Prefix}.delay.1s";
+        using (var producer = new ProducerBuilder<byte[]?, byte[]>(new ProducerConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build())
+        {
+            byte[] deliverAt = Encoding.UTF8.GetBytes(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString());
+            for (int i = 0; i < backlog; i++)
+            {
+                producer.Produce(tier, new Message<byte[]?, byte[]>
+                {
+                    Value = new byte[100],
+                    Headers = new Headers
+                    {
+                        { "x-foundatio-id", Encoding.UTF8.GetBytes($"backlog-{i}") },
+                        { "x-foundatio-target", Encoding.UTF8.GetBytes(deleted) },
+                        { "x-foundatio-deliver-at", deliverAt }
+                    }
+                });
+            }
+
+            producer.Flush(TestCancellationToken);
+        }
+
+        var transport = Track(new KafkaMessageTransport(options));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var longest = TimeSpan.Zero;
+        for (int i = 0; i < 100; i++)
+        {
+            long started = Stopwatch.GetTimestamp();
+            await transport.SendAsync(MessageDestination.Queue(source.Name), [Message($"m{i}", $"m{i}")], TestCancellationToken);
+            var elapsed = Stopwatch.GetElapsedTime(started);
+            longest = elapsed > longest ? elapsed : longest;
+            await Task.Delay(20, TestCancellationToken);
+        }
+
+        Assert.Equal(100, (await DrainAsync(receiver, 100)).Count);
+        Assert.True(longest < TimeSpan.FromSeconds(2), $"A send took {longest}.");
+
+        // The records for the deleted queue are dropped, each within about a second instead of librdkafka's 30.
+        using var consumer = new ConsumerBuilder<Ignore, Ignore>(new ConsumerConfig { BootstrapServers = KafkaTestConnection.BootstrapServers, GroupId = $"{options.Prefix}.delay" }).Build();
+        await WaitForAsync(() => consumer.Committed([new TopicPartition(tier, 0)], TimeSpan.FromSeconds(5))[0].Offset.Value == backlog, TimeSpan.FromSeconds(45));
+    }
+
+    [Fact]
     public async Task DeliverAt_WhenTheDelayForwarderFails_IsDeliveredByTheRestartedForwarder()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1 }));
