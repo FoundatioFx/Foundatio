@@ -1028,6 +1028,26 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal(1, _probe.PeakConcurrency);
     }
 
+    /// <summary>
+    /// A run that finishes after the worker gave up on its lease (renewals kept failing) but before another worker
+    /// claimed it is still recorded: the store fences completions by the claim token, not the lease.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_FinishingJustAfterItsLeaseCouldNotBeRenewed_RecordsTheResult()
+    {
+        var store = new FaultyJobStore(_store) { FailRenewals = true };
+        await using var host = await StartAsync(j => j.Configure(o => o.LeaseDuration = TimeSpan.FromSeconds(2)).AddJob<StubbornJob>(), store: store);
+
+        // Renewals start at 0.67 s; the worker gives up on the lease at 1.5 s, and it runs out at 2 s.
+        var handle = await host.Jobs.EnqueueAsync(new Stubborn(1700), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(1, job.Attempt);
+        Assert.Equal([1], _probe.Runs);
+        Assert.Equal(["cancelled"], _probe.Events);
+    }
+
     [Fact]
     public async Task Cron_WithoutConcurrencyOnTwoInstances_DoesNotStartAnOccurrenceWhileAnotherRuns()
     {
@@ -1431,7 +1451,11 @@ public class DurableJobsTests : TestWithLoggingBase
         public override Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => Store.CountAsync(state, name, cancellationToken);
         public override Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default) => Store.ClaimAsync(request, cancellationToken);
         public override Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default) => Store.ClaimBatchAsync(request, maxCount, cancellationToken);
-        public override Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Store.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
+        public override Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => FailRenewals ? throw new TimeoutException("Timeout performing EVALSHA") : Store.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
+
+        /// <summary>Renewals throw, as if they timed out.</summary>
+        public bool FailRenewals { get; set; }
 
         public override Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default)
         {
@@ -1535,6 +1559,20 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     public record Keyed(string Project);
+
+    public record Stubborn(int Milliseconds);
+
+    /// <summary>Runs for its time whether or not its token is cancelled, recording whether it was.</summary>
+    public sealed class StubbornJob(JobProbe probe) : IJobHandler<Stubborn>
+    {
+        public async Task HandleAsync(Stubborn arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            probe.Runs.Add(context.Attempt);
+            await Task.Delay(arguments.Milliseconds, CancellationToken.None);
+            if (cancellationToken.IsCancellationRequested)
+                probe.Events.Enqueue("cancelled");
+        }
+    }
 
     public record Gated;
 

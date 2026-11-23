@@ -242,7 +242,7 @@ internal sealed class JobLeaseRenewer
                 long now = _timeProvider.GetTimestamp();
                 if (status == JobLeaseStatus.Lost)
                 {
-                    lost = job.IsLost = true;
+                    lost = job.IsLost = job.IsRevoked = true;
                 }
                 else
                 {
@@ -326,8 +326,17 @@ internal sealed class RunningJob : IDisposable
     /// <summary>Whether shutdown cancelled the job.</summary>
     public volatile bool Aborted;
 
-    /// <summary>Whether the lease was lost while the job ran. Final once the renewer stops tracking the job; a lost run's result must not be recorded.</summary>
+    /// <summary>
+    /// Whether the lease was lost while the job ran: the store said another claim holds the job, or renewals kept
+    /// failing until the lease this worker last proved had nearly run out. Final once the renewer stops tracking the job.
+    /// </summary>
     public volatile bool IsLost;
+
+    /// <summary>
+    /// Whether the store said another claim holds the job, so the run's result can't be recorded. When only renewals
+    /// failed, the store may still accept it: completions are fenced by the claim token, not the lease.
+    /// </summary>
+    public volatile bool IsRevoked;
 
     // Read and written under the renewer's lock.
     internal bool Tracked;

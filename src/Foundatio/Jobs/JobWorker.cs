@@ -333,11 +333,9 @@ internal sealed class JobWorker
         }
 
         await _renewer.UntrackAsync(running).AnyContext();
-        if (running.IsLost)
+        if (running.IsRevoked)
         {
-            _logger.LogWarning(error, "Job {JobId} lost its lease while running; its result is not recorded and another worker may run it again", job.Id);
-            RecordRun(job, "lost", started);
-            _runtime.Tracker.Complete(context, WorkOutcome.Cancelled, "The lease was lost; another worker may run the job again");
+            RecordLost(job, context, error, started);
             return;
         }
 
@@ -362,7 +360,12 @@ internal sealed class JobWorker
             completion = Decide(job, policy, error, running);
         }
 
-        await CompleteAsync(job, completion, context).AnyContext();
+        // A run that outlived the lease this worker could prove is recorded unless another worker has claimed the job since.
+        if (!await CompleteAsync(job, completion, context, logFenced: !running.IsLost).AnyContext() && running.IsLost)
+        {
+            RecordLost(job, context, error, started);
+            return;
+        }
 
         if (JobsInstruments.Completed.Enabled || JobsInstruments.Duration.Enabled)
             RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
@@ -373,6 +376,13 @@ internal sealed class JobWorker
                 activity.SetTag(MessagingInstruments.ErrorType, error.GetType().FullName ?? error.GetType().Name);
             activity.SetErrorStatus(error, completion.Error);
         }
+    }
+
+    private void RecordLost(JobInfo job, JobRunContext context, Exception? error, long started)
+    {
+        _logger.LogWarning(error, "Job {JobId} lost its lease while running; its result is not recorded and another worker may run it again", job.Id);
+        RecordRun(job, "lost", started);
+        _runtime.Tracker.Complete(context, WorkOutcome.Cancelled, "The lease was lost; another worker may run the job again");
     }
 
     /// <summary>The job's span, continuing the trace it was enqueued under; null, without parsing or naming it, when nothing listens.</summary>
@@ -456,6 +466,10 @@ internal sealed class JobWorker
     {
         if (error is OperationCanceledException)
         {
+            // Cancelled because the lease could not be renewed: run again, as a worker that reclaims it after the lease would.
+            if (running.IsLost && !running.CancellationRequested && !running.Aborted)
+                return JobCompletion.Retry(TimeSpan.Zero, "The lease could not be renewed in time, so the run was cancelled");
+
             if (running.CancellationRequested)
             {
                 _logger.LogInformation("Job {JobName} {JobId} was cancelled", job.Name, job.Id);
@@ -503,18 +517,24 @@ internal sealed class JobWorker
     /// <param name="job">The claimed job.</param>
     /// <param name="completion">How the run ended.</param>
     /// <param name="context">The run's context, whose last progress message the store holds as the job's message unless <paramref name="completion"/> sets one.</param>
-    private async Task CompleteAsync(JobInfo job, JobCompletion completion, JobRunContext? context = null)
+    /// <param name="logFenced">Whether to warn when another worker's claim keeps the result from being recorded.</param>
+    /// <returns>Whether the store recorded the result.</returns>
+    private async Task<bool> CompleteAsync(JobInfo job, JobCompletion completion, JobRunContext? context = null, bool logFenced = true)
     {
         for (int attempt = 1; ; attempt++)
         {
             try
             {
                 if (!await _runtime.Store.CompleteAsync(job.Id, job.ClaimToken!, completion, CancellationToken.None).AnyContext())
-                    _logger.LogWarning("Could not record the result of job {JobId}: another worker has claimed it", job.Id);
-                else
-                    _runtime.Observer?.OnCompleted(context is null ? job : job with { Message = context.Message ?? job.Message, Progress = context.Progress ?? job.Progress }, completion);
+                {
+                    if (logFenced)
+                        _logger.LogWarning("Could not record the result of job {JobId}: another worker has claimed it", job.Id);
 
-                return;
+                    return false;
+                }
+
+                _runtime.Observer?.OnCompleted(context is null ? job : job with { Message = context.Message ?? job.Message, Progress = context.Progress ?? job.Progress }, completion);
+                return true;
             }
             catch (Exception ex) when (attempt < 3)
             {
@@ -524,7 +544,7 @@ internal sealed class JobWorker
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Could not record the result of job {JobId}; it will run again when its lease expires", job.Id);
-                return;
+                return false;
             }
         }
     }
