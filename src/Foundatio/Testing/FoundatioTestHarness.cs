@@ -892,7 +892,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
     private Task<JobHandle> TriggerAsync(JobsRuntime jobs, CronSchedule schedule, CancellationToken cancellationToken)
     {
         var payload = schedule.Arguments is null ? ReadOnlyMemory<byte>.Empty : (ReadOnlyMemory<byte>)jobs.Serializer.SerializeToBytes<object>(schedule.Arguments);
-        return _services.GetRequiredService<JobClient>().CreateAsync(schedule.JobName, payload, null, cancellationToken, schedule.Name);
+        return _services.GetRequiredService<JobClient>().CreateAsync(schedule.JobName, payload, null, cancellationToken, schedule.Name, keys: schedule.Arguments as IHaveJobKeys);
     }
 
     private object? TryDeserialize(string messageType, ReadOnlyMemory<byte> body)

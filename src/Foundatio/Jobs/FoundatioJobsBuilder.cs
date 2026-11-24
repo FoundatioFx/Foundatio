@@ -173,6 +173,12 @@ public sealed class FoundatioJobsBuilder
                 + "Set the options with AddJob<TJob>(options) in the process that runs it.", nameof(options));
         }
 
+        if (arguments is IHaveJobKeys keys)
+        {
+            JobClient.ValidateKey(keys, keys.ConcurrencyKey, nameof(IHaveJobKeys.ConcurrencyKey));
+            JobClient.ValidateKey(keys, keys.DeduplicationKey, nameof(IHaveJobKeys.DeduplicationKey));
+        }
+
         return AddSchedule(JobNaming.GetName(arguments.GetType()), cronExpression, arguments, options ?? new CronJobOptions());
     }
 

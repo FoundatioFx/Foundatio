@@ -130,7 +130,7 @@ internal sealed class JobScheduler
 
         string jobId = schedule.GetJobId(due);
         // However short the retention where it runs, the job outlives the time a scheduler could create the occurrence again.
-        await _client.CreateAsync(schedule.JobName, _payloads[schedule.Name], new EnqueueOptions { JobId = jobId, RunAt = due }, cancellationToken, schedule.Name, schedule.GetKeepUntil(due)).AnyContext();
+        await _client.CreateAsync(schedule.JobName, _payloads[schedule.Name], new EnqueueOptions { JobId = jobId, RunAt = due }, cancellationToken, schedule.Name, schedule.GetKeepUntil(due), schedule.Arguments as IHaveJobKeys).AnyContext();
         _lastCreated[schedule.Name] = due;
         _lastJobIds[schedule.Name] = jobId;
         _logger.LogDebug("Scheduled {Schedule} occurrence {Occurrence} as job {JobId}", schedule.Name, due, jobId);

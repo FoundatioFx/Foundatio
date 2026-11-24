@@ -156,6 +156,22 @@ The key is free again once the job starts (or is cancelled or deleted), so work 
 new EnqueueOptions { ConcurrencyKey = projectId, DeduplicationKey = projectId }
 ```
 
+### Keys from the arguments
+
+When every job of a type needs its keys, let the arguments choose them, so an enqueue can't forget: implement `IHaveJobKeys` on the arguments type. Every enqueue of them gets the keys, in every process, including one that only enqueues and doesn't register the job, and so do the occurrences of a CRON schedule of them.
+
+```csharp
+public record ResetProjectData(string ProjectId) : IHaveJobKeys
+{
+    string? IHaveJobKeys.ConcurrencyKey => ProjectId;
+    string? IHaveJobKeys.DeduplicationKey => ProjectId;
+}
+
+await jobs.EnqueueAsync(new ResetProjectData(projectId));   // one running and one waiting per project
+```
+
+Implement the members explicitly, as above, so they aren't serialized with the arguments. Each defaults to null, meaning no key, so implement only the one you need. A key set on `EnqueueOptions` wins over the arguments' key, and a blank key throws. The keys live on the arguments rather than on `AddJob`'s options because the process that enqueues often isn't the one that runs the job, and only the arguments type is shared by both.
+
 `JobId` is different: it keeps the id taken for as long as the job is retained (a day after it succeeds, by default), so it suits "do this exactly once", while `DeduplicationKey` suits "do this at least once after now". The id check comes first when you set both.
 
 There is no API to run a failed job again. A failed or cancelled job keeps its arguments, so enqueue them again; its `JobId` stays taken while the old job is retained, so use a new one:

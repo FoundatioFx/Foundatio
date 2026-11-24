@@ -626,6 +626,59 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task EnqueueAsync_WithArgumentsThatHaveJobKeys_StoresTheirKeysInAProcessThatDoesNotRunTheJob()
+    {
+        await using var producer = await StartAsync(_ => { });
+
+        var first = await producer.Jobs.EnqueueAsync(new ProjectReset("a"), cancellationToken: TestCancellationToken);
+        var joined = await producer.Jobs.EnqueueAsync(new ProjectReset("a"), cancellationToken: TestCancellationToken);
+        var asObject = await producer.Jobs.EnqueueAsync<object>(new ProjectReset("b"), cancellationToken: TestCancellationToken);
+        var overridden = await producer.Jobs.EnqueueAsync(new ProjectReset("c"), new EnqueueOptions { ConcurrencyKey = "all-projects" }, TestCancellationToken);
+        var noKeys = await producer.Jobs.EnqueueAsync(new ProjectReset(null), cancellationToken: TestCancellationToken);
+
+        Assert.Equal(first.Id, joined.Id);
+        Assert.Equal(("a", "reset:a"), await KeysAsync(first));
+        Assert.Equal(("b", "reset:b"), await KeysAsync(asObject));
+        Assert.Equal(("all-projects", "reset:c"), await KeysAsync(overridden));
+        Assert.Equal(((string?)null, (string?)null), await KeysAsync(noKeys));
+
+        await using var worker = await StartAsync(j => j.AddJob<ProjectResetJob>());
+        foreach (var handle in new[] { first, asObject, overridden, noKeys })
+            Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+
+        async Task<(string?, string?)> KeysAsync(JobHandle handle)
+        {
+            var job = await handle.GetAsync(TestCancellationToken);
+            return (job!.ConcurrencyKey, job.DeduplicationKey);
+        }
+    }
+
+    [Fact]
+    public async Task CronSchedule_OfArgumentsThatHaveJobKeys_StoresTheirKeysOnEachOccurrence()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await using var host = await StartAsync(j => j.Configure(o => o.TimeProvider = time).AddCronJob("0 * * * *", new ProjectReset("nightly")), store: new InMemoryJobStore(time), startHostedServices: false);
+
+        await host.CreateScheduler().RunDueAsync(time.GetUtcNow(), TestCancellationToken);
+
+        var job = Assert.Single((await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs);
+        Assert.Equal(("nightly", "reset:nightly"), (job.ConcurrencyKey, job.DeduplicationKey));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithArgumentsWhoseJobKeyIsBlank_ThrowsNamingTheArguments()
+    {
+        await using var host = await StartAsync(_ => { }, startHostedServices: false);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ProjectReset(" "), cancellationToken: TestCancellationToken));
+
+        Assert.Contains("ProjectReset", error.Message);
+        Assert.Contains("IHaveJobKeys.ConcurrencyKey", error.Message);
+        Assert.Equal(0, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddFoundatioJobs(j => j.AddCronJob("0 * * * *", new ProjectReset(""))));
+    }
+
+    [Fact]
     public async Task EnqueueAsync_WithBlankKeys_Throws()
     {
         await using var host = await StartAsync(_ => { }, startHostedServices: false);
@@ -1593,6 +1646,17 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     public record Keyed(string Project);
+
+    public record ProjectReset(string? ProjectId) : IHaveJobKeys
+    {
+        string? IHaveJobKeys.ConcurrencyKey => ProjectId;
+        string? IHaveJobKeys.DeduplicationKey => ProjectId is null ? null : $"reset:{ProjectId}";
+    }
+
+    public sealed class ProjectResetJob : IJobHandler<ProjectReset>
+    {
+        public Task HandleAsync(ProjectReset arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
 
     public record Stubborn(int Milliseconds);
 

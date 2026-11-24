@@ -270,6 +270,21 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task TriggerCronJobAsync_OfArgumentsThatHaveJobKeys_StoresTheirKeys()
+    {
+        var host = await StartAppAsync(services => services.AddFoundatioJobs(j => j
+            .AddJob<ReindexRegionJob>()
+            .AddCronJob("0 2 * * *", new ReindexRegion("eu"))));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        var handle = await harness.TriggerCronJobAsync<ReindexRegion>(TestCancellationToken);
+        await harness.WaitForIdleAsync(cancellationToken: TestCancellationToken);
+
+        var job = await handle.GetAsync(TestCancellationToken);
+        Assert.Equal(("region:eu", JobState.Succeeded), (job!.ConcurrencyKey, job.State));
+    }
+
+    [Fact]
     public async Task WaitForIdleAsync_WhenAJobNothingInTheAppRunsIsQueued_TimesOutNamingTheJob()
     {
         var host = await StartAppAsync();
@@ -836,6 +851,16 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     public record ArchiveOrders(int OlderThanDays);
 
     public record ImportCatalog(string Season);
+
+    public record ReindexRegion(string Region) : IHaveJobKeys
+    {
+        string? IHaveJobKeys.ConcurrencyKey => $"region:{Region}";
+    }
+
+    public sealed class ReindexRegionJob : IJobHandler<ReindexRegion>
+    {
+        public Task HandleAsync(ReindexRegion arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
 
     [Job(Name = "tests.legacy-report")]
     public sealed class LegacyReportJob : IJob

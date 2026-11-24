@@ -34,7 +34,7 @@ internal sealed class JobClient : IJobClient
     public Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        return CreateAsync(GetArgumentsName(arguments), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
+        return CreateAsync(GetArgumentsName(arguments), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken, keys: arguments as IHaveJobKeys);
     }
 
     /// <summary>The job name of <paramref name="arguments"/>' runtime type, once it is known not to be a job.</summary>
@@ -103,7 +103,8 @@ internal sealed class JobClient : IJobClient
         return true;
     }
 
-    internal async Task<JobHandle> CreateAsync(string name, ReadOnlyMemory<byte> payload, EnqueueOptions? options, CancellationToken cancellationToken, string? scheduleName = null, DateTimeOffset? retainUntil = null)
+    internal async Task<JobHandle> CreateAsync(string name, ReadOnlyMemory<byte> payload, EnqueueOptions? options, CancellationToken cancellationToken,
+        string? scheduleName = null, DateTimeOffset? retainUntil = null, IHaveJobKeys? keys = null)
     {
         if (options?.JobId is { } requestedId)
             ArgumentException.ThrowIfNullOrWhiteSpace(requestedId, nameof(options));
@@ -125,8 +126,8 @@ internal sealed class JobClient : IJobClient
             Payload = payload,
             CorrelationId = options?.CorrelationId ?? MessageContext.Current?.CorrelationId ?? JobRunContext.Current?.CorrelationId ?? Activity.Current?.Id,
             ScheduleName = scheduleName,
-            ConcurrencyKey = options?.ConcurrencyKey,
-            DeduplicationKey = options?.DeduplicationKey,
+            ConcurrencyKey = options?.ConcurrencyKey ?? ValidateKey(keys, keys?.ConcurrencyKey, nameof(IHaveJobKeys.ConcurrencyKey)),
+            DeduplicationKey = options?.DeduplicationKey ?? ValidateKey(keys, keys?.DeduplicationKey, nameof(IHaveJobKeys.DeduplicationKey)),
             Headers = CreateHeaders(options),
             CreatedAt = now,
             UpdatedAt = now,
@@ -153,6 +154,15 @@ internal sealed class JobClient : IJobClient
         }
 
         return new JobHandle(id ?? job.Id, this);
+    }
+
+    /// <summary>Returns a key the arguments chose, or throws when it is blank.</summary>
+    internal static string? ValidateKey(IHaveJobKeys? keys, string? key, string member)
+    {
+        if (key is not null && String.IsNullOrWhiteSpace(key))
+            throw new ArgumentException($"{keys!.GetType().Name}'s IHaveJobKeys.{member} is blank. Return null for no key.", "arguments");
+
+        return key;
     }
 
     /// <summary>The caller's headers, plus the current activity's W3C trace context unless the caller set a <c>traceparent</c>.</summary>
