@@ -859,7 +859,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     private int Published(Type messageType) => PublishedMessages.Count(m => messageType.IsInstanceOfType(m.Message));
 
-    private static InMemoryMessageTransport RequireInMemoryTransport(MessagingRuntime messaging) => messaging.Transport as InMemoryMessageTransport
+    private static InMemoryMessageTransport RequireInMemoryTransport(MessagingRuntime messaging) => messaging.QueueTransport as InMemoryMessageTransport
         ?? throw new InvalidOperationException("The test harness needs its in-memory transport. Register it with AddFoundatioTestHarness().");
 
     /// <summary>Counts queued and running jobs by name, for names no job registered in this app runs.</summary>

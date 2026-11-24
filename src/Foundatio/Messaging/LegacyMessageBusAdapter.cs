@@ -75,9 +75,9 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     {
     }
 
-    /// <summary>A legacy bus on <paramref name="runtime"/>'s transport that shares the message types it knows with <see cref="IMessageClient"/>.</summary>
+    /// <summary>A legacy bus on <paramref name="runtime"/>'s topic transport that shares the message types it knows with <see cref="IMessageClient"/>.</summary>
     /// <exception cref="ArgumentException"><see cref="LegacyMessageBusOptions.MigratedMessageTypes"/> has a null entry.</exception>
-    public LegacyMessageBusAdapter(MessagingRuntime runtime, SharedMessageBusOptions options) : this(runtime.Transport, runtime, options)
+    public LegacyMessageBusAdapter(MessagingRuntime runtime, SharedMessageBusOptions options) : this(runtime.TopicTransport, runtime, options)
     {
         runtime.LegacyBus = this;
     }

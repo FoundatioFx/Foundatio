@@ -21,7 +21,8 @@ internal sealed class MessageClient : IMessageClient
 
     private readonly MessagingRuntime _runtime;
     private readonly ILogger _logger;
-    private readonly string _system;
+    private readonly string _queueSystem;
+    private readonly string _topicSystem;
     private readonly IReadOnlyList<MessageHandlerRegistration> _handlers;
     private readonly ConcurrentDictionary<string, byte> _reportedUnsupportedOptions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Type, byte> _checkedSends = new();
@@ -34,7 +35,8 @@ internal sealed class MessageClient : IMessageClient
         _runtime = runtime;
         _handlers = handlers ?? [];
         _logger = runtime.LoggerFactory.CreateLogger<MessageClient>();
-        _system = MessagingInstruments.GetSystemName(runtime.Transport);
+        _queueSystem = MessagingInstruments.GetSystemName(runtime.QueueTransport);
+        _topicSystem = ReferenceEquals(runtime.TopicTransport, runtime.QueueTransport) ? _queueSystem : MessagingInstruments.GetSystemName(runtime.TopicTransport);
     }
 
     public Task<string> SendAsync<T>(T message, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -122,9 +124,10 @@ internal sealed class MessageClient : IMessageClient
             }
         }
 
-        var capabilities = _runtime.Transport.Capabilities;
+        var transport = _runtime.GetTransport(kind);
+        var capabilities = transport.Capabilities;
         if (anyGroupKey || anyDeduplicationId)
-            CheckUnsupportedOptions(anyGroupKey, anyDeduplicationId, capabilities, items);
+            CheckUnsupportedOptions(anyGroupKey, anyDeduplicationId, transport, items);
 
         var now = _runtime.TimeProvider.GetUtcNow();
         var deliverAt = options?.DeliverAt ?? (options?.Delay is { } delay ? now.Add(delay) : null);
@@ -160,13 +163,13 @@ internal sealed class MessageClient : IMessageClient
         // One message, the usual case, goes to its route's destination without grouping the batch by destination.
         if (items.Count == 1)
         {
-            await SendGroupAsync(kind, GetDestinationName(kind, items[0], destinationOverride), batch, FirstIndex, capabilities, cancellationToken).AnyContext();
+            await SendGroupAsync(kind, GetDestinationName(kind, items[0], destinationOverride), batch, FirstIndex, transport, cancellationToken).AnyContext();
             return result;
         }
 
         var groups = Enumerable.Range(0, items.Count).GroupBy(i => GetDestinationName(kind, items[i], destinationOverride));
         foreach (var group in groups)
-            await SendGroupAsync(kind, group.Key, batch, group.ToList(), capabilities, cancellationToken).AnyContext();
+            await SendGroupAsync(kind, group.Key, batch, group.ToList(), transport, cancellationToken).AnyContext();
 
         return result;
     }
@@ -185,10 +188,12 @@ internal sealed class MessageClient : IMessageClient
     /// the same type in one call share their headers, which are the same for each and which transports only read.
     /// </summary>
     private async Task SendGroupAsync<T>(MessageDestinationKind kind, string destinationName, SendBatch<T> batch, IReadOnlyList<int> indices,
-        TransportCapabilities capabilities, CancellationToken cancellationToken) where T : class
+        IMessageTransport transport, CancellationToken cancellationToken) where T : class
     {
+        var capabilities = transport.Capabilities;
         var destination = kind == MessageDestinationKind.Queue ? MessageDestination.Queue(destinationName) : MessageDestination.Topic(destinationName);
         string operation = kind == MessageDestinationKind.Queue ? "send" : "publish";
+        string system = kind == MessageDestinationKind.Queue ? _queueSystem : _topicSystem;
         var source = FoundatioDiagnostics.ActivitySource;
         using var activity = source.HasListeners() ? source.StartActivity(String.Concat(operation, " ", destinationName), ActivityKind.Producer) : null;
         var current = activity ?? Activity.Current;
@@ -233,7 +238,7 @@ internal sealed class MessageClient : IMessageClient
         }
 
         if (activity is { IsAllDataRequested: true })
-            TagProducerActivity(activity, operation, destinationName, outgoing, headersRoute, batch.HeaderValues.CorrelationId);
+            TagProducerActivity(activity, system, operation, destinationName, outgoing, headersRoute, batch.HeaderValues.CorrelationId);
 
         int batchSize = Math.Max(1, capabilities.MaxSendBatchSize);
         int sent = 0;
@@ -241,12 +246,12 @@ internal sealed class MessageClient : IMessageClient
         {
             if (outgoing.Count <= batchSize)
             {
-                await _runtime.Transport.SendAsync(destination, outgoing, cancellationToken).AnyContext();
+                await transport.SendAsync(destination, outgoing, cancellationToken).AnyContext();
             }
             else
             {
                 for (; sent < outgoing.Count; sent += batchSize)
-                    await _runtime.Transport.SendAsync(destination, outgoing.GetRange(sent, Math.Min(batchSize, outgoing.Count - sent)), cancellationToken).AnyContext();
+                    await transport.SendAsync(destination, outgoing.GetRange(sent, Math.Min(batchSize, outgoing.Count - sent)), cancellationToken).AnyContext();
             }
         }
         catch (Exception ex)
@@ -259,12 +264,12 @@ internal sealed class MessageClient : IMessageClient
             }
 
             if (sent > 0)
-                RecordSent(operation, destinationName, sent, null);
-            RecordSent(operation, destinationName, outgoing.Count - sent, errorType);
+                RecordSent(system, operation, destinationName, sent, null);
+            RecordSent(system, operation, destinationName, outgoing.Count - sent, errorType);
             throw;
         }
 
-        RecordSent(operation, destinationName, outgoing.Count, null);
+        RecordSent(system, operation, destinationName, outgoing.Count, null);
 
         if (_runtime.Observer is { } observer)
         {
@@ -273,14 +278,14 @@ internal sealed class MessageClient : IMessageClient
         }
     }
 
-    private void RecordSent(string operation, string destinationName, int count, string? errorType)
+    private static void RecordSent(string system, string operation, string destinationName, int count, string? errorType)
     {
         if (!MessagingInstruments.Sent.Enabled)
             return;
 
         var tags = new TagList
         {
-            { MessagingInstruments.System, _system },
+            { MessagingInstruments.System, system },
             { MessagingInstruments.OperationName, operation },
             { MessagingInstruments.DestinationName, destinationName }
         };
@@ -291,9 +296,9 @@ internal sealed class MessageClient : IMessageClient
     }
 
     /// <summary>Adds the OpenTelemetry messaging attributes to a producer span.</summary>
-    private void TagProducerActivity(Activity activity, string operation, string destinationName, List<OutgoingMessage> outgoing, MessageRoute? lastRoute, string? correlationId)
+    private static void TagProducerActivity(Activity activity, string system, string operation, string destinationName, List<OutgoingMessage> outgoing, MessageRoute? lastRoute, string? correlationId)
     {
-        activity.SetTag(MessagingInstruments.System, _system);
+        activity.SetTag(MessagingInstruments.System, system);
         activity.SetTag(MessagingInstruments.OperationType, "send");
         activity.SetTag(MessagingInstruments.OperationName, operation);
         activity.SetTag(MessagingInstruments.DestinationName, destinationName);
@@ -351,14 +356,15 @@ internal sealed class MessageClient : IMessageClient
     /// Warns, once per message type, or with <see cref="MessagingOptions.RequireTransportCapabilities"/> throws, when a
     /// group key or deduplication id would not do on this transport what it does on one that supports it.
     /// </summary>
-    private void CheckUnsupportedOptions<T>(bool groupKey, bool deduplicationId, TransportCapabilities capabilities, IReadOnlyCollection<T> messages) where T : class
+    private void CheckUnsupportedOptions<T>(bool groupKey, bool deduplicationId, IMessageTransport transport, IReadOnlyCollection<T> messages) where T : class
     {
+        var capabilities = transport.Capabilities;
         bool unorderedGroup = groupKey && !capabilities.OrderedGroups;
         bool ignoredDeduplicationId = deduplicationId && !capabilities.Deduplication;
         if (!unorderedGroup && !ignoredDeduplicationId)
             return;
 
-        string transport = _runtime.Transport.GetType().Name;
+        string transportName = transport.GetType().Name;
         foreach (var type in messages.Where(m => m is not null).Select(m => m.GetType()).Distinct())
         {
             string messageType = _runtime.Types.GetRoute(type).Name;
@@ -366,14 +372,14 @@ internal sealed class MessageClient : IMessageClient
             {
                 if (_runtime.Options.RequireTransportCapabilities)
                 {
-                    throw new MessageBusException($"{messageType} was sent with a GroupKey, but {transport} does not keep groups in order: messages of one group " +
+                    throw new MessageBusException($"{messageType} was sent with a GroupKey, but {transportName} does not keep groups in order: messages of one group " +
                         "could be handled concurrently and out of order. Remove the GroupKey, or turn off MessagingOptions.RequireTransportCapabilities to send it anyway.");
                 }
 
                 if (ShouldReport("group", messageType))
                 {
                     _logger.LogWarning("{MessageType} was sent with a GroupKey, but {Transport} does not keep groups in order: messages of one group may be handled " +
-                        "concurrently and out of order. Set MessagingOptions.RequireTransportCapabilities to make this an error", messageType, transport);
+                        "concurrently and out of order. Set MessagingOptions.RequireTransportCapabilities to make this an error", messageType, transportName);
                 }
             }
 
@@ -381,14 +387,14 @@ internal sealed class MessageClient : IMessageClient
             {
                 if (_runtime.Options.RequireTransportCapabilities)
                 {
-                    throw new MessageBusException($"{messageType} was sent with a DeduplicationId, but {transport} does not deduplicate: a repeated send would be " +
+                    throw new MessageBusException($"{messageType} was sent with a DeduplicationId, but {transportName} does not deduplicate: a repeated send would be " +
                         "delivered again. Remove the DeduplicationId, or turn off MessagingOptions.RequireTransportCapabilities to send it anyway.");
                 }
 
                 if (ShouldReport("deduplication", messageType))
                 {
                     _logger.LogWarning("{MessageType} was sent with a DeduplicationId, but {Transport} does not deduplicate: repeated sends are all delivered, " +
-                        "so its handlers must be idempotent. Set MessagingOptions.RequireTransportCapabilities to make this an error", messageType, transport);
+                        "so its handlers must be idempotent. Set MessagingOptions.RequireTransportCapabilities to make this an error", messageType, transportName);
                 }
             }
         }

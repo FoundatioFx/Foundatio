@@ -68,7 +68,9 @@ public static class MessagingServiceCollectionExtensions
 
         var transport = services.GetService<TestHarnessRegistration>()?.Transport
             ?? services.GetService<IMessageTransport>()
-            ?? throw new InvalidOperationException("No message transport is configured. Inside AddFoundatioMessaging, call UseInMemory(), a provider's UseRedis(), UseSqs(), UseKafka(), UseAzureServiceBus() or UseRabbitMQ() (from Foundatio.Redis, Foundatio.AWS, Foundatio.Kafka, Foundatio.AzureServiceBus or Foundatio.RabbitMQ), or UseTransport().");
+            ?? throw new InvalidOperationException("No message transport is configured. Inside AddFoundatioMessaging, call UseInMemory(), a provider's UseRedis(), UseSqs(), UseKafka(), UseAzureServiceBus(), UseAzureStorageQueues() or UseRabbitMQ() (from Foundatio.Redis, Foundatio.AWS, Foundatio.Kafka, Foundatio.AzureServiceBus, Foundatio.AzureStorage or Foundatio.RabbitMQ), or UseTransport(). "
+                + "ForTopics chooses only the topics' transport; queues need one too.");
+        var topicTransport = services.GetService<TopicTransportRegistration>()?.Transport;
 
         foreach (var handler in registrations.Handlers)
             handler.Resolve(services, handler.Kind == MessageHandlerKind.Consumer ? FoundatioMessagingBuilder.ValidateConsumer : FoundatioMessagingBuilder.Validate, options.TestRetryDelay);
@@ -84,7 +86,7 @@ public static class MessagingServiceCollectionExtensions
             ?? Assembly.GetEntryAssembly()?.GetName().Name
             ?? "foundatio";
 
-        var runtime = new MessagingRuntime(transport, options, types,
+        var runtime = new MessagingRuntime(transport, topicTransport, options, types,
             options.Serializer ?? services.GetService<ISerializer>() ?? DefaultSerializer.Instance,
             services.GetRequiredService<IServiceScopeFactory>(),
             services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,

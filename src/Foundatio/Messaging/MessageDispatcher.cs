@@ -28,6 +28,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private static readonly TimeSpan MaxDeadLetterRetryDelay = TimeSpan.FromMinutes(1);
 
     private readonly MessagingRuntime _runtime;
+    private readonly IMessageTransport _transport;
     private readonly MessageSource _source;
     private readonly string _sourceName;
     private readonly string _system;
@@ -47,9 +48,10 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     public MessageDispatcher(MessagingRuntime runtime, MessageSource source, IReadOnlyList<MessageHandlerRegistration> handlers, ProcessingStatusTracker status)
     {
         _runtime = runtime;
+        _transport = runtime.GetTransport(source);
         _source = source;
         _sourceName = source.ToString();
-        _system = MessagingInstruments.GetSystemName(runtime.Transport);
+        _system = MessagingInstruments.GetSystemName(_transport);
         _destinationName = source.Topic ?? source.Name;
         _subscriptionName = source.Kind == MessageSourceKind.Subscription ? source.Name : null;
         _sourceKind = MessagingInstruments.GetSourceKind(source);
@@ -290,7 +292,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     /// </summary>
     private async Task RetryAsync(MessageDelivery delivery, TimeSpan delay, CancellationToken abortToken)
     {
-        var capabilities = _runtime.Transport.Capabilities;
+        var capabilities = _transport.Capabilities;
         var maxDelay = capabilities.MaxRetryDelay;
         var minDelay = capabilities.MinRetryDelay;
 
@@ -319,13 +321,13 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     {
         var message = delivery.Message;
         var now = _runtime.TimeProvider.GetUtcNow();
-        var maxDelay = _runtime.Transport.Capabilities.MaxDelay;
+        var maxDelay = _transport.Capabilities.MaxDelay;
         var next = maxDelay is { } max && deliverAt - now > max ? now.Add(max) : deliverAt;
 
         try
         {
             using var timeout = new CancellationTokenSource(MessageDelivery.SettleTimeout);
-            await _runtime.Transport.SendAsync(MessageDestination.Queue(_source.Name), [new OutgoingMessage
+            await _transport.SendAsync(MessageDestination.Queue(_source.Name), [new OutgoingMessage
             {
                 MessageId = message.MessageId,
                 Body = message.Body,
@@ -338,7 +340,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         {
             _logger.LogWarning(ex, "Could not reschedule early message {MessageId}; it will be delivered again", message.MessageId);
             var retryIn = TimeSpan.FromSeconds(30);
-            if (_runtime.Transport.Capabilities.MaxRetryDelay is { } maxRetry && retryIn > maxRetry)
+            if (_transport.Capabilities.MaxRetryDelay is { } maxRetry && retryIn > maxRetry)
                 retryIn = maxRetry;
 
             await AbandonAsync(delivery, retryIn).AnyContext();

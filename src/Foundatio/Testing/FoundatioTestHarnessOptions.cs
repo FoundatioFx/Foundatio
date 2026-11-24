@@ -29,6 +29,7 @@ public sealed class FoundatioTestHarnessOptions
     /// A transport to run on instead of a fresh one, shared with other hosts so a test can run several instances of an
     /// app (or several services) against one broker. Each host's harness records what that host does. You create and
     /// dispose it, and it keeps its own clock. Pausing is not supported on a shared transport, which every host would see.
+    /// It carries both queues and topics, as the harness's own transport does: a <c>ForTopics</c> call in the app is ignored.
     /// </summary>
     /// <example>
     /// <code>

@@ -18,6 +18,7 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
     private int _receiveCalls;
     private int _unsettled;
     private int _maxUnsettled;
+    private int _disposeCalls;
 
     public TransportCapabilities Capabilities { get; } = capabilities ?? inner.Capabilities;
 
@@ -62,6 +63,15 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
     /// <summary>Runs after <see cref="OnSettle"/>, before the settlement reaches the inner receiver, like a broker round trip.</summary>
     public Func<string, IncomingMessage, Task>? OnSettleAsync { get; set; }
+
+    /// <summary>Runs before each <see cref="IMessageTransport.GetStatsAsync"/>.</summary>
+    public Action<MessageSource>? OnGetStats { get; set; }
+
+    /// <summary>Runs before each <see cref="IMessageTransport.DeleteAsync"/>.</summary>
+    public Action<MessageSource>? OnDelete { get; set; }
+
+    /// <summary>How many times <see cref="DisposeAsync"/> was called. The inner transport is never disposed.</summary>
+    public int DisposeCalls => Volatile.Read(ref _disposeCalls);
 
     public int ReceiversCreated => Volatile.Read(ref _receiversCreated);
 
@@ -115,11 +125,23 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
         return receiver;
     }
 
-    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.GetStatsAsync(source, cancellationToken);
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        OnGetStats?.Invoke(source);
+        return inner.GetStatsAsync(source, cancellationToken);
+    }
 
-    public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.DeleteAsync(source, cancellationToken);
+    public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        OnDelete?.Invoke(source);
+        return inner.DeleteAsync(source, cancellationToken);
+    }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        Interlocked.Increment(ref _disposeCalls);
+        return ValueTask.CompletedTask;
+    }
 
     private sealed class Receiver(InterceptingMessageTransport transport, IMessageReceiver inner) : IMessageReceiver
     {

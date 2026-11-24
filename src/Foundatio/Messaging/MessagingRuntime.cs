@@ -23,10 +23,12 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
     private volatile ProcessingState _hostState;
     private bool _disposed;
 
-    public MessagingRuntime(IMessageTransport transport, MessagingOptions options, MessageTypeRegistry types, ISerializer serializer,
+    public MessagingRuntime(IMessageTransport transport, IMessageTransport? topicTransport, MessagingOptions options, MessageTypeRegistry types, ISerializer serializer,
         IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, TimeProvider timeProvider, string serviceName, bool serviceNameIsDefault)
     {
-        Transport = transport;
+        QueueTransport = transport;
+        // Without ForTopics, one transport carries both.
+        TopicTransport = topicTransport ?? transport;
         Options = options;
         Types = types;
         Serializer = serializer;
@@ -38,7 +40,20 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
         _logger = loggerFactory.CreateLogger<MessagingRuntime>();
     }
 
-    public IMessageTransport Transport { get; }
+    /// <summary>Carries queues: sends, consumers, their dead letters and delays.</summary>
+    public IMessageTransport QueueTransport { get; }
+
+    /// <summary>
+    /// Carries topics: publishes, subscribers of either scope, their dead letters and the legacy bus. The same as
+    /// <see cref="QueueTransport"/> unless <see cref="FoundatioMessagingBuilder.ForTopics"/> chose another.
+    /// </summary>
+    public IMessageTransport TopicTransport { get; }
+
+    /// <summary>The transport that carries <paramref name="source"/>: a dead-letter queue is on the transport of its source.</summary>
+    public IMessageTransport GetTransport(MessageSource source) => (source.DeadLetterOf ?? source).Kind == MessageSourceKind.Queue ? QueueTransport : TopicTransport;
+
+    /// <summary>The transport that carries sends to a <paramref name="kind"/> destination.</summary>
+    public IMessageTransport GetTransport(MessageDestinationKind kind) => kind == MessageDestinationKind.Queue ? QueueTransport : TopicTransport;
     public MessagingOptions Options { get; }
     public MessageTypeRegistry Types { get; }
     public ISerializer Serializer { get; }
@@ -55,7 +70,7 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
     /// allows it: on a broker the name is persistent state, and two services that share a default would split each
     /// other's events.
     /// </summary>
-    public bool CanNameSubscriptionsByDefault => !ServiceNameIsDefault || Transport is InMemoryMessageTransport;
+    public bool CanNameSubscriptionsByDefault => !ServiceNameIsDefault || TopicTransport is InMemoryMessageTransport;
 
     /// <summary>Notified of sends and settled deliveries; set by the test harness.</summary>
     public IMessagingObserver? Observer { get; init; }
@@ -173,7 +188,7 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
             Description = String.Join(", ", handlers.Select(h => h.HandlerName).Distinct())
         };
 
-        return new MessageProcessor(Transport, source, settings, new MessageDispatcher(this, source, handlers, status), status, TimeProvider, LoggerFactory);
+        return new MessageProcessor(GetTransport(source), source, settings, new MessageDispatcher(this, source, handlers, status), status, TimeProvider, LoggerFactory);
     }
 
     private async Task StopAllAsync(TimeSpan drainTimeout, CancellationToken cancellationToken)

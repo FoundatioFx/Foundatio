@@ -68,7 +68,9 @@ public static class TestHarnessServiceCollectionExtensions
             });
         }
         // A shared transport or store is registered as an instance, so disposing this host does not dispose it.
+        // The harness transport carries topics too, so a transport ForTopics chose is never created.
         services.RemoveAll<IMessageTransport>();
+        services.RemoveAll<TopicTransportRegistration>();
         if (options.Transport is { } transport)
             services.AddSingleton<IMessageTransport>(transport);
         else

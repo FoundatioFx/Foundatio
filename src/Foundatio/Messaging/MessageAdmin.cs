@@ -66,7 +66,7 @@ internal sealed class MessageAdmin : IMessageAdmin
         if (source.Kind == MessageSourceKind.DeadLetter)
             throw new ArgumentException($"{source} has no counts of its own; read DeadLettered from the stats of {source.DeadLetterOf}.", nameof(source));
 
-        return _runtime.Transport.GetStatsAsync(source, cancellationToken);
+        return _runtime.GetTransport(source).GetStatsAsync(source, cancellationToken);
     }
 
     public Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int max = 20, CancellationToken cancellationToken = default)
@@ -85,7 +85,7 @@ internal sealed class MessageAdmin : IMessageAdmin
         {
             while (received.Count < wanted)
             {
-                var batch = await receiver.ReceiveAsync(Math.Min(wanted - received.Count, ReceiveBatchSize), ReceiveWait, cancellationToken).AnyContext();
+                var batch = await receiver.ReceiveAsync(Math.Min(wanted - received.Count, GetReceiveBatchSize(_runtime.GetTransport(source))), ReceiveWait, cancellationToken).AnyContext();
                 if (batch.Count == 0)
                     break;
 
@@ -105,8 +105,9 @@ internal sealed class MessageAdmin : IMessageAdmin
         ValidateSource(source);
         ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
 
+        var transport = _runtime.GetTransport(source);
         var destination = MessageDestination.For(source);
-        int batchSize = Math.Min(ReceiveBatchSize, Math.Max(1, _runtime.Transport.Capabilities.MaxSendBatchSize));
+        int batchSize = Math.Min(GetReceiveBatchSize(transport), Math.Max(1, transport.Capabilities.MaxSendBatchSize));
         int replayed = 0;
 
         // A replayed message that fails again is dead-lettered again while this call runs. Those are kept leased until
@@ -135,7 +136,7 @@ internal sealed class MessageAdmin : IMessageAdmin
                 if (fresh.Count == 0)
                     continue;
 
-                await _runtime.Transport.SendAsync(destination, fresh.Select(ToReplay).ToList(), cancellationToken).AnyContext();
+                await transport.SendAsync(destination, fresh.Select(ToReplay).ToList(), cancellationToken).AnyContext();
 
                 foreach (var message in fresh)
                     await receiver.CompleteAsync(message, CancellationToken.None).AnyContext();
@@ -168,9 +169,10 @@ internal sealed class MessageAdmin : IMessageAdmin
     {
         ValidateSource(source);
         ArgumentException.ThrowIfNullOrEmpty(messageId);
-        if (_runtime.Transport.Capabilities.InOrderCompletion)
+        var transport = _runtime.GetTransport(source);
+        if (transport.Capabilities.InOrderCompletion)
         {
-            throw new MessageBusException($"{_runtime.Transport.GetType().Name} removes messages only in order, so it cannot {(replay ? "replay" : "delete")} one dead letter of {source} by id. "
+            throw new MessageBusException($"{transport.GetType().Name} removes messages only in order, so it cannot {(replay ? "replay" : "delete")} one dead letter of {source} by id. "
                 + "Replay or purge all of them instead.");
         }
 
@@ -180,7 +182,7 @@ internal sealed class MessageAdmin : IMessageAdmin
         {
             while (held.Count < MaxScan)
             {
-                var batch = await receiver.ReceiveAsync(Math.Min(MaxScan - held.Count, ReceiveBatchSize), ReceiveWait, cancellationToken).AnyContext();
+                var batch = await receiver.ReceiveAsync(Math.Min(MaxScan - held.Count, GetReceiveBatchSize(transport)), ReceiveWait, cancellationToken).AnyContext();
                 if (batch.Count == 0)
                     return false;
 
@@ -189,7 +191,7 @@ internal sealed class MessageAdmin : IMessageAdmin
                     continue;
 
                 if (replay)
-                    await _runtime.Transport.SendAsync(MessageDestination.For(source), [ToReplay(match)], cancellationToken).AnyContext();
+                    await transport.SendAsync(MessageDestination.For(source), [ToReplay(match)], cancellationToken).AnyContext();
 
                 await receiver.CompleteAsync(match, CancellationToken.None).AnyContext();
                 held.Remove(match);
@@ -208,16 +210,17 @@ internal sealed class MessageAdmin : IMessageAdmin
     public Task PurgeDeadLettersAsync(MessageSource source, CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
-        return _runtime.Transport.DeleteAsync(MessageSource.DeadLetter(source), cancellationToken);
+        var deadLetters = MessageSource.DeadLetter(source);
+        return _runtime.GetTransport(deadLetters).DeleteAsync(deadLetters, cancellationToken);
     }
 
     public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
     {
         ValidateSource(source);
-        return _runtime.Transport.DeleteAsync(source, cancellationToken);
+        return _runtime.GetTransport(source).DeleteAsync(source, cancellationToken);
     }
 
-    private int ReceiveBatchSize => Math.Max(1, _runtime.Transport.Capabilities.MaxReceiveBatchSize);
+    private static int GetReceiveBatchSize(IMessageTransport transport) => Math.Max(1, transport.Capabilities.MaxReceiveBatchSize);
 
     private async Task ReleaseAsync(IMessageReceiver receiver, IEnumerable<IncomingMessage> messages)
     {
@@ -236,8 +239,10 @@ internal sealed class MessageAdmin : IMessageAdmin
 
     private Task<IMessageReceiver> CreateDeadLetterReceiverAsync(MessageSource source, CancellationToken cancellationToken)
     {
-        var lease = _runtime.Transport.Capabilities.MaxLeaseDuration is { } maxLease && maxLease < PeekLease ? maxLease : PeekLease;
-        return _runtime.Transport.CreateReceiverAsync(MessageSource.DeadLetter(source), new ReceiverOptions { LeaseDuration = lease }, cancellationToken);
+        var deadLetters = MessageSource.DeadLetter(source);
+        var transport = _runtime.GetTransport(deadLetters);
+        var lease = transport.Capabilities.MaxLeaseDuration is { } maxLease && maxLease < PeekLease ? maxLease : PeekLease;
+        return transport.CreateReceiverAsync(deadLetters, new ReceiverOptions { LeaseDuration = lease }, cancellationToken);
     }
 
     /// <summary>The message to send back to the source a dead letter came from, without what would stop it being handled at once.</summary>

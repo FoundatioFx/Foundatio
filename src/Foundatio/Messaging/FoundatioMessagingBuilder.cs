@@ -14,11 +14,14 @@ namespace Foundatio.Messaging;
 public sealed class FoundatioMessagingBuilder
 {
     private readonly MessagingRegistrations _registrations;
+    private readonly bool _forTopics;
+    private bool _transportChosen;
 
-    internal FoundatioMessagingBuilder(IServiceCollection services, MessagingRegistrations registrations)
+    internal FoundatioMessagingBuilder(IServiceCollection services, MessagingRegistrations registrations, bool forTopics = false)
     {
         Services = services;
         _registrations = registrations;
+        _forTopics = forTopics;
     }
 
     /// <summary>The service collection being configured, for provider extensions that register their own services.</summary>
@@ -35,8 +38,16 @@ public sealed class FoundatioMessagingBuilder
     public FoundatioMessagingBuilder UseTransport(IMessageTransport transport)
     {
         ArgumentNullException.ThrowIfNull(transport);
+        _transportChosen = true;
         if (TestHarnessRegistration.IsRegistered(Services))
             return this;
+
+        if (_forTopics)
+        {
+            Services.RemoveAll<TopicTransportRegistration>();
+            Services.AddSingleton(new TopicTransportRegistration(transport));
+            return this;
+        }
 
         Services.RemoveAll<IMessageTransport>();
         Services.AddSingleton(transport);
@@ -48,10 +59,55 @@ public sealed class FoundatioMessagingBuilder
     public FoundatioMessagingBuilder UseTransport(Func<IServiceProvider, IMessageTransport> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
+        _transportChosen = true;
         if (TestHarnessRegistration.IsRegistered(Services))
             return this;
 
+        if (_forTopics)
+        {
+            // Created by the service provider, so the provider disposes it, and with it the transport.
+            Services.ReplaceSingleton(sp => new TopicTransportRegistration(factory(sp)));
+            return this;
+        }
+
         Services.ReplaceSingleton(factory);
+        return this;
+    }
+
+    /// <summary>
+    /// Puts topics on a transport of their own: every publish, every subscriber (service and instance scope), their
+    /// dead letters, and the legacy <see cref="IMessageBus"/> of <see cref="AddLegacyMessageBus"/>. Queues (sends,
+    /// consumers, their dead letters and delays) stay on the transport this builder uses. Choose the topics' transport
+    /// inside <paramref name="configure"/> with the same calls, for example <c>UseRedis()</c>; handlers and settings
+    /// belong outside it.
+    /// </summary>
+    /// <remarks>
+    /// For example, queues on Azure Storage Queues, which are durable and cheap but poll, and events on Redis, which
+    /// pushes them. Each transport is created and disposed like the one <see cref="UseTransport(Func{IServiceProvider, IMessageTransport})"/>
+    /// registers. Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness
+    /// transport carries both queues and topics.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// services.AddFoundatioMessaging(m => m
+    ///     .UseAzureStorageQueues(storageConnectionString)
+    ///     .ForTopics(t => t.UseRedis())
+    ///     .AddConsumer&lt;SendReceiptHandler&gt;()
+    ///     .AddSubscriber&lt;OrderPlacedHandler&gt;());
+    /// </code>
+    /// </example>
+    /// <exception cref="ArgumentException"><paramref name="configure"/> chose no transport.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="configure"/> registered a handler or changed a setting, which belong outside it.</exception>
+    public FoundatioMessagingBuilder ForTopics(Action<FoundatioMessagingBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        ThrowIfForTopics();
+
+        var topics = new FoundatioMessagingBuilder(Services, _registrations, forTopics: true);
+        configure(topics);
+        if (!topics._transportChosen)
+            throw new ArgumentException("Choose the topics' transport inside ForTopics, for example ForTopics(t => t.UseRedis()) or ForTopics(t => t.UseInMemory()).", nameof(configure));
+
         return this;
     }
 
@@ -61,6 +117,7 @@ public sealed class FoundatioMessagingBuilder
     /// </summary>
     public FoundatioMessagingBuilder UseServiceName(string serviceName)
     {
+        ThrowIfForTopics();
         MessageTypeRegistry.ValidateName(serviceName, nameof(serviceName));
         return Configure(o => o.ServiceName = serviceName);
     }
@@ -79,6 +136,7 @@ public sealed class FoundatioMessagingBuilder
     /// </example>
     public FoundatioMessagingBuilder DecorateClient(Func<IMessageClient, IMessageClient> decorate)
     {
+        ThrowIfForTopics();
         ArgumentNullException.ThrowIfNull(decorate);
         _registrations.ClientDecorators.Add((_, inner) => decorate(inner) ?? throw new InvalidOperationException("A DecorateClient callback returned null."));
         return this;
@@ -91,6 +149,7 @@ public sealed class FoundatioMessagingBuilder
     /// </summary>
     public FoundatioMessagingBuilder DecorateClient<TDecorator>() where TDecorator : class, IMessageClient
     {
+        ThrowIfForTopics();
         _registrations.ClientDecorators.Add((services, inner) => ActivatorUtilities.CreateInstance<TDecorator>(services, inner));
         return this;
     }
@@ -102,6 +161,7 @@ public sealed class FoundatioMessagingBuilder
     /// </summary>
     public FoundatioMessagingBuilder Configure(Action<MessagingOptions> configure)
     {
+        ThrowIfForTopics();
         ArgumentNullException.ThrowIfNull(configure);
         Services.Configure(configure);
         return this;
@@ -109,7 +169,7 @@ public sealed class FoundatioMessagingBuilder
 
     /// <summary>
     /// Also provides the original <see cref="IMessageBus"/>, <see cref="IMessagePublisher"/> and <see cref="IMessageSubscriber"/>
-    /// on this transport, so existing code, including <c>HybridCacheClient</c> and <c>CacheLockProvider</c>, keeps working.
+    /// on the topics' transport (see <see cref="ForTopics"/>), so existing code, including <c>HybridCacheClient</c> and <c>CacheLockProvider</c>, keeps working.
     /// Every running instance receives every message, as before.
     /// </summary>
     /// <remarks>
@@ -131,6 +191,7 @@ public sealed class FoundatioMessagingBuilder
     /// </remarks>
     public FoundatioMessagingBuilder AddLegacyMessageBus(Action<LegacyMessageBusOptions>? configure = null)
     {
+        ThrowIfForTopics();
         Services.ReplaceSingleton<IMessageBus>(sp =>
         {
             var options = new LegacyMessageBusOptions();
@@ -150,6 +211,7 @@ public sealed class FoundatioMessagingBuilder
     /// <summary>Gives <typeparamref name="T"/> a stable wire name, and optionally its queue and topic. Same as <see cref="MessageAttribute"/>.</summary>
     public FoundatioMessagingBuilder MapMessage<T>(string name, string? queue = null, string? topic = null) where T : class
     {
+        ThrowIfForTopics();
         MessageTypeRegistry.ValidateName(name, nameof(name));
         _registrations.Maps.Add((typeof(T), name, queue, topic));
         return this;
@@ -253,6 +315,7 @@ public sealed class FoundatioMessagingBuilder
     /// </param>
     private FoundatioMessagingBuilder AddHandlers(System.Collections.Generic.IReadOnlyList<MessageHandlerRegistration> registrations, Type? handlerType = null)
     {
+        ThrowIfForTopics();
         if (handlerType is not null)
             Services.TryAddScoped(handlerType);
 
@@ -265,6 +328,15 @@ public sealed class FoundatioMessagingBuilder
         }
 
         return this;
+    }
+
+    private void ThrowIfForTopics()
+    {
+        if (_forTopics)
+        {
+            throw new InvalidOperationException("Inside ForTopics, only choose the topics' transport, for example ForTopics(t => t.UseRedis()). "
+                + "Register handlers, map messages and change settings on the builder outside it.");
+        }
     }
 
     internal static HandlerOptions ValidateConsumer(HandlerOptions? options)

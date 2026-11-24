@@ -38,7 +38,7 @@ internal static class HandlerRegistrationValidator
         string list = String.Join(", ", subscriptions.Select(h => $"{h.HandlerName} (topic {runtime.Types.GetRoute(h.MessageType).Topic})").Distinct());
         return new InvalidOperationException(
             $"Set a service name with UseServiceName(\"orders\") inside AddFoundatioMessaging, or with MessagingOptions.ServiceName. " +
-            $"It names the durable subscriptions of {list}, and {runtime.Transport.GetType().Name} keeps them under that name: services that share a name split each other's events, " +
+            $"It names the durable subscriptions of {list}, and {runtime.TopicTransport.GetType().Name} keeps them under that name: services that share a name split each other's events, " +
             $"and renaming one starts a new subscription. Only the in-memory transport defaults it to the application name (\"{runtime.ServiceName}\"). " +
             "Alternatively, give each subscriber its own SubscriptionOptions.Name.");
     }
