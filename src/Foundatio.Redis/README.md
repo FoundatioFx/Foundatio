@@ -76,6 +76,7 @@ builder.Services.AddFoundatioMessaging(m => m
 - Both use the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. `UseRedis(connection, options)` takes the connection instead.
 - `UseRedis("localhost:6379", options)` connects for you: it registers the `IConnectionMultiplexer` (jobs, caches and locks can share it; `UseRedis` on the jobs builder with the same string does), the service provider disposes it, and Redis being down at startup doesn't fail it unless the string sets `abortConnect=true`. The connection logs only StackExchange.Redis's warnings and errors; to see its Information lines (about a hundred per connect and disconnect), register your own multiplexer with `ConfigurationOptions.LoggerFactory` set and call `UseRedis()`. It throws if another `IConnectionMultiplexer` is registered.
 - The service provider creates the transport and disposes it at shutdown. A connection you registered or passed stays yours.
+- To carry only an app's topics, the legacy bus of `AddLegacyMessageBus()` included, while its queues stay on another transport, call it inside `ForTopics`: `m.UseAzureStorageQueues(...).ForTopics(t => t.UseRedis())`. Every `UseRedis` overload works there.
 
 It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and durable subscription lives on one cluster slot; a topic's instance subscriptions all live on the topic's slot. It needs Redis 6.2 or later, or Valkey.
 

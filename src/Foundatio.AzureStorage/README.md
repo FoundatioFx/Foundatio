@@ -106,6 +106,7 @@ Things to plan for:
 - **Azurite**: the tests run on Azurite, which serves requests on one thread (a few hundred messages a second) and does not block a deleted queue's name. Real Azure does both.
 - **Crashes**: a crash between writing a dead letter and deleting the original leaves the message to be dead-lettered again, so the `-poison` queue may hold it twice, as on RabbitMQ, SQS and Kafka. A batch send that fails partway throws after some of its messages were sent.
 - **The legacy queue**: `AzureStorageQueue<T>` and the transport use different queues and message formats. Drain a legacy queue with `AzureStorageQueue<T>` before you move its consumers.
+- **Events**: every subscription polls, so an event from another process can wait up to `MaxPollInterval`, and each instance subscription is another polling queue. An app that also runs Redis or Service Bus can keep its queues here and put its topics, and the legacy bus of `AddLegacyMessageBus()`, there: `m.UseAzureStorageQueues(...).ForTopics(t => t.UseRedis())`. See [topics on another transport](https://foundatio.dev/guide/messaging#topics-on-another-transport).
 
 ## 📦 Provider Implementations
 

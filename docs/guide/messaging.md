@@ -51,7 +51,7 @@ Registered handlers start receiving when the host starts. A process that registe
 - The service provider creates the transport and disposes it when the host shuts down.
 - `LoggerFactory` and `TimeProvider` come from the service provider unless the options set them.
 - Each method takes the options, or a `Func<IServiceProvider, TOptions>` that builds them, for example from configuration.
-- An app has one transport for all its queues and topics, and `AddLegacyMessageBus()` uses it too. The last `Use...` call wins.
+- One transport carries all of an app's queues and topics, and `AddLegacyMessageBus()` uses it too, unless you give [topics a transport of their own](#topics-on-another-transport). The last `Use...` call wins.
 - `AddFoundatioMessaging` calls add up, so a shared library can choose the transport and map message names while each process adds its own handlers. To choose the transport from configuration, branch in your code: `if (useRedis) m.UseRedis(); else m.UseInMemory();`.
 - Bodies are serialized with `MessagingOptions.Serializer`, or the `ISerializer` registered in DI, or a JSON serializer when neither is set. Services that share a queue or topic must use compatible serializers.
 
@@ -165,6 +165,29 @@ m.UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions
 - Messages can be 46 KiB with their headers; store larger payloads with `IFileStorage` and send a reference. Dead letters go to a `-poison` queue and never expire.
 - A publish lists the topic's queues and sends to each, so it takes two round trips, and it isn't atomic: when one subscription's send fails, the others still get the message and the publish throws, so a retry sends them a second copy.
 - See the [Azure Storage README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureStorage#message-transport-preview) for names, polling cost, counts and Azurite.
+
+### Topics on another transport
+
+`ForTopics` puts topics on a second transport: every publish, every subscriber of either scope, their dead letters, and the legacy bus of `AddLegacyMessageBus()`. Queues stay on the transport outside it: sends, consumers, their dead letters and delays. Inside it, choose the transport with the same `Use...` calls; handlers and settings go outside it.
+
+For example, queues on Azure Storage Queues, which are durable and cheap but poll, and events on Redis, which pushes them to WebSocket fan-out and `CacheLockProvider` at once:
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureStorageQueues(builder.Configuration.GetConnectionString("AzureStorage")!)
+    .ForTopics(t => t.UseRedis())
+    .UseServiceName("billing")
+    .AddLegacyMessageBus()
+    .AddConsumer<EventPostHandler>()                                      // Storage Queues
+    .AddSubscriber<EntityChangedHandler>(new SubscriptionOptions { Scope = SubscriptionScope.Instance }));   // Redis
+```
+
+- Processes that share a topic must all put topics on the same transport, and the same goes for queues.
+- Each transport's limits apply to its own traffic: `MaxPublishDelay` and the message size of the topics' transport to publishes, those of the queues' transport to sends.
+- `IMessageAdmin`, `IWorkMonitor` backlogs, health checks and the `messaging.system` of metrics and traces read each source on its own transport; replayed dead letters go back to their source's transport.
+- The service provider creates and disposes each transport, except one you pass as an instance. The [test harness](#testing) ignores `ForTopics`, as it does `Use...` calls: its in-memory transport, or `Transport`, carries both.
+- Topics can't be split further, by message type: a type's topic is on the topics' transport.
 
 ### Using RabbitMQ
 
