@@ -1062,6 +1062,23 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddCronJob_OfALegacyJobWithLegacySchedulingPropertiesOnJobAttribute_DoesNotWarn()
+    {
+        // The schedule replaces the interval; the attribute stays for where the same class runs as a hosted job.
+        await using var host = await StartAsync(j => j.AddCronJob<LegacyJob<IntervalJob>>("0 * * * * *"));
+
+        Assert.DoesNotContain(Log.LogEntries, e => e.LogLevel >= LogLevel.Warning && e.Message.Contains(nameof(IntervalJob)));
+    }
+
+    [Fact]
+    public async Task AddCronJob_OfAJobHandlerWithLegacySchedulingPropertiesOnJobAttribute_LogsThatTheyAreIgnored()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<IntervalHandler>("0 * * * * *"));
+
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("Interval") && e.Message.Contains(nameof(IntervalHandler)));
+    }
+
+    [Fact]
     public async Task RunAsync_WhenTheLeaseCannotBeRenewed_CancelsTheJobBeforeAnotherWorkerTakesIt()
     {
         var lease = TimeSpan.FromSeconds(2);
@@ -1597,6 +1614,12 @@ public class DurableJobsTests : TestWithLoggingBase
     public sealed class IntervalJob : IJob
     {
         public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.Success);
+    }
+
+    [Job(Name = "interval-handler", Interval = "5m")]
+    public sealed class IntervalHandler : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>The system clock moved by <paramref name="skew"/>; timers and timestamps are the system's.</summary>

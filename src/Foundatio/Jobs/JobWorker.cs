@@ -433,10 +433,20 @@ internal sealed class JobWorker
         JobsInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
     }
 
-    /// <summary>Legacy <see cref="JobAttribute"/> settings for hosted jobs have no effect on durable jobs; say so instead of ignoring them silently.</summary>
+    /// <summary>
+    /// Legacy <see cref="JobAttribute"/> settings for hosted jobs have no effect on durable jobs; say so instead of ignoring
+    /// them silently. Not for a <see cref="LegacyJob{TJob}"/> with a CRON schedule: the schedule replaces them, and they
+    /// stay for where the same class runs as a hosted job.
+    /// </summary>
     private void WarnAboutIgnoredJobAttributeProperties()
     {
-        foreach (var jobType in _runtime.Jobs.Values.Select(r => JobNaming.GetNamedType(r.JobType)).Distinct())
+        var scheduled = _runtime.Registrations.Schedules.Values.Select(s => s.JobName).ToHashSet(StringComparer.Ordinal);
+        var jobTypes = _runtime.Jobs
+            .Where(j => JobNaming.GetNamedType(j.Value.JobType) == j.Value.JobType || !scheduled.Contains(j.Key))
+            .Select(j => JobNaming.GetNamedType(j.Value.JobType))
+            .Distinct();
+
+        foreach (var jobType in jobTypes)
         {
             if (jobType.GetCustomAttribute<JobAttribute>() is not { } attribute)
                 continue;
