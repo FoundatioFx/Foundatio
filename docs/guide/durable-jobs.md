@@ -277,6 +277,15 @@ The host fails to start if you add a check without the matching `AddFoundatioMes
 
 A handler or job that throws is not a health problem: it is retried, then dead-lettered or failed. The data has an entry per message source (`queue:orders`, `subscription:orders/billing`), for the `worker` (with running jobs per job name) and for the `scheduler`. Pass `failureStatus: HealthStatus.Degraded` to report problems without failing the probe (do this if a liveness probe uses the checks), and `name` to rename a check. Your own code can read the same information from `MessagingStatus` and `JobsStatus`.
 
+These checks report what this process is doing. To know that a CRON schedule keeps succeeding, whichever instance runs it, add `AddFoundatioCronJob`. It reads the job store, so every instance reports the same, which a check that remembers when the job last ran in this process can't do once several instances share the schedule:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddFoundatioCronJob("stack-event-count", succeededWithin: TimeSpan.FromSeconds(15), tags: ["jobs"]);
+```
+
+It is Healthy when an occurrence created in the last `succeededWithin` has succeeded, and reports its failure status otherwise, including for a schedule this process doesn't register. The schedule name is `CronJobOptions.Name`, which defaults to the job name. Make `succeededWithin` longer than the time between occurrences plus the job's longest run. A schedule's succeeded jobs are kept until its next occurrence is due even with a `RetainSucceededFor` of zero, so the check works for schedules that keep no history. A new schedule reports a failure until its first occurrence succeeds. Your own code can call `JobsStatus.GetLastSucceededAsync(scheduleName, within)` for the same answer.
+
 ## Testing
 
 Unit test a job with `TestJobContext`:

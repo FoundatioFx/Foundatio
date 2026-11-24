@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs;
@@ -12,6 +14,8 @@ namespace Foundatio.Jobs;
 public sealed class JobsStatus
 {
     private const string StartupFailed = "Startup failed; jobs will not run";
+    private const int SucceededPageSize = 100;
+    private const int MaxSucceededRead = 1000;
 
     private readonly JobsRuntime _runtime;
 
@@ -39,6 +43,50 @@ public sealed class JobsStatus
             result.Add(_runtime.Scheduler?.GetStatus() ?? NotStarted("scheduler", hostState));
 
         return result;
+    }
+
+    /// <summary>
+    /// Returns the newest job of the CRON schedule <paramref name="scheduleName"/> that was created in the last
+    /// <paramref name="within"/> and has succeeded, whichever instance ran it, or null when none has. Read from the job
+    /// store, so every instance gives the same answer. Foundatio.Extensions.Hosting turns it into a health check.
+    /// </summary>
+    /// <remarks>
+    /// A schedule's succeeded jobs are kept at least until its next occurrence is due, even with a
+    /// <see cref="CronJobOptions.RetainSucceededFor"/> of zero, so make <paramref name="within"/> longer than the time
+    /// between occurrences plus the job's longest run. Reads the newest 1,000 succeeded jobs of the schedule's job name
+    /// at most, in pages of 100, so jobs of the same name enqueued in between can hide an older success.
+    /// </remarks>
+    /// <exception cref="ArgumentException">No CRON schedule of that name is registered in this process.</exception>
+    public async Task<JobDetails?> GetLastSucceededAsync(string scheduleName, TimeSpan within, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scheduleName);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(within, TimeSpan.Zero);
+        if (!_runtime.Registrations.Schedules.TryGetValue(scheduleName, out var schedule))
+        {
+            throw new ArgumentException($"No CRON schedule named \"{scheduleName}\" is registered in this process. "
+                + $"Registered: {(_runtime.Registrations.Schedules.Count > 0 ? String.Join(", ", _runtime.Registrations.Schedules.Keys) : "none")}.", nameof(scheduleName));
+        }
+
+        var since = _runtime.TimeProvider.GetUtcNow() - within;
+        var query = new JobQuery { State = JobState.Succeeded, Name = schedule.JobName, Limit = SucceededPageSize };
+        for (int read = 0; read < MaxSucceededRead; read += SucceededPageSize)
+        {
+            var page = await _runtime.Store.QueryAsync(query, cancellationToken).AnyContext();
+            foreach (var job in page.Jobs)
+            {
+                if (job.CreatedAt < since)
+                    return null;
+                if (job.ScheduleName == schedule.Name)
+                    return new JobDetails(job, _runtime.Serializer);
+            }
+
+            if (page.ContinuationToken is null)
+                return null;
+
+            query = query with { ContinuationToken = page.ContinuationToken };
+        }
+
+        return null;
     }
 
     private static ProcessingStatus NotStarted(string name, ProcessingState hostState) => new()
