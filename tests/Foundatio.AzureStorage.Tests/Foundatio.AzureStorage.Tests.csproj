@@ -8,6 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.AzureStorage\Foundatio.AzureStorage.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>
   <ItemGroup>
