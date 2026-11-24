@@ -82,7 +82,12 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
     /// <summary>Every message sent with <c>SendAsync</c> or <c>SendBatchAsync</c>, in order.</summary>
     public IReadOnlyList<RecordedMessage> SentMessages => Snapshot(_sent);
 
-    /// <summary>Every message published with <c>PublishAsync</c> or <c>PublishBatchAsync</c>, in order.</summary>
+    /// <summary>
+    /// Every message published with <c>PublishAsync</c> or <c>PublishBatchAsync</c>, in order, once for each topic it was
+    /// sent to. A legacy <c>IMessageBus</c> publish of a type <see cref="IMessageClient"/> knows is recorded at that
+    /// type's topic and, unless the type is in <see cref="LegacyMessageBusOptions.MigratedMessageTypes"/>, at the legacy
+    /// bus's own topic too (<c>topic:messages</c> unless you named it).
+    /// </summary>
     public IReadOnlyList<RecordedMessage> PublishedMessages => Snapshot(_published);
 
     /// <summary>Every delivery to this app's handlers and its <see cref="RecordedMessage.Outcome"/>, including each retried attempt.</summary>
@@ -94,8 +99,11 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
     /// <summary>The <typeparamref name="T"/> messages sent so far, including derived types.</summary>
     public IReadOnlyList<T> Sent<T>() where T : class => SentMessages.Select(m => m.Message).OfType<T>().ToList();
 
-    /// <summary>The <typeparamref name="T"/> messages published so far, including derived types.</summary>
-    public IReadOnlyList<T> Published<T>() where T : class => PublishedMessages.Select(m => m.Message).OfType<T>().ToList();
+    /// <summary>
+    /// The <typeparamref name="T"/> messages published so far, including derived types, each once: a legacy publish that
+    /// <see cref="PublishedMessages"/> records at two topics is returned once.
+    /// </summary>
+    public IReadOnlyList<T> Published<T>() where T : class => PublishedMessages.Where(m => !m.IsLegacyTopicCopy).Select(m => m.Message).OfType<T>().ToList();
 
     /// <summary>The deliveries <typeparamref name="THandler"/> ran to completion on, whatever the delivery's outcome.</summary>
     public IReadOnlyList<RecordedMessage> HandledBy<THandler>() where THandler : class
@@ -371,15 +379,26 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     void IMessagingObserver.OnSent(MessageDestination destination, object message, OutgoingMessage outgoing)
     {
+        RecordSent(destination, message, outgoing, outgoing.Headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty, isLegacyTopicCopy: false);
+    }
+
+    void IMessagingObserver.OnLegacySent(MessageDestination destination, object message, OutgoingMessage outgoing, string messageType)
+    {
+        RecordSent(destination, message, outgoing, messageType, isLegacyTopicCopy: true);
+    }
+
+    private void RecordSent(MessageDestination destination, object message, OutgoingMessage outgoing, string messageType, bool isLegacyTopicCopy)
+    {
         var record = new RecordedMessage
         {
             MessageId = outgoing.MessageId,
-            MessageType = outgoing.Headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty,
+            MessageType = messageType,
             Message = message,
             Address = destination.ToString(),
             CorrelationId = outgoing.Headers.GetValueOrDefault(KnownHeaders.CorrelationId),
             Headers = outgoing.Headers,
-            DeliverAt = TryGetTime(outgoing.Headers, KnownHeaders.DeliverAt) ?? outgoing.DeliverAt
+            DeliverAt = TryGetTime(outgoing.Headers, KnownHeaders.DeliverAt) ?? outgoing.DeliverAt,
+            IsLegacyTopicCopy = isLegacyTopicCopy
         };
 
         lock (_lock)
@@ -857,7 +876,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     private int Sent(Type messageType) => SentMessages.Count(m => messageType.IsInstanceOfType(m.Message));
 
-    private int Published(Type messageType) => PublishedMessages.Count(m => messageType.IsInstanceOfType(m.Message));
+    private int Published(Type messageType) => PublishedMessages.Count(m => !m.IsLegacyTopicCopy && messageType.IsInstanceOfType(m.Message));
 
     private static InMemoryMessageTransport RequireInMemoryTransport(MessagingRuntime messaging) => messaging.QueueTransport as InMemoryMessageTransport
         ?? throw new InvalidOperationException("The test harness needs its in-memory transport. Register it with AddFoundatioTestHarness().");

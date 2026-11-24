@@ -43,6 +43,9 @@ public sealed record RecordedMessage
     /// <summary>The classes of <see cref="Handlers"/>, without the delegate handlers.</summary>
     internal IReadOnlyList<Type> HandlerTypes { get; init; } = [];
 
+    /// <summary>Whether this is the legacy bus's own topic's copy of a legacy publish that is recorded at its type's topic too.</summary>
+    internal bool IsLegacyTopicCopy { get; init; }
+
     /// <summary>How the delivery ended. Null for sent and published messages.</summary>
     public MessageOutcome? Outcome { get; init; }
 

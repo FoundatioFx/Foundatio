@@ -227,7 +227,12 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     private async Task SendAsync(object message, OutgoingMessage? legacy, (MessageDestination Destination, OutgoingMessage Message)? copy, CancellationToken cancellationToken)
     {
         if (legacy is not null)
+        {
             await _transport.SendAsync(_destination, [legacy], cancellationToken).AnyContext();
+            if (copy is { } sent)
+                _runtime!.Observer?.OnLegacySent(_destination, message, legacy, sent.Message.Headers[KnownHeaders.MessageType]);
+        }
+
         if (copy is not { } shared)
             return;
 

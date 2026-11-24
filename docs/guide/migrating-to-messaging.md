@@ -149,6 +149,7 @@ m.MapMessage<EntityChanged>("entity-changed")
 - Legacy subscribers keep working: a subscriber of the type, of a base type or of `IMessage` receives it once, from its topic.
 - Set it the same way in every process that shares the bus. A process that doesn't list the type still delivers it to its legacy subscribers of that exact type, when it knows the type, but not to its subscribers of a base type or of `IMessage`.
 - It applies to the listed types only, not to types derived from them.
+- To test that it took effect, assert where the [test harness](./messaging#testing) recorded the publish: `harness.PublishedMessages` records a legacy publish at each topic it was sent to, so a type that isn't migrated also shows up at `topic:messages`, the legacy bus's topic. `Published<T>()` returns it once either way.
 
 ## Moving IMessageBus to the new transport
 

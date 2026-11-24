@@ -10,6 +10,14 @@ internal interface IMessagingObserver
     void OnSent(MessageDestination destination, object message, OutgoingMessage outgoing);
 
     /// <summary>
+    /// Called after the transport accepted a legacy <c>IMessageBus</c> publish to the legacy bus's own topic, for a
+    /// <paramref name="messageType"/> it also sends to that type's topic (reported with <see cref="OnSent"/>).
+    /// </summary>
+    void OnLegacySent(MessageDestination destination, object message, OutgoingMessage outgoing, string messageType)
+    {
+    }
+
+    /// <summary>
     /// Called after a delivery was settled. <paramref name="outcome"/> is the metrics outcome: success, retry,
     /// dead-lettered, skipped, expired, cancelled or lease-lost. <paramref name="context"/> is the handlers' context,
     /// or null when no handler ran.

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
@@ -122,10 +123,36 @@ public class LegacyMessageBusInteropTests : TestWithLoggingBase
 
         // Assert
         await legacy.WaitForAsync(1, TestCancellationToken);
-        var published = Assert.Single(harness.PublishedMessages);
-        Assert.Equal("interop-event", published.MessageType);
-        Assert.Equal("topic:interop-event", published.Address);
-        Assert.Equal(new InteropEvent(2), published.Message);
+        Assert.Equal(["topic:messages", "topic:interop-event"], harness.PublishedMessages.Select(m => m.Address));
+        Assert.All(harness.PublishedMessages, m => Assert.Equal(("interop-event", new InteropEvent(2)), (m.MessageType, m.Message)));
+        Assert.Single(harness.Published<InteropEvent>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PublishAsync_WithTheHarness_RecordsEachTopicItIsSentTo(bool migrated)
+    {
+        // Arrange
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders().AddTestLogger(_output);
+        builder.Services.AddFoundatioTestHarness();
+        builder.Services.AddFoundatioMessaging(m => m.MapMessage<InteropEvent>("interop-event")
+            .AddLegacyMessageBus(o =>
+            {
+                if (migrated)
+                    o.MigratedMessageTypes.Add(typeof(InteropEvent));
+            }));
+        var host = await StartAsync(builder);
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        // Act
+        await host.Services.GetRequiredService<IMessageBus>().PublishAsync(new InteropEvent(1), cancellationToken: TestCancellationToken);
+
+        // Assert
+        string[] expected = migrated ? ["topic:interop-event"] : ["topic:messages", "topic:interop-event"];
+        Assert.Equal(expected, harness.PublishedMessages.Select(m => m.Address));
+        Assert.Equal(new InteropEvent(1), Assert.Single(harness.Published<InteropEvent>()));
     }
 
     [Fact]
