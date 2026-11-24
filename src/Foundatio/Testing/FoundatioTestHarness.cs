@@ -265,7 +265,9 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
     /// <summary>
     /// Waits until no message is waiting for or being handled by this app's handlers or its <c>AddLegacyMessageBus()</c>
     /// subscribers, and no job is queued or running. Delayed messages and retries count as waiting. Messages sent to queues that nothing in this app consumes are ignored,
-    /// but a queued job that nothing in this app runs is not: it keeps the app busy, and the timeout names it.
+    /// but a queued job that nothing in this app runs is not: it keeps the app busy, and the timeout names it. On a
+    /// <see cref="FoundatioTestHarnessOptions.JobStore"/> shared with other hosts, such a job is another host's work and
+    /// is ignored too, so a host that only enqueues a job can wait for its own messages.
     /// </summary>
     /// <remarks>
     /// While processing is paused, it lets all work run until the app is idle, then pauses again, so a base class shared
@@ -607,9 +609,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
                 }
             }
 
-            long allActive = await jobs.Store.CountAsync(JobState.Queued, cancellationToken: cancellationToken).AnyContext()
-                + await jobs.Store.CountAsync(JobState.Running, cancellationToken: cancellationToken).AnyContext();
-            if (allActive > active)
+            // On a shared store, the jobs nothing in this app runs are another host's work.
+            if (Registration?.Options.JobStore is null && await CountActiveJobsAsync(jobs, cancellationToken).AnyContext() > active)
             {
                 foreach (var (name, count) in await CountUnregisteredJobsAsync(jobs, cancellationToken).AnyContext())
                     busy.Add($"job {name} has {count} queued or running, but nothing in this app runs it (is it registered with AddJob?)");
@@ -880,6 +881,12 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver, In
 
     private static InMemoryMessageTransport RequireInMemoryTransport(MessagingRuntime messaging) => messaging.QueueTransport as InMemoryMessageTransport
         ?? throw new InvalidOperationException("The test harness needs its in-memory transport. Register it with AddFoundatioTestHarness().");
+
+    private static async Task<long> CountActiveJobsAsync(JobsRuntime jobs, CancellationToken cancellationToken)
+    {
+        return await jobs.Store.CountAsync(JobState.Queued, cancellationToken: cancellationToken).AnyContext()
+            + await jobs.Store.CountAsync(JobState.Running, cancellationToken: cancellationToken).AnyContext();
+    }
 
     /// <summary>Counts queued and running jobs by name, for names no job registered in this app runs.</summary>
     private static async Task<IReadOnlyList<(string Name, int Count)>> CountUnregisteredJobsAsync(JobsRuntime jobs, CancellationToken cancellationToken)

@@ -802,6 +802,36 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task WaitForIdleAsync_OnHostsThatShareAStoreAndRunNoJobs_WaitsForTheirMessagesNotTheJobsTheyEnqueue()
+    {
+        // Six web pods: each subscribes to OrderPlaced and enqueues an invoice job, which only a worker service runs.
+        await using var transport = new InMemoryMessageTransport();
+        var store = new Foundatio.Jobs.Store.InMemoryJobStore();
+        var pods = new List<IHost>();
+        for (int i = 0; i < 6; i++)
+        {
+            var builder = Host.CreateApplicationBuilder();
+            builder.Logging.ClearProviders().AddTestLogger(_output);
+            builder.Services.AddFoundatioMessaging(m => m.UseServiceName("web").AddSubscriber<OrderPlacedHandler>());
+            builder.Services.AddFoundatioJobs();
+            builder.Services.AddFoundatioTestHarness(o => { o.Transport = transport; o.JobStore = store; });
+            var pod = builder.Build();
+            _hosts.Add(pod);
+            await pod.StartAsync(TestCancellationToken);
+            pods.Add(pod);
+        }
+
+        var harnesses = pods.Select(p => p.Services.GetRequiredService<FoundatioTestHarness>()).ToList();
+
+        await pods[0].Services.GetRequiredService<IMessageClient>().PublishAsync(new OrderPlaced(5, "a@b.com"), cancellationToken: TestCancellationToken);
+        foreach (var harness in harnesses)
+            await harness.WaitForIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(1, harnesses.Sum(h => h.HandledBy<OrderPlacedHandler>().Count));
+        Assert.Equal(1, await store.CountAsync(JobState.Queued, "orders.generate-invoice", TestCancellationToken));
+    }
+
+    [Fact]
     public void AddFoundatioTestHarness_WithCapabilitiesTheInMemoryTransportCannotEmulate_Throws()
     {
         var services = new ServiceCollection();

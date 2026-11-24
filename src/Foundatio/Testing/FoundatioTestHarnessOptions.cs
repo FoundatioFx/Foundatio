@@ -41,7 +41,11 @@ public sealed class FoundatioTestHarnessOptions
     /// </example>
     public InMemoryMessageTransport? Transport { get; set; }
 
-    /// <summary>A job store to run on instead of a fresh one, shared with other hosts; see <see cref="Transport"/>.</summary>
+    /// <summary>
+    /// A job store to run on instead of a fresh one, shared with other hosts; see <see cref="Transport"/>. Each host's
+    /// <see cref="FoundatioTestHarness.WaitForIdleAsync"/> then waits only for the jobs that host runs, so a host that
+    /// enqueues jobs another host runs does not wait for them.
+    /// </summary>
     public InMemoryJobStore? JobStore { get; set; }
 
     /// <summary>

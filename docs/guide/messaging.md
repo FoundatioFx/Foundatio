@@ -525,6 +525,9 @@ builder.Services.AddFoundatioTestHarness(o => { o.Transport = transport; o.JobSt
 
 You create and dispose them, and the transport keeps its own clock. Pausing isn't supported on a shared transport, because it would pause every host.
 
+- Each harness's `WaitForIdleAsync()` waits for its own host: its handlers, and the jobs it registers. On a shared store, a job that nothing in the host runs is left to the host that does, so a producer-only host, like a web pod that enqueues a job a worker service runs, can wait for its messages; the job stays queued. On a store of its own, the timeout names that job instead, since nothing would ever run it.
+- To wait for every host at once, call `await transport.WaitUntilIdleAsync(timeout)`: it returns false if a queue or subscription still holds a waiting or in-flight message after `timeout`. It ignores jobs, but not queues: a message sent to a queue no host consumes keeps it waiting, so use it when the hosts consume everything they send.
+
 ### Test against your production transport's guarantees
 
 The harness's in-memory transport supports everything: ordered groups, deduplication, unlimited delays and any message size. Give it your production transport's capabilities so a test sees what production would do:
