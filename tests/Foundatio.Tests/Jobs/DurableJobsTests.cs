@@ -1204,6 +1204,115 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task EnqueueAsync_OfAJobNoProcessRuns_WarnsOnceAfterItHasBeenDueAMinute()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new ReadCountingJobStore(_store);
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time), store: store);
+
+        var first = await producer.Jobs.EnqueueAsync(new ResizeImage("a.png", 1), cancellationToken: TestCancellationToken);
+        for (int i = 0; i < 10; i++)
+            await producer.Jobs.EnqueueAsync(new ResizeImage("b.png", 1), cancellationToken: TestCancellationToken);
+        Assert.Empty(NotRunWarnings());
+
+        await WaitForAsync(() => AdvanceAndCheck(time, () => NotRunWarnings().Count == 1));
+        time.Advance(TimeSpan.FromMinutes(5));
+        await producer.Jobs.EnqueueAsync(new ResizeImage("c.png", 1), cancellationToken: TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(5));
+        string warning = Assert.Single(NotRunWarnings());
+        Assert.Contains(first.Id, warning);
+        Assert.Contains("register", warning);
+
+        await using var worker = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        Assert.Equal(JobState.Succeeded, (await first.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+        await WaitForAsync(() => AdvanceAndCheck(time, () => Log.LogEntries.Any(e => e.LogLevel == LogLevel.Information && e.Message.StartsWith($"Job {JobNaming.GetName(typeof(ResizeImage))} is being run"))));
+
+        long reads = store.Reads;
+        await producer.Jobs.EnqueueAsync(new ResizeImage("d.png", 1), cancellationToken: TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(5));
+        await Task.Delay(100, TestCancellationToken);
+        Assert.Equal(reads, store.Reads);
+        Assert.Single(NotRunWarnings());
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfAJobAnotherProcessRuns_ChecksOnceAndDoesNotWarn()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new ReadCountingJobStore(_store);
+        await using var worker = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time), store: store);
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 20; i++)
+            handles.Add(await producer.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", 1), cancellationToken: TestCancellationToken));
+        foreach (var handle in handles)
+            await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        long readsBeforeCheck = store.Reads;
+        await WaitForAsync(() => AdvanceAndCheck(time, () => store.Reads > readsBeforeCheck));
+        time.Advance(TimeSpan.FromMinutes(10));
+        await producer.Jobs.EnqueueAsync(new ResizeImage("late.png", 1), cancellationToken: TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(10));
+        await Task.Delay(100, TestCancellationToken);
+
+        Assert.Equal(readsBeforeCheck + 1, store.Reads);
+        Assert.Empty(NotRunWarnings());
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfAJobWaitingForItsConcurrencyKey_DoesNotWarn()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var worker = await StartAsync(j => j.AddJob<GatedJob>());
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time));
+        var key = new EnqueueOptions { ConcurrencyKey = "org-1" };
+
+        await worker.Jobs.EnqueueAsync(new Gated(), key, TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        var waiting = await producer.Jobs.EnqueueAsync(new Gated(), key, TestCancellationToken);
+        for (int i = 0; i < 5; i++)
+        {
+            time.Advance(TimeSpan.FromMinutes(1));
+            await Task.Delay(50, TestCancellationToken);
+        }
+
+        Assert.Equal(JobState.Queued, (await waiting.GetAsync(TestCancellationToken))!.State);
+        Assert.Empty(NotRunWarnings());
+        _gate.TrySetResult();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfADelayedJobNoProcessRuns_WaitsUntilAJobIsDueToCheck()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new ReadCountingJobStore(_store);
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time), store: store);
+
+        await producer.Jobs.EnqueueAsync(new ResizeImage("later.png", 1), new EnqueueOptions { Delay = TimeSpan.FromHours(1) }, TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(10));
+        await Task.Delay(100, TestCancellationToken);
+        Assert.Equal(0, store.Reads);
+
+        var now = await producer.Jobs.EnqueueAsync(new ResizeImage("now.png", 1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => AdvanceAndCheck(time, () => NotRunWarnings().Count == 1));
+        Assert.Contains(now.Id, Assert.Single(NotRunWarnings()));
+    }
+
+    private List<string> NotRunWarnings() => Log.LogEntries
+        .Where(e => e.LogLevel == LogLevel.Warning && e.Message.Contains("no job of that name is running"))
+        .Select(e => e.Message)
+        .ToList();
+
+    private static Task<bool> AdvanceAndCheck(FakeTimeProvider time, Func<bool> condition)
+    {
+        if (condition())
+            return Task.FromResult(true);
+
+        time.Advance(TimeSpan.FromSeconds(15));
+        return Task.FromResult(false);
+    }
+
+    [Fact]
     public async Task AddJob_AfterAddCronJobRegisteredTheJob_AppliesItsOptions()
     {
         await using var host = await StartAsync(j => j.AddCronJob<SlowTickJob>("0 0 1 1 *").AddJob<SlowTickJob>(new JobTypeOptions { MaxConcurrency = 1 }));
@@ -1570,6 +1679,19 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     /// <summary>Records each batch claim's requested and claimed counts.</summary>
+    private sealed class ReadCountingJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        private long _reads;
+
+        public long Reads => Interlocked.Read(ref _reads);
+
+        public override Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _reads);
+            return base.GetAsync(jobId, cancellationToken);
+        }
+    }
+
     private sealed class ClaimCountingJobStore(IJobStore inner) : JobStoreDecorator(inner)
     {
         public ConcurrentQueue<(int MaxCount, int Claimed)> Claims { get; } = new();

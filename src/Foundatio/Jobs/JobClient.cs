@@ -14,50 +14,60 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
-internal sealed class JobClient : IJobClient
+internal sealed class JobClient : IJobClient, IDisposable
 {
     private const int MaxCachedTypes = 1024;
 
     private readonly JobsRuntime _runtime;
 
-    // Job names of argument types already checked not to be jobs, so an enqueue does not reflect over the type again.
-    private readonly ConcurrentDictionary<Type, string> _argumentNames = new();
+    // Job names of argument types already checked not to be jobs, and of job types, so an enqueue does not reflect over the type again.
+    private readonly ConcurrentDictionary<Type, EnqueuedJobName> _argumentNames = new();
+    private readonly ConcurrentDictionary<Type, EnqueuedJobName> _jobNames = new();
     private readonly ConcurrentDictionary<string, byte> _reportedNotRunHere = new(StringComparer.Ordinal);
+    private readonly UnrunJobWatch? _unrunJobs;
     private readonly ILogger _logger;
 
     public JobClient(JobsRuntime runtime)
     {
         _runtime = runtime;
         _logger = runtime.LoggerFactory.CreateLogger<JobClient>();
+
+        // The test harness reports a queued job nothing in the app runs when a test waits for the app to be idle.
+        _unrunJobs = runtime.Observer is null ? new UnrunJobWatch(runtime, _logger) : null;
     }
 
     public Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        return CreateAsync(GetArgumentsName(arguments), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken, keys: arguments as IHaveJobKeys);
+        var name = GetArgumentsName(arguments);
+        return CreateAsync(name.Name, _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken, keys: arguments as IHaveJobKeys, enqueuedName: name);
     }
 
     /// <summary>The job name of <paramref name="arguments"/>' runtime type, once it is known not to be a job.</summary>
-    private string GetArgumentsName(object arguments)
+    private EnqueuedJobName GetArgumentsName(object arguments)
     {
         var type = arguments.GetType();
-        if (_argumentNames.TryGetValue(type, out string? name))
+        if (_argumentNames.TryGetValue(type, out var name))
             return name;
 
         JobRegistration.ThrowIfJob(arguments, job => $"EnqueueAsync<{job}>()", nameof(arguments));
-        name = JobNaming.GetName(type);
-        WarnIfNotRunHere(name);
-        if (_argumentNames.Count < MaxCachedTypes)
-            _argumentNames.TryAdd(type, name);
-
-        return name;
+        return AddName(_argumentNames, type);
     }
 
     public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IJobHandler
     {
-        string name = JobNaming.GetName(typeof(TJob));
-        WarnIfNotRunHere(name);
-        return CreateAsync(name, ReadOnlyMemory<byte>.Empty, options, cancellationToken);
+        var name = _jobNames.TryGetValue(typeof(TJob), out var cached) ? cached : AddName(_jobNames, typeof(TJob));
+        return CreateAsync(name.Name, ReadOnlyMemory<byte>.Empty, options, cancellationToken, enqueuedName: name);
+    }
+
+    private EnqueuedJobName AddName(ConcurrentDictionary<Type, EnqueuedJobName> names, Type type)
+    {
+        string jobName = JobNaming.GetName(type);
+        WarnIfNotRunHere(jobName);
+
+        // Past the cache's limit a name is not followed, since each enqueue would create a new one to follow.
+        var name = new EnqueuedJobName(jobName, runsHere: _runtime.Jobs.ContainsKey(jobName) || names.Count >= MaxCachedTypes);
+        return names.Count < MaxCachedTypes ? names.GetOrAdd(type, name) : name;
     }
 
     /// <summary>
@@ -104,7 +114,7 @@ internal sealed class JobClient : IJobClient
     }
 
     internal async Task<JobHandle> CreateAsync(string name, ReadOnlyMemory<byte> payload, EnqueueOptions? options, CancellationToken cancellationToken,
-        string? scheduleName = null, DateTimeOffset? retainUntil = null, IHaveJobKeys? keys = null)
+        string? scheduleName = null, DateTimeOffset? retainUntil = null, IHaveJobKeys? keys = null, EnqueuedJobName? enqueuedName = null)
     {
         if (options?.JobId is { } requestedId)
             ArgumentException.ThrowIfNullOrWhiteSpace(requestedId, nameof(options));
@@ -147,6 +157,8 @@ internal sealed class JobClient : IJobClient
         {
             JobsInstruments.Enqueued.Add(1, new KeyValuePair<string, object?>(JobsInstruments.JobName, name));
             _runtime.SignalWorkAvailable();
+            if (enqueuedName is { NeedsCheck: true })
+                _unrunJobs?.OnCreated(enqueuedName, job);
         }
         else if (id is not null && _logger.IsEnabled(LogLevel.Debug))
         {
@@ -155,6 +167,8 @@ internal sealed class JobClient : IJobClient
 
         return new JobHandle(id ?? job.Id, this);
     }
+
+    public void Dispose() => _unrunJobs?.Dispose();
 
     /// <summary>Returns a key the arguments chose, or throws when it is blank.</summary>
     internal static string? ValidateKey(IHaveJobKeys? keys, string? key, string member)
