@@ -75,14 +75,15 @@ public static class FoundatioHealthChecksBuilderExtensions
     /// <summary>
     /// Reports whether the CRON schedule <paramref name="scheduleName"/> has succeeded recently: Healthy when one of its
     /// occurrences created in the last <paramref name="succeededWithin"/> has succeeded, on whichever instance ran it,
-    /// and <paramref name="failureStatus"/> otherwise. It reads the job store, so every instance reports the same, and
-    /// costs one store query per check. The host fails to start if jobs are not configured; a schedule this process
-    /// doesn't register reports <paramref name="failureStatus"/>.
+    /// or when the schedule is new, and <paramref name="failureStatus"/> when it is overdue (see
+    /// <see cref="JobsStatus.IsScheduleOverdueAsync"/>). It reads the job store, so every instance reports the same, and
+    /// costs one store query per check while the schedule succeeds. The host fails to start if jobs are not configured;
+    /// a schedule this process doesn't register reports <paramref name="failureStatus"/>.
     /// </summary>
     /// <remarks>
     /// Make <paramref name="succeededWithin"/> longer than the time between occurrences plus the job's longest run, for
-    /// example 15 seconds for a schedule every 5 seconds. A schedule that has not had its first occurrence yet, such as
-    /// a new one on its first deployment, reports <paramref name="failureStatus"/> until it has.
+    /// example 15 seconds for a schedule every 5 seconds. A new schedule, such as an hourly one on a fresh job store, is
+    /// Healthy until it has been known for <paramref name="succeededWithin"/> or one of its jobs fails.
     /// </remarks>
     /// <param name="builder">The health checks builder.</param>
     /// <param name="scheduleName">The schedule: <see cref="CronJobOptions.Name"/>, which defaults to the job name.</param>

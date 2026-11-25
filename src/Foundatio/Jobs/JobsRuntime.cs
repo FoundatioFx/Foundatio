@@ -31,7 +31,11 @@ internal sealed class JobsRuntime
         LoggerFactory = loggerFactory;
         TimeProvider = timeProvider;
         WorkerId = options.WorkerId ?? $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid().ToString("N")[..6]}";
+        CreatedAt = timeProvider.GetUtcNow();
     }
+
+    /// <summary>When this process set up its jobs, usually as the host started: its CRON schedules are known to it from then.</summary>
+    public DateTimeOffset CreatedAt { get; }
 
     public IJobStore Store { get; }
     public JobWorkerOptions Options { get; }

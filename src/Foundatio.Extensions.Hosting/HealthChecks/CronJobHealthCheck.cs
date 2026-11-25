@@ -9,7 +9,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Foundatio.Extensions.Hosting.HealthChecks;
 
-/// <summary>Reports whether a CRON schedule has succeeded recently, on any instance, from the job store.</summary>
+/// <summary>Reports whether a CRON schedule has succeeded recently, or is still new, on any instance, from the job store.</summary>
 internal sealed class CronJobHealthCheck : IHealthCheck
 {
     private readonly IServiceProvider _services;
@@ -29,9 +29,12 @@ internal sealed class CronJobHealthCheck : IHealthCheck
             return new HealthCheckResult(context.Registration.FailureStatus, "Jobs are not configured: call AddFoundatioJobs.");
 
         JobDetails? job;
+        bool overdue = false;
         try
         {
             job = await status.GetLastSucceededAsync(_scheduleName, _succeededWithin, cancellationToken).ConfigureAwait(false);
+            if (job is null)
+                overdue = await status.IsScheduleOverdueAsync(_scheduleName, _succeededWithin, cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
         {
@@ -41,7 +44,9 @@ internal sealed class CronJobHealthCheck : IHealthCheck
         if (job is null)
         {
             string window = TimeSpan.FromSeconds(Math.Floor(_succeededWithin.TotalSeconds)).ToString("c", CultureInfo.InvariantCulture);
-            return new HealthCheckResult(context.Registration.FailureStatus, $"No occurrence of CRON schedule {_scheduleName} created in the last {window} has succeeded");
+            return overdue
+                ? new HealthCheckResult(context.Registration.FailureStatus, $"No occurrence of CRON schedule {_scheduleName} created in the last {window} has succeeded")
+                : HealthCheckResult.Healthy($"CRON schedule {_scheduleName} is new: no occurrence has had {window} to succeed yet");
         }
 
         var data = new Dictionary<string, object> { ["jobId"] = job.Id, ["scheduledFor"] = job.ScheduledFor, ["createdAt"] = job.CreatedAt };

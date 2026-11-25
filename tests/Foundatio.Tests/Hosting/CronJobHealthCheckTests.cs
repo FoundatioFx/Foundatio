@@ -82,6 +82,65 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
         Assert.Contains("has succeeded", entry.Description);
     }
 
+    [Theory]
+    [InlineData("0 0 * * * *", 65 * 60)]
+    [InlineData("0 0 1 * * *", 25 * 60 * 60)]
+    public async Task AddFoundatioCronJob_OnAFreshStore_ReportsHealthyUntilTheScheduleIsOverdue(string cron, int windowSeconds)
+    {
+        var window = TimeSpan.FromSeconds(windowSeconds);
+        var host = await StartAsync(runsSchedule: false, cron: cron, succeededWithin: window);
+
+        var entry = await CheckAsync(host);
+        Assert.Equal(HealthStatus.Healthy, entry.Status);
+        Assert.Equal($"CRON schedule {Schedule} is new: no occurrence has had {FormatWindow(window)} to succeed yet", entry.Description);
+
+        _time.Advance(window - TimeSpan.FromSeconds(1));
+        Assert.Equal(HealthStatus.Healthy, (await CheckAsync(host)).Status);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        entry = await CheckAsync(host);
+        Assert.Equal(HealthStatus.Unhealthy, entry.Status);
+        Assert.Equal($"No occurrence of CRON schedule {Schedule} created in the last {FormatWindow(window)} has succeeded", entry.Description);
+    }
+
+    [Fact]
+    public async Task AddFoundatioCronJob_OnAFreshStore_ReportsTheFirstSuccessThenFailsOnceOccurrencesStop()
+    {
+        _time.Advance(TimeSpan.FromMinutes(30));
+        var options = new CronJobOptions { MisfireThreshold = TimeSpan.FromMinutes(1) };
+        var runner = await StartAsync(runsSchedule: true, cron: "0 0 * * * *", succeededWithin: TimeSpan.FromMinutes(65), cronOptions: options);
+        Assert.Equal(HealthStatus.Healthy, (await CheckAsync(runner)).Status);
+
+        _time.Advance(TimeSpan.FromMinutes(30));
+        await WaitForSucceededAsync(1);
+        var entry = await CheckAsync(runner);
+        Assert.Equal(HealthStatus.Healthy, entry.Status);
+        Assert.Contains("last succeeded with the occurrence scheduled for 2026-01-01T13:00:00", entry.Description);
+
+        await StopAsync();
+        var other = await StartAsync(runsSchedule: false, cron: "0 0 * * * *", succeededWithin: TimeSpan.FromMinutes(65), cronOptions: options);
+        _time.Advance(TimeSpan.FromMinutes(65));
+        Assert.Equal(HealthStatus.Healthy, (await CheckAsync(other)).Status);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(HealthStatus.Unhealthy, (await CheckAsync(other)).Status);
+    }
+
+    [Fact]
+    public async Task AddFoundatioCronJob_OnAnInstanceStartedAfterAnOccurrenceBecameOverdue_ReportsTheFailureLikeTheOthers()
+    {
+        var window = TimeSpan.FromMinutes(65);
+        var earlier = await StartAsync(runsSchedule: false, cron: "0 0 * * * *", succeededWithin: window);
+        Assert.Equal(HealthStatus.Healthy, (await CheckAsync(earlier)).Status);
+        await _store.CreateAsync(new JobInfo { Id = "cron:tests.count-events:20260101T120000Z", Name = Schedule, ScheduleName = Schedule, CreatedAt = _time.GetUtcNow(), AvailableAt = _time.GetUtcNow() }, TestCancellationToken);
+
+        _time.Advance(window + TimeSpan.FromSeconds(1));
+        var later = await StartAsync(runsSchedule: false, cron: "0 0 * * * *", succeededWithin: window);
+
+        Assert.Equal(HealthStatus.Unhealthy, (await CheckAsync(earlier)).Status);
+        Assert.Equal(HealthStatus.Unhealthy, (await CheckAsync(later)).Status);
+    }
+
     [Fact]
     public async Task AddFoundatioCronJob_ForAScheduleThisProcessDoesNotRegister_ReportsUnhealthyNamingTheSchedules()
     {
@@ -119,7 +178,8 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
         _providers.Clear();
     }
 
-    private async Task<ServiceProvider> StartAsync(bool runsSchedule, HealthStatus? failureStatus = null, string scheduleName = Schedule)
+    private async Task<ServiceProvider> StartAsync(bool runsSchedule, HealthStatus? failureStatus = null, string scheduleName = Schedule,
+        string cron = "*/5 * * * * *", TimeSpan? succeededWithin = null, CronJobOptions? cronOptions = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(Log);
@@ -127,11 +187,12 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
         services.AddFoundatioJobs(j => j
             .UseStore(_store)
             .Configure(o => { o.TimeProvider = _time; o.ShutdownTimeout = TimeSpan.Zero; })
-            .AddCronJob<CountEventsJob>("*/5 * * * * *", new CronJobOptions { RetainSucceededFor = TimeSpan.Zero }));
-        services.AddHealthChecks().AddFoundatioCronJob(scheduleName, TimeSpan.FromSeconds(15), name: Check, failureStatus: failureStatus);
+            .AddCronJob<CountEventsJob>(cron, cronOptions ?? new CronJobOptions { RetainSucceededFor = TimeSpan.Zero }));
+        services.AddHealthChecks().AddFoundatioCronJob(scheduleName, succeededWithin ?? TimeSpan.FromSeconds(15), name: Check, failureStatus: failureStatus);
 
         var provider = services.BuildServiceProvider();
         _providers.Add(provider);
+        provider.GetRequiredService<JobsStatus>();
         if (runsSchedule)
         {
             foreach (var service in provider.GetServices<IHostedService>())
@@ -149,6 +210,8 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
         var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(r => r.Name == Check, TestCancellationToken);
         return report.Entries[Check];
     }
+
+    private static string FormatWindow(TimeSpan window) => window.ToString("c", System.Globalization.CultureInfo.InvariantCulture);
 
     private async Task WaitForSucceededAsync(int count)
     {

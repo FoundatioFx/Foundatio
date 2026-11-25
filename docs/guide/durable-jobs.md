@@ -284,7 +284,11 @@ builder.Services.AddHealthChecks()
     .AddFoundatioCronJob("stack-event-count", succeededWithin: TimeSpan.FromSeconds(15), tags: ["jobs"]);
 ```
 
-It is Healthy when an occurrence created in the last `succeededWithin` has succeeded, and reports its failure status otherwise, including for a schedule this process doesn't register. The schedule name is `CronJobOptions.Name`, which defaults to the job name. Make `succeededWithin` longer than the time between occurrences plus the job's longest run. A schedule's succeeded jobs are kept until its next occurrence is due even with a `RetainSucceededFor` of zero, so the check works for schedules that keep no history. A new schedule reports a failure until its first occurrence succeeds. Your own code can call `JobsStatus.GetLastSucceededAsync(scheduleName, within)` for the same answer.
+It is Healthy when an occurrence created in the last `succeededWithin` has succeeded, and reports its failure status when the schedule is overdue, including for a schedule this process doesn't register. The schedule name is `CronJobOptions.Name`, which defaults to the job name. Make `succeededWithin` longer than the time between occurrences plus the job's longest run.
+
+A new schedule is not overdue: on a fresh job store (a first deployment, or a restart with the in-memory store) an hourly or daily schedule reports Healthy, described as new, instead of failing until its first occurrence. The check fails only when the schedule has been known for at least `succeededWithin`, by this process since it set up its jobs or by the store since the oldest of the schedule's jobs it keeps, or when one of its jobs failed or was cancelled. So once a schedule has history, a replica that restarts reports what the others do. The exception is an instance that starts after all of the schedule's jobs have expired: it treats the schedule as new until it has run for `succeededWithin`.
+
+A schedule's succeeded jobs are kept, even with a `RetainSucceededFor` of zero, until its next occurrence is due or its `MisfireThreshold` (an hour by default) has passed, whichever is first. So the check works for frequent schedules that keep no history; give a schedule further apart than that a `RetainSucceededFor` longer than `succeededWithin`. Your own code can call `JobsStatus.GetLastSucceededAsync(scheduleName, within)` and `JobsStatus.IsScheduleOverdueAsync(scheduleName, succeededWithin)` for the same answers.
 
 ## Testing
 
