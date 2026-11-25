@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,11 +15,13 @@ namespace Foundatio.Extensions.Hosting.HealthChecks;
 internal sealed class HealthCheckRequirementsValidator : IHostedLifecycleService
 {
     private readonly IEnumerable<HealthCheckRequirement> _requirements;
+    private readonly IServiceProvider _services;
     private readonly IServiceProviderIsService? _isService;
 
     public HealthCheckRequirementsValidator(IEnumerable<HealthCheckRequirement> requirements, IServiceProvider services)
     {
         _requirements = requirements;
+        _services = services;
         _isService = services.GetService<IServiceProviderIsService>();
     }
 
@@ -29,12 +30,29 @@ internal sealed class HealthCheckRequirementsValidator : IHostedLifecycleService
         if (_isService is null)
             return Task.CompletedTask;
 
-        var missing = _requirements.Where(r => !_isService.IsService(r.RequiredService)).ToList();
-        if (missing.Count == 0)
+        var problems = new List<string>();
+        foreach (var requirement in _requirements)
+        {
+            if (!_isService.IsService(requirement.RequiredService))
+            {
+                problems.Add($"The \"{requirement.CheckName}\" health check reports on {requirement.RegisterWith}, which is not configured: call services.{requirement.RegisterWith}(...), or remove the check.");
+                continue;
+            }
+
+            try
+            {
+                requirement.Validate?.Invoke(_services);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            {
+                problems.Add($"The \"{requirement.CheckName}\" health check can't report correctly: {ex.Message}");
+            }
+        }
+
+        if (problems.Count == 0)
             return Task.CompletedTask;
 
-        throw new InvalidOperationException(String.Join(" ", missing.Select(r =>
-            $"The \"{r.CheckName}\" health check reports on {r.RegisterWith}, which is not configured: call services.{r.RegisterWith}(...), or remove the check.")));
+        throw new InvalidOperationException(String.Join(" ", problems));
     }
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;

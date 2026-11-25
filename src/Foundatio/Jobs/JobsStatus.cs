@@ -113,6 +113,33 @@ public sealed class JobsStatus
         return false;
     }
 
+    /// <summary>
+    /// Throws when <see cref="GetLastSucceededAsync"/> and <see cref="IsScheduleOverdueAsync"/> can't report on the CRON
+    /// schedule <paramref name="scheduleName"/> over <paramref name="succeededWithin"/>: the schedule isn't registered in
+    /// this process, or its succeeded jobs may be gone before the window ends. A succeeded job is kept for the schedule's
+    /// <see cref="CronJobOptions.RetainSucceededFor"/> (or its job type's, then the worker's), and at least until the next
+    /// occurrence is due or <see cref="CronJobOptions.MisfireThreshold"/> has passed, whichever is first; so a window
+    /// longer than both would report the schedule as failing between successes. Foundatio.Extensions.Hosting calls it when
+    /// the host starts.
+    /// </summary>
+    /// <exception cref="ArgumentException">No CRON schedule of that name is registered in this process.</exception>
+    /// <exception cref="InvalidOperationException">The schedule's succeeded jobs may not be kept for <paramref name="succeededWithin"/>.</exception>
+    public void ValidateSucceededWithin(string scheduleName, TimeSpan succeededWithin)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scheduleName);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(succeededWithin, TimeSpan.Zero);
+        var schedule = GetSchedule(scheduleName);
+        var retention = schedule.Options.RetainSucceededFor
+            ?? (_runtime.Registrations.Jobs.TryGetValue(schedule.JobName, out var registration) ? registration.Options.RetainSucceededFor : null)
+            ?? _runtime.Options.RetainSucceededFor;
+        if (retention >= succeededWithin || succeededWithin <= schedule.Options.MisfireThreshold)
+            return;
+
+        throw new InvalidOperationException($"CRON schedule \"{schedule.Name}\" keeps a succeeded job for {retention}, "
+            + $"and its MisfireThreshold is {schedule.Options.MisfireThreshold}, both shorter than the {succeededWithin} its health check looks back, "
+            + "so the check would fail between successes. Set the schedule's RetainSucceededFor to at least that window, or shorten the window.");
+    }
+
     private CronSchedule GetSchedule(string scheduleName)
     {
         if (_runtime.Registrations.Schedules.TryGetValue(scheduleName, out var schedule))

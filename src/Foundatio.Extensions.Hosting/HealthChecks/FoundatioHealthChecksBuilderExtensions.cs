@@ -77,8 +77,9 @@ public static class FoundatioHealthChecksBuilderExtensions
     /// occurrences created in the last <paramref name="succeededWithin"/> has succeeded, on whichever instance ran it,
     /// or when the schedule is new, and <paramref name="failureStatus"/> when it is overdue (see
     /// <see cref="JobsStatus.IsScheduleOverdueAsync"/>). It reads the job store, so every instance reports the same, and
-    /// costs one store query per check while the schedule succeeds. The host fails to start if jobs are not configured;
-    /// a schedule this process doesn't register reports <paramref name="failureStatus"/>.
+    /// costs one store query per check while the schedule succeeds. The host fails to start if jobs are not configured,
+    /// if this process doesn't register the schedule, or if the schedule's succeeded jobs may be gone before
+    /// <paramref name="succeededWithin"/> ends (see <see cref="JobsStatus.ValidateSucceededWithin"/>).
     /// </summary>
     /// <remarks>
     /// Make <paramref name="succeededWithin"/> longer than the time between occurrences plus the job's longest run, for
@@ -110,7 +111,8 @@ public static class FoundatioHealthChecksBuilderExtensions
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
         name ??= $"foundatio-cron-{scheduleName}";
-        AddRequirement(builder, new HealthCheckRequirement(name, typeof(JobsStatus), "AddFoundatioJobs"));
+        AddRequirement(builder, new HealthCheckRequirement(name, typeof(JobsStatus), "AddFoundatioJobs",
+            sp => sp.GetRequiredService<JobsStatus>().ValidateSucceededWithin(scheduleName, succeededWithin)));
         return builder.Add(new HealthCheckRegistration(name, sp => new CronJobHealthCheck(sp, scheduleName, succeededWithin), failureStatus, tags));
     }
 

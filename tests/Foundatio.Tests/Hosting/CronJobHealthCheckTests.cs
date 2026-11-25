@@ -201,6 +201,47 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddFoundatioCronJob_WithAWindowLongerThanTheRetentionAndMisfireThreshold_FailsHostStart()
+    {
+        using var host = BuildHost("0 0 */2 * * *", new CronJobOptions { RetainSucceededFor = TimeSpan.Zero }, TimeSpan.FromHours(3));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync(TestCancellationToken));
+
+        Assert.Contains($"\"{Check}\" health check", ex.Message);
+        Assert.Contains($"CRON schedule \"{Schedule}\"", ex.Message);
+        Assert.Contains("RetainSucceededFor", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("0 0 */2 * * *", 3 * 60 * 60, 3 * 60 * 60, null)]
+    [InlineData("0 0 */2 * * *", null, 3 * 60 * 60, 3 * 60 * 60)]
+    [InlineData("*/5 * * * * *", 0, 15, null)]
+    [InlineData("0 0 * * * *", 0, 60 * 60, null)]
+    public async Task AddFoundatioCronJob_WhenSucceededJobsAreKeptForTheWindow_StartsTheHost(string cron, int? retainSeconds, int windowSeconds, int? jobTypeRetainSeconds)
+    {
+        var options = new CronJobOptions
+        {
+            RetainSucceededFor = retainSeconds is { } retain ? TimeSpan.FromSeconds(retain) : null,
+            JobTypeOptions = jobTypeRetainSeconds is { } typeRetain ? new JobTypeOptions { RetainSucceededFor = TimeSpan.FromSeconds(typeRetain) } : null
+        };
+        using var host = BuildHost(cron, options, TimeSpan.FromSeconds(windowSeconds));
+
+        await host.StartAsync(TestCancellationToken);
+        await host.StopAsync(TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task AddFoundatioCronJob_ForAScheduleThisProcessDoesNotRegister_FailsHostStart()
+    {
+        using var host = BuildHost("*/5 * * * * *", null, TimeSpan.FromSeconds(15), scheduleName: "tests.nope");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync(TestCancellationToken));
+
+        Assert.Contains("No CRON schedule named \"tests.nope\"", ex.Message);
+        Assert.Contains(Schedule, ex.Message);
+    }
+
+    [Fact]
     public void AddFoundatioCronJob_WithAnInvalidWindow_Throws()
     {
         var builder = new ServiceCollection().AddHealthChecks();
@@ -250,6 +291,19 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
         }
 
         return provider;
+    }
+
+    private IHost BuildHost(string cron, CronJobOptions? cronOptions, TimeSpan succeededWithin, string scheduleName = Schedule)
+    {
+        var builder = Host.CreateEmptyApplicationBuilder(null);
+        builder.Services.AddSingleton<ILoggerFactory>(Log);
+        builder.Services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+        builder.Services.AddFoundatioJobs(j => j
+            .UseStore(_store)
+            .Configure(o => { o.TimeProvider = _time; o.ShutdownTimeout = TimeSpan.Zero; })
+            .AddCronJob<CountEventsJob>(cron, cronOptions ?? new CronJobOptions()));
+        builder.Services.AddHealthChecks().AddFoundatioCronJob(scheduleName, succeededWithin, name: Check);
+        return builder.Build();
     }
 
     private async Task<HealthReportEntry> CheckAsync(IServiceProvider provider)
