@@ -281,10 +281,11 @@ These checks report what this process is doing. To know that a CRON schedule kee
 
 ```csharp
 builder.Services.AddHealthChecks()
-    .AddFoundatioCronJob("stack-event-count", succeededWithin: TimeSpan.FromSeconds(15), tags: ["jobs"]);
+    .AddFoundatioCronJob<StackEventCountJob>(succeededWithin: TimeSpan.FromSeconds(15), tags: ["jobs"])
+    .AddFoundatioCronJob("nightly-report", succeededWithin: TimeSpan.FromHours(25), tags: ["jobs"]);
 ```
 
-It is Healthy when an occurrence created in the last `succeededWithin` has succeeded, and reports its failure status when the schedule is overdue, including for a schedule this process doesn't register. The schedule name is `CronJobOptions.Name`, which defaults to the job name. Make `succeededWithin` longer than the time between occurrences plus the job's longest run.
+It is Healthy when an occurrence created in the last `succeededWithin` has succeeded, and reports its failure status when the schedule is overdue, including for a schedule this process doesn't register. `AddFoundatioCronJob<TJob>` checks the schedule `AddCronJob<TJob>` adds without a `CronJobOptions.Name`; for a legacy job, `TJob` and `LegacyJob<TJob>` both work. For a schedule you named, pass its `CronJobOptions.Name`. `JobNames.Of<TJob>()` returns a job's name. Make `succeededWithin` longer than the time between occurrences plus the job's longest run.
 
 A new schedule is not overdue: on a fresh job store (a first deployment, or a restart with the in-memory store) an hourly or daily schedule reports Healthy, described as new, instead of failing until its first occurrence. The check fails only when the schedule has been known for at least `succeededWithin`, by this process since it set up its jobs or by the store since the oldest of the schedule's jobs it keeps, or when one of its jobs failed or was cancelled. So once a schedule has history, a replica that restarts reports what the others do. The exception is an instance that starts after all of the schedule's jobs have expired: it treats the schedule as new until it has run for `succeededWithin`.
 

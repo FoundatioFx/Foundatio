@@ -154,6 +154,53 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddFoundatioCronJob_OfAJobType_ChecksTheScheduleItsAddCronJobRegistered()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(Log);
+        services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+        services.AddFoundatioJobs(j => j
+            .UseStore(_store)
+            .Configure(o => { o.TimeProvider = _time; o.ShutdownTimeout = TimeSpan.Zero; })
+            .AddCronJob<CountEventsJob>("*/5 * * * * *")
+            .AddCronJob<LegacyJob<LegacyCountJob>>("*/5 * * * * *"));
+        services.AddHealthChecks()
+            .AddFoundatioCronJob<CountEventsJob>(TimeSpan.FromSeconds(15))
+            .AddFoundatioCronJob<LegacyCountJob>(TimeSpan.FromSeconds(15))
+            .AddFoundatioCronJob<LegacyJob<LegacyCountJob>>(TimeSpan.FromSeconds(15), name: "legacy-wrapped")
+            .AddFoundatioCronJob<UnscheduledJob>(TimeSpan.FromSeconds(15));
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+        foreach (var service in provider.GetServices<IHostedService>())
+        {
+            await service.StartAsync(TestCancellationToken);
+            _hostedServices.Add(service);
+        }
+
+        string legacyName = typeof(LegacyCountJob).FullName!.Replace('+', '.');
+        Assert.Equal(legacyName, JobNames.Of<LegacyCountJob>());
+        Assert.Equal(legacyName, JobNames.Of<LegacyJob<LegacyCountJob>>());
+        Assert.Equal(Schedule, JobNames.Of<CountEventsJob>());
+        await WaitForSucceededAsync(1);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (await _store.CountAsync(JobState.Succeeded, legacyName, TestCancellationToken) < 1)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The legacy job did not succeed in time.");
+            await Task.Delay(10, TestCancellationToken);
+        }
+
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(TestCancellationToken);
+
+        Assert.Equal(HealthStatus.Healthy, report.Entries[$"foundatio-cron-{Schedule}"].Status);
+        Assert.Equal(HealthStatus.Healthy, report.Entries[$"foundatio-cron-{legacyName}"].Status);
+        Assert.Equal(HealthStatus.Healthy, report.Entries["legacy-wrapped"].Status);
+        var unscheduled = report.Entries[$"foundatio-cron-{JobNames.Of<UnscheduledJob>()}"];
+        Assert.Equal(HealthStatus.Unhealthy, unscheduled.Status);
+        Assert.Contains($"No CRON schedule named \"{JobNames.Of<UnscheduledJob>()}\"", unscheduled.Description);
+        Assert.Contains(legacyName, unscheduled.Description);
+    }
+
+    [Fact]
     public void AddFoundatioCronJob_WithAnInvalidWindow_Throws()
     {
         var builder = new ServiceCollection().AddHealthChecks();
@@ -227,6 +274,16 @@ public class CronJobHealthCheckTests : TestWithLoggingBase
 
     [Job(Name = Schedule)]
     public sealed class CountEventsJob : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    public sealed class LegacyCountJob : IJob
+    {
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.Success);
+    }
+
+    public sealed class UnscheduledJob : IJobHandler
     {
         public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }

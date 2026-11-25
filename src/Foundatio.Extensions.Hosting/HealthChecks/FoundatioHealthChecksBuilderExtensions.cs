@@ -86,7 +86,10 @@ public static class FoundatioHealthChecksBuilderExtensions
     /// Healthy until it has been known for <paramref name="succeededWithin"/> or one of its jobs fails.
     /// </remarks>
     /// <param name="builder">The health checks builder.</param>
-    /// <param name="scheduleName">The schedule: <see cref="CronJobOptions.Name"/>, which defaults to the job name.</param>
+    /// <param name="scheduleName">
+    /// The schedule: <see cref="CronJobOptions.Name"/>, which defaults to the job name. Use
+    /// <see cref="AddFoundatioCronJob{TJob}"/> for a schedule with the default name.
+    /// </param>
     /// <param name="succeededWithin">How recent an occurrence that succeeded must be.</param>
     /// <param name="name">The health check name. Defaults to <c>foundatio-cron-</c> followed by the schedule name.</param>
     /// <param name="failureStatus">Reported instead of <see cref="HealthStatus.Unhealthy"/>. Defaults to Unhealthy.</param>
@@ -109,6 +112,31 @@ public static class FoundatioHealthChecksBuilderExtensions
         name ??= $"foundatio-cron-{scheduleName}";
         AddRequirement(builder, new HealthCheckRequirement(name, typeof(JobsStatus), "AddFoundatioJobs"));
         return builder.Add(new HealthCheckRegistration(name, sp => new CronJobHealthCheck(sp, scheduleName, succeededWithin), failureStatus, tags));
+    }
+
+    /// <summary>
+    /// Reports whether the CRON schedule of <typeparamref name="TJob"/> has succeeded recently, as
+    /// <see cref="AddFoundatioCronJob(IHealthChecksBuilder, string, TimeSpan, string?, HealthStatus?, IEnumerable{string}?)"/>
+    /// does for the schedule named <see cref="JobNames.Of{TJob}"/>: the one <c>AddCronJob&lt;TJob&gt;</c> registers without
+    /// a <see cref="CronJobOptions.Name"/>. A legacy job's schedule can be given as <c>TJob</c> or <c>LegacyJob&lt;TJob&gt;</c>,
+    /// and a schedule of job arguments as their type.
+    /// </summary>
+    /// <param name="builder">The health checks builder.</param>
+    /// <param name="succeededWithin">How recent an occurrence that succeeded must be.</param>
+    /// <param name="name">The health check name. Defaults to <c>foundatio-cron-</c> followed by the schedule name.</param>
+    /// <param name="failureStatus">Reported instead of <see cref="HealthStatus.Unhealthy"/>. Defaults to Unhealthy.</param>
+    /// <param name="tags">Tags to filter by.</param>
+    /// <example>
+    /// <code>
+    /// builder.Services.AddHealthChecks()
+    ///     .AddFoundatioCronJob&lt;StackEventCountJob&gt;(TimeSpan.FromSeconds(30), tags: ["jobs"]);
+    /// </code>
+    /// </example>
+    public static IHealthChecksBuilder AddFoundatioCronJob<TJob>(this IHealthChecksBuilder builder, TimeSpan succeededWithin, string? name = null,
+        HealthStatus? failureStatus = null, IEnumerable<string>? tags = null) where TJob : class
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return builder.AddFoundatioCronJob(JobNames.Of<TJob>(), succeededWithin, name, failureStatus, tags);
     }
 
     private static void AddRequirement(IHealthChecksBuilder builder, HealthCheckRequirement requirement)
