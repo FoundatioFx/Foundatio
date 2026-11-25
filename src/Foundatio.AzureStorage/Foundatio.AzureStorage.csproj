@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>
     <PackageTags>Queue;Messaging;Message;File;Distributed;Storage;Blob;Azure</PackageTags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Azure.Storage.Blobs" Version="12.30.1" />
-    <PackageReference Include="Azure.Storage.Queues" Version="12.28.1" />
+    <PackageReference Include="Azure.Storage.Queues" Version="12.28.2" />
 
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>

@@ -10,6 +10,7 @@
     <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
     <Project Path="samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
+    <Project Path="samples/Foundatio.QuickstartSample/Foundatio.QuickstartSample.csproj" />
     <Project Path="samples/Foundatio.RabbitMQ.Publish/Foundatio.RabbitMQ.Publish.csproj" />
     <Project Path="samples/Foundatio.RabbitMQ.Subscribe/Foundatio.RabbitMQ.Subscribe.csproj" />
     <Project Path="samples/Foundatio.SampleJob/Foundatio.SampleJob.csproj" />
@@ -31,14 +32,17 @@
     <Project Path="tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj" />
     <Project Path="tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj" />
     <Project Path="tests/Foundatio.AzureStorage.Tests/Foundatio.AzureStorage.Tests.csproj" />
+    <Project Path="tests/Foundatio.Chaos/Foundatio.Chaos.csproj" />
     <Project Path="tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj" />
     <Project Path="tests/Foundatio.RabbitMQ.AppHost/Foundatio.RabbitMQ.AppHost.csproj" />
     <Project Path="tests/Foundatio.RabbitMQ.Tests/Foundatio.RabbitMQ.Tests.csproj" />
     <Project Path="tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj" />
+    <Project Path="tests/Foundatio.SourceCompatibility/Foundatio.SourceCompatibility.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
   <Folder Name="/Benchmarks/">
     <Project Path="benchmarks/Foundatio.Benchmarks.csproj" />
+    <Project Path="benchmarks/Foundatio.Messaging.Benchmarks/Foundatio.Messaging.Benchmarks.csproj" />
     <Project Path="benchmarks/Foundatio.Redis.Benchmarks/Foundatio.Redis.Benchmarks.csproj" />
   </Folder>
   <Project Path="src/Foundatio.AWS/Foundatio.AWS.csproj" />

@@ -1,0 +1,1979 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Jobs;
+using Foundatio.Jobs.Store;
+using Foundatio.Messaging;
+using Foundatio.Messaging.Transport;
+using Foundatio.Resilience;
+using Foundatio.Xunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
+using Moq;
+using Xunit;
+
+namespace Foundatio.Tests.Jobs;
+
+public class DurableJobsTests : TestWithLoggingBase
+{
+    private readonly InMemoryJobStore _store = new();
+    private readonly JobProbe _probe = new();
+    private readonly KeyedProbe _keyed = new();
+    private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public DurableJobsTests(ITestOutputHelper output) : base(output)
+    {
+    }
+
+    [Fact]
+    public async Task JobHandle_CreatedForAMockedClient_ReadsAndCancelsThroughIt()
+    {
+        var client = new Mock<IJobClient>();
+        var handle = new JobHandle("job-1", client.Object);
+        client.Setup(c => c.EnqueueAsync(It.IsAny<ResizeImage>(), null, TestCancellationToken)).ReturnsAsync(handle);
+        client.Setup(c => c.CancelAsync("job-1", TestCancellationToken)).ReturnsAsync(true);
+
+        var enqueued = await client.Object.EnqueueAsync(new ResizeImage("cat.png", 64), cancellationToken: TestCancellationToken);
+
+        Assert.Equal("job-1", enqueued.Id);
+        Assert.True(await enqueued.CancelAsync(TestCancellationToken));
+        Assert.Null(await enqueued.GetAsync(TestCancellationToken));
+        client.Verify(c => c.GetAsync("job-1", TestCancellationToken));
+        Assert.Throws<ArgumentException>(() => new JobHandle("", client.Object));
+        Assert.Throws<ArgumentNullException>(() => new JobHandle("job-1", null!));
+    }
+
+    [Fact]
+    public async Task EnqueueByArguments_RunsTheJobAndRecordsProgress()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("cat.png", 64), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(100, job.Progress);
+        Assert.Equal("resized cat.png to 64px", job.Message);
+        Assert.Equal(1, job.Attempt);
+        Assert.Equal(typeof(ResizeImage).FullName!.Replace('+', '.'), job.Name);
+        Assert.Null(job.GetArguments<ResizeImage>());
+    }
+
+    [Fact]
+    public async Task AProducerWithoutTheJobClass_CanEnqueueByArguments()
+    {
+        await using var producer = await StartAsync(_ => { });
+        await using var worker = await StartAsync(j => j.AddJob<ResizeImageJob>());
+
+        var handle = await producer.Jobs.EnqueueAsync(new ResizeImage("dog.png", 32), cancellationToken: TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_ArgumentFreeJob_RunsWithItsContext()
+    {
+        await using var host = await StartAsync(j => j.AddJob<TickJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<TickJob>(new EnqueueOptions { CorrelationId = "order-3" }, TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal("tick", job.Name);
+        Assert.Null(job.GetArguments<ResizeImage>());
+        var context = Assert.Single(_probe.Contexts);
+        Assert.Equal(handle.Id, context.JobId);
+        Assert.Equal("tick", context.JobName);
+        Assert.Equal(1, context.Attempt);
+        Assert.Equal("order-3", context.CorrelationId);
+        Assert.Null(context.ScheduleName);
+    }
+
+    [Fact]
+    public async Task AddCronJob_ArgumentFreeJob_SeesTheOccurrenceItRunsFor()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<TickJob>("0 0 1 1 *"));
+        var newYear = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        const string jobId = "cron:tick:20200101T000000Z";
+
+        await host.CreateScheduler().RunDueAsync(newYear.AddSeconds(1), TestCancellationToken);
+        await WaitForAsync(async () => (await host.Jobs.GetAsync(jobId, TestCancellationToken))?.State == JobState.Succeeded);
+
+        var context = Assert.Single(_probe.Contexts, c => c.JobId == jobId);
+        Assert.Equal(newYear, context.ScheduledFor);
+        Assert.Equal("tick", context.ScheduleName);
+        Assert.Equal(1, context.Attempt);
+    }
+
+    [Fact]
+    public async Task AddCronJob_RetriedOccurrence_KeepsTheOccurrenceAsScheduledFor()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<FlakyTickJob>("0 0 1 1 *", new CronJobOptions
+        {
+            JobTypeOptions = new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(50)) } }
+        }));
+        var newYear = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        const string jobId = "cron:flaky-tick:20200101T000000Z";
+
+        await host.CreateScheduler().RunDueAsync(newYear.AddSeconds(1), TestCancellationToken);
+        await WaitForAsync(async () => (await host.Jobs.GetAsync(jobId, TestCancellationToken))?.State == JobState.Succeeded);
+
+        Assert.Equal([1, 2], _probe.Contexts.Select(c => c.Attempt));
+        Assert.All(_probe.Contexts, c => Assert.Equal(newYear, c.ScheduledFor));
+        var job = (await host.Jobs.GetAsync(jobId, TestCancellationToken))!;
+        Assert.Equal(newYear, job.ScheduledFor);
+        Assert.True(job.AvailableAt > newYear);
+    }
+
+    [Fact]
+    public async Task AddLegacyJob_JobBaseJob_RunsUnderItsOwnNameWithItsResultMessage()
+    {
+        await using var host = await StartAsync(j => j.AddLegacyJob<LegacyCleanupJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<LegacyCleanupJob>>(cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal("cleaned up", job.Message);
+        Assert.Equal("legacy-cleanup", job.Name);
+    }
+
+    [Theory]
+    [InlineData("failed", "JobFailedException: disk full")]
+    [InlineData("exception", "InvalidOperationException: boom")]
+    public async Task LegacyJob_WithAFailedResult_FailsWithItsErrorOrMessage(string result, string error)
+    {
+        _probe.LegacyResult = result;
+        await using var host = await StartAsync(j => j.AddLegacyJob<ResultLegacyJob>(new JobTypeOptions { RetryPolicy = RetryPolicy.None }));
+
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<ResultLegacyJob>>(cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(error, job.Error);
+    }
+
+    [Fact]
+    public async Task LegacyJob_WhenItsLockIsHeld_SucceedsWithTheLockMessageWithoutRetrying()
+    {
+        await using var host = await StartAsync(j => j.AddLegacyJob<LockedLegacyJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<LockedLegacyJob>>(cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal("Unable to acquire job lock", job.Message);
+        Assert.Equal(1, job.Attempt);
+        Assert.Null(job.Error);
+    }
+
+    [Fact]
+    public async Task LegacyJob_ReturningCancelledAfterCancellation_EndsCancelledWithItsMessage()
+    {
+        _probe.LegacyResult = "wait";
+        await using var host = await StartAsync(j => j.Configure(o => o.LeaseDuration = TimeSpan.FromSeconds(1.5)).AddLegacyJob<ResultLegacyJob>());
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<ResultLegacyJob>>(cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await handle.CancelAsync(TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Cancelled, job.State);
+        Assert.Equal("stopped early", job.Message);
+    }
+
+    [Fact]
+    public async Task AddCronJob_OfALegacyJob_SchedulesItUnderTheLegacyJobsName()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<LegacyJob<LegacyCleanupJob>>("*/5 * * * *"), startHostedServices: false);
+
+        await host.CreateScheduler().RunDueAsync(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), TestCancellationToken);
+
+        var job = Assert.Single((await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs);
+        Assert.Equal("cron:legacy-cleanup:20260101T000000Z", job.Id);
+        Assert.Equal("legacy-cleanup", job.Name);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithAJobInsteadOfArguments_ThrowsNamingTheCallToMake()
+    {
+        await using var host = await StartAsync(_ => { });
+
+        var job = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new TickJob(_probe), cancellationToken: TestCancellationToken));
+        var legacy = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new LegacyCleanupJob(Log), cancellationToken: TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ResizeImageJob(), cancellationToken: TestCancellationToken));
+
+        Assert.Contains("EnqueueAsync<TickJob>()", job.Message);
+        Assert.Contains("EnqueueAsync<LegacyJob<LegacyCleanupJob>>()", legacy.Message);
+    }
+
+    [Fact]
+    public async Task FailingJob_IsRetriedThenFails()
+    {
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(50)) } }));
+
+        var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(3, job.Attempt);
+        Assert.Contains("failure 3", job.Error);
+        Assert.Equal(3, _probe.Runs.Count);
+        Assert.Equal(new Flaky(FailTimes: 10), job.GetArguments<Flaky>());
+    }
+
+    [Fact]
+    public async Task FailingJob_SucceedsWhenARetryWorks()
+    {
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(50)) } }));
+
+        var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 1), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(2, job.Attempt);
+    }
+
+    [Fact]
+    public async Task DoNotRetry_FailsOnTheFirstException()
+    {
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(new JobTypeOptions { RetryPolicy = RetryPolicy.Default.DoNotRetry<InvalidOperationException>() }));
+
+        var job = await (await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken)).WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(1, job.Attempt);
+    }
+
+    [Fact]
+    public async Task Cancel_StopsAQueuedJobFromRunning()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("later.png", 1), new EnqueueOptions { Delay = TimeSpan.FromMinutes(5) }, TestCancellationToken);
+
+        Assert.True(await handle.CancelAsync(TestCancellationToken));
+
+        Assert.Equal(JobState.Cancelled, (await handle.GetAsync(TestCancellationToken))!.State);
+        Assert.False(await handle.CancelAsync(TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task Cancel_SignalsARunningJobsToken()
+    {
+        await using var host = await StartAsync(j => j.Configure(o => o.LeaseDuration = TimeSpan.FromSeconds(1.5)).AddJob<WaitForCancellationJob>());
+        var handle = await host.Jobs.EnqueueAsync(new WaitForCancellation(), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await handle.CancelAsync(TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Cancelled, job.State);
+    }
+
+    [Fact]
+    public async Task Cancel_OfAJobRunningInThisProcess_SignalsItsTokenWithoutWaitingForARenewal()
+    {
+        // The default one-minute lease is renewed every 5 seconds.
+        await using var host = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
+        var handle = await host.Jobs.EnqueueAsync(new WaitForCancellation(), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        Assert.True(await handle.CancelAsync(TestCancellationToken));
+        await _probe.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(1), TestCancellationToken);
+
+        Assert.Equal(JobState.Cancelled, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+    }
+
+    [Fact]
+    public async Task RunAsync_JobsRunningSeveralLeasesLong_KeepTheirLeasesAndSucceedOnTheFirstAttempt()
+    {
+        await using var host = await StartAsync(j => j.Configure(o =>
+        {
+            o.LeaseDuration = TimeSpan.FromSeconds(1);
+            o.MaxConcurrency = 4;
+        }).AddJob<LingerJob>());
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 4; i++)
+            handles.Add(await host.Jobs.EnqueueAsync(new Linger(3000), cancellationToken: TestCancellationToken));
+
+        foreach (var handle in handles)
+        {
+            var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(15), TestCancellationToken);
+            Assert.Equal(JobState.Succeeded, job.State);
+            Assert.Equal(1, job.Attempt);
+        }
+
+        Assert.Equal(4, _probe.PeakConcurrency);
+    }
+
+    [Fact]
+    public async Task Shutdown_InterruptsRunningJobsWithoutUsingAnAttempt()
+    {
+        var first = await StartAsync(j => j.Configure(o => o.ShutdownTimeout = TimeSpan.FromMilliseconds(100)).AddJob<WaitForCancellationJob>());
+        var handle = await first.Jobs.EnqueueAsync(new WaitForCancellation(CompleteOnSecondRun: true), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await first.DisposeAsync();
+        var interrupted = (await handle.GetAsync(TestCancellationToken))!;
+        Assert.Equal(JobState.Queued, interrupted.State);
+        Assert.Equal(0, interrupted.Attempt);
+
+        await using var second = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(1, job.Attempt);
+    }
+
+    [Fact]
+    public async Task Shutdown_InterruptedJob_KeepsItsScheduledFor()
+    {
+        var runAt = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var first = await StartAsync(j => j.Configure(o => o.ShutdownTimeout = TimeSpan.FromMilliseconds(100)).AddJob<WaitForCancellationJob>());
+        var handle = await first.Jobs.EnqueueAsync(new WaitForCancellation(CompleteOnSecondRun: true), new EnqueueOptions { RunAt = runAt }, TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await first.DisposeAsync();
+        var interrupted = (await handle.GetAsync(TestCancellationToken))!;
+        Assert.Equal(runAt, interrupted.ScheduledFor);
+        Assert.True(interrupted.AvailableAt > runAt);
+
+        await using var second = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
+        Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+        Assert.Equal(2, _probe.Contexts.Count);
+        Assert.All(_probe.Contexts, c => Assert.Equal(runAt, c.ScheduledFor));
+    }
+
+    [Fact]
+    public async Task DisposeServiceProvider_WithoutStoppingTheHost_StopsTheWorker()
+    {
+        var host = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
+        var handle = await host.Jobs.EnqueueAsync(new WaitForCancellation(CompleteOnSecondRun: true), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await ((ServiceProvider)host.Services).DisposeAsync();
+
+        var interrupted = (await handle.GetAsync(TestCancellationToken))!;
+        Assert.Equal(JobState.Queued, interrupted.State);
+        Assert.Equal(0, interrupted.Attempt);
+    }
+
+    [Fact]
+    public async Task EnqueueWithAJobId_IsIdempotent()
+    {
+        await using var host = await StartAsync(_ => { });
+
+        var first = await host.Jobs.EnqueueAsync(new ResizeImage("a.png", 1), new EnqueueOptions { JobId = "resize-a" }, TestCancellationToken);
+        var second = await host.Jobs.EnqueueAsync(new ResizeImage("b.png", 2), new EnqueueOptions { JobId = "resize-a" }, TestCancellationToken);
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal(1, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task GetAsync_OfAQueuedJob_ReturnsItsDetailsAndTypedArgumentsWithoutItsClaim()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("later.png", 8), new EnqueueOptions { Delay = TimeSpan.FromMinutes(5), CorrelationId = "order-1" }, TestCancellationToken);
+
+        var details = await handle.GetAsync(TestCancellationToken);
+        var listed = Assert.Single((await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs);
+
+        Assert.NotNull(details);
+        Assert.Equal(handle.Id, details.Id);
+        Assert.Equal(JobState.Queued, details.State);
+        Assert.Equal("order-1", details.CorrelationId);
+        Assert.Equal(new ResizeImage("later.png", 8), details.GetArguments<ResizeImage>());
+        Assert.Equal(new ResizeImage("later.png", 8), listed.GetArguments<ResizeImage>());
+        Assert.DoesNotContain(typeof(JobDetails).GetProperties(), p => p.Name is nameof(JobInfo.ClaimToken) or nameof(JobInfo.LeaseExpiresAt) or nameof(JobInfo.Payload));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_UnderAnActivity_StoresItsTraceAndRunsTheJobInThatTrace()
+    {
+        using var listener = ListenToFoundatioActivities();
+        await using var host = await StartAsync(j => j.AddJob<TracedJob>());
+        using var request = new Activity("request").SetIdFormat(ActivityIdFormat.W3C).Start();
+        request.TraceStateString = "vendor=1";
+
+        var handle = await host.Jobs.EnqueueAsync<TracedJob>(cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(request.Id, job.Headers[KnownHeaders.TraceParent]);
+        Assert.Equal("vendor=1", job.Headers[KnownHeaders.TraceState]);
+        Assert.Equal(request.Id, job.CorrelationId);
+        var run = Assert.Single(_probe.Traces);
+        Assert.Equal(request.TraceId, run.TraceId);
+        Assert.Equal(request.SpanId, run.ParentSpanId);
+        Assert.Equal("vendor=1", run.TraceState);
+        Assert.Equal(request.Id, run.Headers[KnownHeaders.TraceParent]);
+    }
+
+    [Fact]
+    public async Task JobRun_TagsItsSpanAndRecordsItsDurationInSeconds()
+    {
+        var stopped = new ConcurrentQueue<Activity>();
+        var foundatio = FoundatioDiagnostics.ActivitySource;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s == foundatio,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Enqueue
+        };
+        ActivitySource.AddActivityListener(listener);
+        var durations = new ConcurrentQueue<(string? Unit, double Value, string? Name, string? Outcome)>();
+        using var meterListener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == FoundatioDiagnostics.Meter.Name && instrument.Name == "foundatio.jobs.duration")
+                    l.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+        {
+            string? name = null, outcome = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "foundatio.job.name")
+                    name = tag.Value as string;
+                else if (tag.Key == "foundatio.outcome")
+                    outcome = tag.Value as string;
+            }
+
+            durations.Enqueue((instrument.Unit, value, name, outcome));
+        });
+        meterListener.Start();
+        await using var host = await StartAsync(j => j.AddJob<TracedJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<TracedJob>(new EnqueueOptions { CorrelationId = "c-1" }, TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        var span = Assert.Single(stopped, a => (string?)a.GetTagItem("foundatio.job.id") == job.Id);
+        Assert.Equal(($"job {job.Name}", job.Name, "c-1"), (span.OperationName, (string?)span.GetTagItem("foundatio.job.name"), (string?)span.GetTagItem("messaging.message.conversation_id")));
+        var duration = Assert.Single(durations, d => d.Name == job.Name);
+        Assert.Equal(("s", "succeeded"), (duration.Unit, duration.Outcome));
+        Assert.InRange(duration.Value, 0, 5);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithBothDelayAndRunAt_Throws()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+
+        var options = new EnqueueOptions { Delay = TimeSpan.FromHours(1), RunAt = DateTimeOffset.UtcNow.AddSeconds(1) };
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ResizeImage("cat.png", 64), options, TestCancellationToken));
+        Assert.Equal(0, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithHeaders_KeepsThemAndATraceParentTheCallerSet()
+    {
+        await using var host = await StartAsync(_ => { });
+        using var request = new Activity("request").SetIdFormat(ActivityIdFormat.W3C).Start();
+        request.TraceStateString = "vendor=1";
+        const string traceParent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("headers.png", 1), new EnqueueOptions
+        {
+            Delay = TimeSpan.FromMinutes(5),
+            Headers = new Dictionary<string, string> { ["tenant"] = "acme", [KnownHeaders.TraceParent] = traceParent }
+        }, TestCancellationToken);
+        var job = (await handle.GetAsync(TestCancellationToken))!;
+
+        Assert.Equal(new Dictionary<string, string> { ["tenant"] = "acme", [KnownHeaders.TraceParent] = traceParent }, job.Headers);
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ResizeImage("bad.png", 1), new EnqueueOptions { Headers = new Dictionary<string, string> { [" "] = "blank" } }, TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OutsideAnActivity_StoresNoTraceOrCorrelation()
+    {
+        await using var host = await StartAsync(_ => { });
+        Activity.Current = null;
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("untraced.png", 1), new EnqueueOptions { Delay = TimeSpan.FromMinutes(5) }, TestCancellationToken);
+        var job = (await handle.GetAsync(TestCancellationToken))!;
+
+        Assert.Empty(job.Headers);
+        Assert.Null(job.CorrelationId);
+    }
+
+    [Fact]
+    public async Task DelayedJob_DoesNotRunEarly()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        var started = DateTimeOffset.UtcNow;
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("soon.png", 1), new EnqueueOptions { Delay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.True(job.StartedAt - started >= TimeSpan.FromSeconds(0.9), $"Started after {job.StartedAt - started}.");
+    }
+
+    [Fact]
+    public async Task Worker_ClaimsAJobForEveryFreeSlotInOneStoreCall()
+    {
+        var store = new ClaimCountingJobStore(_store);
+        await using var host = await StartAsync(j => j.Configure(o => o.MaxConcurrency = 6).AddJob<SlowJob>(), startHostedServices: false, store: store);
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 6; i++)
+            handles.Add(await host.Jobs.EnqueueAsync(new Slow(), cancellationToken: TestCancellationToken));
+
+        foreach (var service in host.Services.GetServices<IHostedService>())
+            await service.StartAsync(TestCancellationToken);
+        foreach (var handle in handles)
+            Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+
+        Assert.Equal((6, 6), store.Claims.First());
+        Assert.Equal(6, _probe.PeakConcurrency);
+    }
+
+    [Theory]
+    [InlineData(30)]
+    [InlineData(-30)]
+    public async Task EnqueueAsync_FromAProducerWhoseClockIsOff_UsesTheStoresClockForAvailability(int skewSeconds)
+    {
+        // The store keeps the real time; the producer's (and worker's) clock is 30 s off it.
+        var skewed = new SkewedTimeProvider(TimeSpan.FromSeconds(skewSeconds));
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), s => s.AddSingleton<TimeProvider>(skewed));
+        var enqueued = DateTimeOffset.UtcNow;
+
+        var immediate = await host.Jobs.EnqueueAsync(new ResizeImage("now.png", 1), cancellationToken: TestCancellationToken);
+        var delayed = await host.Jobs.EnqueueAsync(new ResizeImage("soon.png", 1), new EnqueueOptions { Delay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+
+        var now = await immediate.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        var soon = await delayed.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(JobState.Succeeded, now.State);
+        Assert.Equal(JobState.Succeeded, soon.State);
+        Assert.True(soon.StartedAt - enqueued >= TimeSpan.FromSeconds(0.9), $"The delayed job started {soon.StartedAt - enqueued} after it was enqueued.");
+        Assert.InRange(now.ScheduledFor, enqueued.AddSeconds(-1), enqueued.AddSeconds(2));
+        Assert.InRange(soon.ScheduledFor, enqueued.AddSeconds(0.9), enqueued.AddSeconds(3));
+    }
+
+    [Fact]
+    public async Task JobTypeMaxConcurrency_LimitsRunningJobsOfThatType()
+    {
+        await using var host = await StartAsync(j => j.AddJob<SlowJob>(new JobTypeOptions { MaxConcurrency = 2 }));
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 6; i++)
+            handles.Add(await host.Jobs.EnqueueAsync(new Slow(), cancellationToken: TestCancellationToken));
+        foreach (var handle in handles)
+            await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(2, _probe.PeakConcurrency);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithAConcurrencyKey_RunsOneJobPerKeyAtATimeWithoutUsingAttempts()
+    {
+        await using var host = await StartAsync(j => j.Configure(o => o.MaxConcurrency = 8).AddJob<KeyedJob>());
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 4; i++)
+        {
+            foreach (string project in new[] { "a", "b" })
+                handles.Add(await host.Jobs.EnqueueAsync(new Keyed(project), new EnqueueOptions { ConcurrencyKey = project }, TestCancellationToken));
+        }
+
+        var jobs = new List<JobDetails>();
+        foreach (var handle in handles)
+            jobs.Add(await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+
+        Assert.All(jobs, job => Assert.Equal((JobState.Succeeded, 1), (job.State, job.Attempt)));
+        Assert.Equal("a", jobs[0].ConcurrencyKey);
+        Assert.Equal(1, _keyed.PeakFor("a"));
+        Assert.Equal(1, _keyed.PeakFor("b"));
+        Assert.Equal(2, _probe.PeakConcurrency);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithADeduplicationKey_ReturnsTheWaitingJobUntilItStarts()
+    {
+        await using var host = await StartAsync(j => j.AddJob<GatedJob>());
+        var duplicate = new EnqueueOptions { DeduplicationKey = "org-1", ConcurrencyKey = "org-1" };
+
+        var running = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        var waiting = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        var again = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        var otherKey = await host.Jobs.EnqueueAsync(new Gated(), new EnqueueOptions { DeduplicationKey = "org-2", ConcurrencyKey = "org-2" }, TestCancellationToken);
+
+        Assert.NotEqual(running.Id, waiting.Id);
+        Assert.Equal(waiting.Id, again.Id);
+        Assert.NotEqual(waiting.Id, otherKey.Id);
+        Assert.Equal(JobState.Queued, (await waiting.GetAsync(TestCancellationToken))!.State);
+
+        _gate.TrySetResult();
+        Assert.Equal((JobState.Succeeded, 1), await StateAndAttemptAsync(waiting));
+        var next = await host.Jobs.EnqueueAsync(new Gated(), duplicate, TestCancellationToken);
+        Assert.NotEqual(waiting.Id, next.Id);
+        Assert.Equal((JobState.Succeeded, 1), await StateAndAttemptAsync(next));
+        Assert.Equal(JobState.Succeeded, (await running.GetAsync(TestCancellationToken))!.State);
+
+        async Task<(JobState, int)> StateAndAttemptAsync(JobHandle handle)
+        {
+            var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+            return (job.State, job.Attempt);
+        }
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithArgumentsThatHaveJobKeys_StoresTheirKeysInAProcessThatDoesNotRunTheJob()
+    {
+        await using var producer = await StartAsync(_ => { });
+
+        var first = await producer.Jobs.EnqueueAsync(new ProjectReset("a"), cancellationToken: TestCancellationToken);
+        var joined = await producer.Jobs.EnqueueAsync(new ProjectReset("a"), cancellationToken: TestCancellationToken);
+        var asObject = await producer.Jobs.EnqueueAsync<object>(new ProjectReset("b"), cancellationToken: TestCancellationToken);
+        var overridden = await producer.Jobs.EnqueueAsync(new ProjectReset("c"), new EnqueueOptions { ConcurrencyKey = "all-projects" }, TestCancellationToken);
+        var noKeys = await producer.Jobs.EnqueueAsync(new ProjectReset(null), cancellationToken: TestCancellationToken);
+
+        Assert.Equal(first.Id, joined.Id);
+        Assert.Equal(("a", "reset:a"), await KeysAsync(first));
+        Assert.Equal(("b", "reset:b"), await KeysAsync(asObject));
+        Assert.Equal(("all-projects", "reset:c"), await KeysAsync(overridden));
+        Assert.Equal(((string?)null, (string?)null), await KeysAsync(noKeys));
+
+        await using var worker = await StartAsync(j => j.AddJob<ProjectResetJob>());
+        foreach (var handle in new[] { first, asObject, overridden, noKeys })
+            Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+
+        async Task<(string?, string?)> KeysAsync(JobHandle handle)
+        {
+            var job = await handle.GetAsync(TestCancellationToken);
+            return (job!.ConcurrencyKey, job.DeduplicationKey);
+        }
+    }
+
+    [Fact]
+    public async Task CronSchedule_OfArgumentsThatHaveJobKeys_StoresTheirKeysOnEachOccurrence()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await using var host = await StartAsync(j => j.Configure(o => o.TimeProvider = time).AddCronJob("0 * * * *", new ProjectReset("nightly")), store: new InMemoryJobStore(time), startHostedServices: false);
+
+        await host.CreateScheduler().RunDueAsync(time.GetUtcNow(), TestCancellationToken);
+
+        var job = Assert.Single((await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs);
+        Assert.Equal(("nightly", "reset:nightly"), (job.ConcurrencyKey, job.DeduplicationKey));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithArgumentsWhoseJobKeyIsBlank_ThrowsNamingTheArguments()
+    {
+        await using var host = await StartAsync(_ => { }, startHostedServices: false);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ProjectReset(" "), cancellationToken: TestCancellationToken));
+
+        Assert.Contains("ProjectReset", error.Message);
+        Assert.Contains("IHaveJobKeys.ConcurrencyKey", error.Message);
+        Assert.Equal(0, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+        Assert.Throws<ArgumentException>(() => new ServiceCollection().AddFoundatioJobs(j => j.AddCronJob("0 * * * *", new ProjectReset(""))));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithBlankKeys_Throws()
+    {
+        await using var host = await StartAsync(_ => { }, startHostedServices: false);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new Slow(), new EnqueueOptions { ConcurrencyKey = " " }, TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new Slow(), new EnqueueOptions { DeduplicationKey = "" }, TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task JobTypeRetainSucceededFor_OfZero_RemovesTheJobsOfThatTypeWhenTheySucceed()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(new JobTypeOptions { RetainSucceededFor = TimeSpan.Zero }).AddJob<SlowJob>());
+
+        var resized = await host.Jobs.EnqueueAsync(new ResizeImage("a.png", 1), cancellationToken: TestCancellationToken);
+        var slow = await host.Jobs.EnqueueAsync(new Slow(), cancellationToken: TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, (await slow.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+        await WaitForAsync(async () => await resized.GetAsync(TestCancellationToken) is null);
+        Assert.Equal(1, await host.Jobs.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task Cron_EveryFiveSecondsWithZeroRetention_RunsEachOccurrenceOnceAndKeepsAMinuteOfJobs()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryJobStore(time);
+        var schedule = new CronJobOptions { RetainSucceededFor = TimeSpan.Zero };
+        await using var host = await StartAsync(j => j.Configure(o => o.TimeProvider = time).AddCronJob<TickJob>("*/5 * * * * *", schedule), store: store);
+        await using var other = await StartAsync(j => j.Configure(o => o.TimeProvider = time).AddCronJob<TickJob>("*/5 * * * * *", schedule), store: store, startHostedServices: false);
+        var otherScheduler = other.CreateScheduler();
+        await WaitForAsync(() => Task.FromResult(_probe.Runs.Count == 1));
+
+        for (int occurrence = 2; occurrence <= 60; occurrence++)
+        {
+            time.Advance(TimeSpan.FromSeconds(5));
+            await WaitForAsync(() => Task.FromResult(_probe.Runs.Count == occurrence));
+            await WaitForAsync(async () => await store.CountAsync(JobState.Running, "tick", TestCancellationToken) == 0);
+            await otherScheduler.RunDueAsync(time.GetUtcNow().AddMilliseconds(500), TestCancellationToken);
+            Assert.Equal(0, await store.CountAsync(JobState.Queued, "tick", TestCancellationToken));
+        }
+
+        Assert.Equal(60, _probe.Contexts.Select(c => c.ScheduledFor).Distinct().Count());
+        Assert.InRange(await store.CountAsync(JobState.Succeeded, "tick", TestCancellationToken), 12, 14);
+    }
+
+    [Fact]
+    public async Task CronRetainSucceededFor_OverridesTheJobTypeAndWorkerRetentionForItsOccurrences()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryJobStore(time);
+        await using var host = await StartAsync(j => j
+            .Configure(o => o.TimeProvider = time)
+            .AddCronJob<TickJob>("0 * * * *", new CronJobOptions { RetainSucceededFor = TimeSpan.FromHours(3), JobTypeOptions = new JobTypeOptions { RetainSucceededFor = TimeSpan.FromHours(2) } }),
+            store: store, startHostedServices: false);
+        var worker = new JobWorker(host.Services.GetRequiredService<JobsRuntime>());
+        worker.Start();
+        try
+        {
+            await host.CreateScheduler().RunDueAsync(time.GetUtcNow(), TestCancellationToken);
+            var enqueued = await host.Jobs.EnqueueAsync<TickJob>(cancellationToken: TestCancellationToken);
+            await WaitForAsync(async () => await store.CountAsync(JobState.Succeeded, "tick", TestCancellationToken) == 2);
+
+            time.Advance(TimeSpan.FromHours(2.5));
+            Assert.Null(await enqueued.GetAsync(TestCancellationToken));
+            Assert.NotNull(await host.Jobs.GetAsync("cron:tick:20260101T000000Z", TestCancellationToken));
+            time.Advance(TimeSpan.FromHours(1));
+            Assert.Null(await host.Jobs.GetAsync("cron:tick:20260101T000000Z", TestCancellationToken));
+        }
+        finally
+        {
+            await worker.StopAsync(TestCancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// A schedule of arguments registered in a process that doesn't run its job, run by a worker whose job type keeps
+    /// nothing: the occurrence's job carries how long it must be kept, so a scheduler that starts again within the
+    /// misfire threshold (a restart, a new instance) finds it and doesn't create it again.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Cron_OccurrenceRunByAWorkerWithoutTheSchedule_RunsOnceAfterASchedulerRestart(bool failed)
+    {
+        await using var scheduler = await StartAsync(j => j
+            .Configure(o => o.RetainSucceededFor = o.RetainFailedFor = TimeSpan.FromMinutes(1))
+            .AddCronJob("0 * * * *", new Flaky(failed ? 1 : 0)), startHostedServices: false);
+        await using var worker = await StartAsync(j => j
+            .Configure(o => o.RetainFailedFor = TimeSpan.FromMilliseconds(1))
+            .AddJob<FlakyJob>(new JobTypeOptions { RetainSucceededFor = TimeSpan.Zero, RetryPolicy = RetryPolicy.None }));
+        string name = JobNaming.GetName(typeof(Flaky));
+
+        var now = DateTimeOffset.UtcNow;
+        await scheduler.CreateScheduler().RunDueAsync(now, TestCancellationToken);
+        await WaitForAsync(async () => _probe.Runs.Count == 1 && await _store.CountAsync(JobState.Running, name, TestCancellationToken) == 0);
+
+        await scheduler.CreateScheduler().RunDueAsync(now.AddSeconds(5), TestCancellationToken);
+        await Task.Delay(500, TestCancellationToken);
+
+        Assert.Single(_probe.Runs);
+        Assert.Equal(1, await _store.CountAsync(failed ? JobState.Failed : JobState.Succeeded, name, TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task Query_ListsJobsNewestFirstWithFilters()
+    {
+        await using var host = await StartAsync(_ => { });
+        for (int i = 0; i < 3; i++)
+            await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), cancellationToken: TestCancellationToken);
+
+        var page = await host.Jobs.QueryAsync(new JobQuery { State = JobState.Queued, Limit = 2 }, TestCancellationToken);
+
+        Assert.Equal(2, page.Jobs.Count);
+        Assert.NotNull(page.ContinuationToken);
+        Assert.Single((await host.Jobs.QueryAsync(new JobQuery { State = JobState.Queued, ContinuationToken = page.ContinuationToken }, TestCancellationToken)).Jobs);
+    }
+
+    [Fact]
+    public async Task Cron_CreatesOneJobPerOccurrenceAcrossInstances()
+    {
+        await using var first = await StartAsync(j => j.AddCronJob<TickJob>("*/5 * * * *", new CronJobOptions { AllowConcurrent = true }), startHostedServices: false);
+        await using var second = await StartAsync(j => j.AddCronJob<TickJob>("*/5 * * * *", new CronJobOptions { AllowConcurrent = true }), startHostedServices: false);
+        var schedulers = new[] { first.CreateScheduler(), second.CreateScheduler() };
+        var midnight = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        foreach (var scheduler in schedulers)
+        {
+            await scheduler.RunDueAsync(midnight.AddSeconds(1), TestCancellationToken);
+            await scheduler.RunDueAsync(midnight.AddMinutes(2), TestCancellationToken);
+            await scheduler.RunDueAsync(midnight.AddMinutes(5), TestCancellationToken);
+        }
+
+        var jobs = (await first.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs;
+        Assert.Equal(["cron:tick:20260101T000000Z", "cron:tick:20260101T000500Z"], jobs.Select(j => j.Id).Order());
+        Assert.All(jobs, j => Assert.Equal("tick", j.ScheduleName));
+    }
+
+    [Fact]
+    public async Task Cron_WakesAtTheNextOccurrenceOrWithinAMinute()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<TickJob>("*/5 * * * *"), startHostedServices: false);
+        var midnight = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var scheduler = host.CreateScheduler();
+
+        Assert.Equal(midnight.AddMinutes(5), await scheduler.RunDueAsync(midnight.AddMinutes(4.5), TestCancellationToken));
+        Assert.Equal(midnight.AddMinutes(2), await scheduler.RunDueAsync(midnight.AddMinutes(1), TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task Cron_RunsOnlyTheLatestMissedOccurrenceWithinTheMisfireThreshold()
+    {
+        await using var host = await StartAsync(j => j
+            .AddCronJob<TickJob>("0 * * * *", new CronJobOptions { MisfireThreshold = TimeSpan.FromMinutes(30) })
+            .AddCronJob<TickJob>("0 0 * * *", new CronJobOptions { Name = "daily" }), startHostedServices: false);
+        var midnight = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        await host.CreateScheduler().RunDueAsync(midnight.AddHours(3).AddMinutes(10), TestCancellationToken);
+
+        var jobs = (await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs;
+        Assert.Equal(["cron:tick:20260101T030000Z"], jobs.Select(j => j.Id));
+    }
+
+    [Fact]
+    public async Task Cron_SkipsAnOccurrenceWhileThePreviousOneHasNotFinished()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<TickJob>("*/5 * * * *"), startHostedServices: false);
+        var scheduler = host.CreateScheduler();
+        var midnight = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        await scheduler.RunDueAsync(midnight, TestCancellationToken);
+        await scheduler.RunDueAsync(midnight.AddMinutes(5), TestCancellationToken);
+        await scheduler.RunDueAsync(midnight.AddMinutes(10), TestCancellationToken);
+        Assert.Equal(1, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+
+        var first = (await _store.ClaimAsync(new JobClaimRequest { Names = ["tick"], WorkerId = "test", LeaseDuration = TimeSpan.FromMinutes(1) }, TestCancellationToken))!;
+        await _store.CompleteAsync(first.Id, first.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
+        await scheduler.RunDueAsync(midnight.AddMinutes(15), TestCancellationToken);
+        Assert.Equal(2, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+
+        var restarted = host.CreateScheduler();
+        await restarted.RunDueAsync(midnight.AddMinutes(20), TestCancellationToken);
+        Assert.Equal(2, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+    }
+
+    /// <summary>
+    /// A schedule whose job name has 10,000 queued jobs: the overlap check reads occurrences' jobs by id, including on
+    /// a scheduler that just started and missed the previous occurrence, and never lists the name's queued jobs.
+    /// (It used to page through every queued job of the name, so a big backlog stalled the scheduler.)
+    /// </summary>
+    [Fact]
+    public async Task Cron_OverABacklogOfItsJobName_ChecksTheOccurrencesByIdWithoutListingQueuedJobs()
+    {
+        var store = new QueryCountingJobStore(_store);
+        await using var host = await StartAsync(j => j.AddCronJob("* * * * * *", new ResizeImage("cron.png", 1)), store: store, startHostedServices: false);
+        string name = JobNaming.GetName(typeof(ResizeImage));
+        for (int i = 0; i < 10_000; i++)
+            await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), new EnqueueOptions { RunAt = DateTimeOffset.UtcNow.AddHours(1) }, TestCancellationToken);
+        var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        await host.CreateScheduler().RunDueAsync(start, TestCancellationToken);
+        await host.CreateScheduler().RunDueAsync(start.AddSeconds(10), TestCancellationToken);
+        Assert.Equal(10_001, await _store.CountAsync(JobState.Queued, name, TestCancellationToken));
+
+        var first = (await _store.ClaimAsync(new JobClaimRequest { Names = [name], WorkerId = "test", LeaseDuration = TimeSpan.FromMinutes(1) }, TestCancellationToken))!;
+        Assert.Equal($"cron:{name}:20260101T000000Z", first.Id);
+        await _store.CompleteAsync(first.Id, first.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
+        await host.CreateScheduler().RunDueAsync(start.AddSeconds(20), TestCancellationToken);
+        var scheduler = host.CreateScheduler();
+        for (int second = 21; second <= 30; second++)
+            await scheduler.RunDueAsync(start.AddSeconds(second), TestCancellationToken);
+
+        Assert.Equal(10_001, await _store.CountAsync(JobState.Queued, name, TestCancellationToken));
+        Assert.Equal(1, await _store.CountAsync(JobState.Succeeded, name, TestCancellationToken));
+        Assert.NotNull(await _store.GetAsync($"cron:{name}:20260101T000020Z", TestCancellationToken));
+        // Only the first scheduler, which knew nothing of the schedule, listed running jobs, of which there are few.
+        Assert.Equal([JobState.Running], store.Queries.Select(q => q.State));
+    }
+
+    /// <summary>
+    /// Draining a backlog from a store that answers at once, the worker waits a moment for a few slots to free
+    /// before claiming again, so it claims several jobs per call rather than one per finished job.
+    /// </summary>
+    [Fact]
+    public async Task ClaimLoop_DrainingABacklog_ClaimsSeveralJobsPerCall()
+    {
+        var counting = new ClaimCountingJobStore(_store);
+        await using var host = await StartAsync(j => j.Configure(o => o.MaxConcurrency = 16).AddJob<ResizeImageJob>(), store: counting, startHostedServices: false);
+        for (int i = 0; i < 1000; i++)
+            await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), cancellationToken: TestCancellationToken);
+
+        var worker = new JobWorker(host.Services.GetRequiredService<JobsRuntime>());
+        worker.Start();
+        try
+        {
+            await WaitForAsync(async () => await _store.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) == 1000);
+        }
+        finally
+        {
+            await worker.StopAsync(TestCancellationToken);
+        }
+
+        var claims = counting.Claims.ToList();
+        _logger.LogInformation("{Claims} claims for 1000 jobs", claims.Count);
+        Assert.True(claims.Count <= 500, $"{claims.Count} claims for 1000 jobs");
+    }
+
+    /// <summary>
+    /// A job type limited to one at a time, with nothing queued, doesn't limit how many jobs of other types a claim
+    /// takes: the worker's batches still fill its free slots.
+    /// </summary>
+    [Fact]
+    public async Task ClaimBatch_WithOneJobTypeLimitedToOne_StillFillsBatchesWithOtherTypes()
+    {
+        var counting = new ClaimCountingJobStore(_store);
+        await using var host = await StartAsync(j => j
+            .Configure(o => o.MaxConcurrency = 16)
+            .AddJob<ResizeImageJob>()
+            .AddJob<TickJob>(new JobTypeOptions { MaxConcurrency = 1 }), store: counting, startHostedServices: false);
+        for (int i = 0; i < 200; i++)
+            await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), cancellationToken: TestCancellationToken);
+
+        var worker = new JobWorker(host.Services.GetRequiredService<JobsRuntime>());
+        worker.Start();
+        try
+        {
+            await WaitForAsync(async () => await _store.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) == 200);
+        }
+        finally
+        {
+            await worker.StopAsync(TestCancellationToken);
+        }
+
+        var claims = counting.Claims.ToList();
+        Assert.True(claims.Max(c => c.MaxCount) > 1, $"{claims.Count} claims, each of at most {claims.Max(c => c.MaxCount)}");
+        Assert.True(claims.Max(c => c.Claimed) > 1, $"{claims.Count} claims, the largest of {claims.Max(c => c.Claimed)} jobs");
+    }
+
+    [Fact]
+    public async Task Cron_WithArguments_EnqueuesTheArgumentsJob()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>().AddCronJob("* * * * * *", new ResizeImage("nightly.png", 8)));
+
+        await WaitForAsync(async () => await host.Jobs.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) > 0);
+        var job = (await host.Jobs.QueryAsync(new JobQuery { State = JobState.Succeeded }, TestCancellationToken)).Jobs[0];
+        Assert.Equal("resized nightly.png to 8px", job.Message);
+    }
+
+    [Fact]
+    public async Task WaitForCompletionAsync_WithAFakeTimeProvider_TimesOutInRealTime()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var host = await StartAsync(_ => { }, s => s.AddSingleton<TimeProvider>(time));
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("never.png", 1), cancellationToken: TestCancellationToken);
+
+        var wait = handle.WaitForCompletionAsync(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        var finished = await Task.WhenAny(wait, Task.Delay(TimeSpan.FromSeconds(15), TestCancellationToken));
+
+        Assert.Same(wait, finished);
+        await Assert.ThrowsAsync<TimeoutException>(() => wait);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_ArgumentsTypedAsObject_RunsTheJobForTheirRuntimeType()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        object arguments = new ResizeImage("boxed.png", 16);
+
+        var handle = await host.Jobs.EnqueueAsync(arguments, cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(typeof(ResizeImage).FullName!.Replace('+', '.'), job.Name);
+        Assert.Equal(JobState.Succeeded, job.State);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_DerivedArgumentsOfANamedBaseType_RunTheJobForTheDerivedType()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ExportJob>().AddJob<DetailedExportJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<Export>(new DetailedExport("csv", 3), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(typeof(DetailedExport).FullName!.Replace('+', '.'), job.Name);
+        Assert.Equal("csv with detail 3", job.Message);
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_WhenTheStoreFailsBriefly_DoesNotFailTheAttempt()
+    {
+        var store = new FaultyJobStore(_store) { ProgressFailures = 1 };
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), store: store);
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("blip.png", 4), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(1, job.Attempt);
+        Assert.Equal(100, job.Progress);
+        Assert.Equal("resized blip.png to 4px", job.Message);
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_AfterAThrottledReport_StoresTheThrottledMessage()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new InMemoryJobStore(time);
+        await store.CreateAsync(new JobInfo { Id = "progress", Name = "progress", CreatedAt = time.GetUtcNow(), UpdatedAt = time.GetUtcNow(), AvailableAt = time.GetUtcNow() }, TestCancellationToken);
+        var job = (await store.ClaimAsync(new JobClaimRequest { Names = ["progress"], WorkerId = "test", LeaseDuration = TimeSpan.FromMinutes(1) }, TestCancellationToken))!;
+        var context = new JobRunContext(job, store, time, NullLogger.Instance);
+
+        await context.ReportProgressAsync(40, "reading", TestCancellationToken);
+        await context.ReportProgressAsync(50, "writing", TestCancellationToken);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await context.ReportProgressAsync(60, cancellationToken: TestCancellationToken);
+
+        var stored = (await store.GetAsync("progress", TestCancellationToken))!;
+        Assert.Equal(60, stored.Progress);
+        Assert.Equal("writing", stored.Message);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheRetryPolicyThrows_FailsTheJob()
+    {
+        var policy = new RetryPolicy { MaxAttempts = 3, ShouldRetry = _ => throw new InvalidOperationException("policy bug") };
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(new JobTypeOptions { RetryPolicy = policy }));
+
+        var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Contains("policy bug", job.Error);
+    }
+
+    [Fact]
+    public async Task AddJob_WithLegacySchedulingPropertiesOnJobAttribute_LogsThatTheyAreIgnored()
+    {
+        await using var host = await StartAsync(j => j.AddLegacyJob<IntervalJob>());
+
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("Interval") && e.Message.Contains(nameof(IntervalJob)));
+    }
+
+    [Fact]
+    public async Task AddCronJob_OfALegacyJobWithLegacySchedulingPropertiesOnJobAttribute_DoesNotWarn()
+    {
+        // The schedule replaces the interval; the attribute stays for where the same class runs as a hosted job.
+        await using var host = await StartAsync(j => j.AddCronJob<LegacyJob<IntervalJob>>("0 * * * * *"));
+
+        Assert.DoesNotContain(Log.LogEntries, e => e.LogLevel >= LogLevel.Warning && e.Message.Contains(nameof(IntervalJob)));
+    }
+
+    [Fact]
+    public async Task AddCronJob_OfAJobHandlerWithLegacySchedulingPropertiesOnJobAttribute_LogsThatTheyAreIgnored()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<IntervalHandler>("0 * * * * *"));
+
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("Interval") && e.Message.Contains(nameof(IntervalHandler)));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheLeaseCannotBeRenewed_CancelsTheJobBeforeAnotherWorkerTakesIt()
+    {
+        var lease = TimeSpan.FromSeconds(2);
+        var partitioned = new FaultyJobStore(_store);
+        await using var first = await StartAsync(j => j.Configure(o => { o.LeaseDuration = lease; o.WorkerId = "first"; }).AddJob<OverlapJob>(), store: partitioned);
+        var handle = await first.Jobs.EnqueueAsync(new Overlap(), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        partitioned.Partitioned = true;
+        await using var second = await StartAsync(j => j.Configure(o => { o.LeaseDuration = lease; o.WorkerId = "second"; }).AddJob<OverlapJob>());
+        await WaitForAsync(async () => (await _store.GetAsync(handle.Id, TestCancellationToken))?.State.IsTerminal() == true, TimeSpan.FromSeconds(30));
+        var job = (await _store.GetAsync(handle.Id, TestCancellationToken))!;
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(2, job.Attempt);
+        Assert.Equal(["start 1", "cancelled 1", "start 2"], _probe.Events);
+        Assert.Equal(1, _probe.PeakConcurrency);
+    }
+
+    /// <summary>
+    /// A run that finishes after the worker gave up on its lease (renewals kept failing) but before another worker
+    /// claimed it is still recorded: the store fences completions by the claim token, not the lease.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_FinishingJustAfterItsLeaseCouldNotBeRenewed_RecordsTheResult()
+    {
+        var store = new FaultyJobStore(_store) { FailRenewals = true };
+        await using var host = await StartAsync(j => j.Configure(o => o.LeaseDuration = TimeSpan.FromSeconds(2)).AddJob<StubbornJob>(), store: store);
+
+        // Renewals start at 0.67 s; the worker gives up on the lease at 1.5 s, and it runs out at 2 s.
+        var handle = await host.Jobs.EnqueueAsync(new Stubborn(1700), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(1, job.Attempt);
+        Assert.Equal([1], _probe.Runs);
+        Assert.Equal(["cancelled"], _probe.Events);
+    }
+
+    /// <summary>
+    /// The first renewal hangs, ignoring its token, and every later one works: the hung call is given up on and retried
+    /// before the lease is lost, so the job keeps running and succeeds on its first attempt.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_WhenOneLeaseRenewalHangs_RetriesItBeforeTheLeaseIsLost()
+    {
+        var store = new HangingRenewalJobStore(_store);
+        await using var host = await StartAsync(j => j.Configure(o => o.LeaseDuration = TimeSpan.FromSeconds(3)).AddJob<LingerJob>(), store: store);
+
+        // Renewals every second; the worker would give up on the lease 2.25 s after its last renewal.
+        var handle = await host.Jobs.EnqueueAsync(new Linger(4000), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(15), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal(1, job.Attempt);
+        Assert.True(store.Renewals >= 3, $"{store.Renewals} renewals");
+    }
+
+    [Fact]
+    public async Task Cron_WithoutConcurrencyOnTwoInstances_DoesNotStartAnOccurrenceWhileAnotherRuns()
+    {
+        await using var first = await StartAsync(j => j.AddCronJob<TickJob>("0 * * * *"), startHostedServices: false);
+        await using var second = await StartAsync(j => j.AddCronJob<TickJob>("0 * * * *"), startHostedServices: false);
+        var a = first.CreateScheduler();
+        var b = second.CreateScheduler();
+        var ten = new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
+        var claim = new JobClaimRequest { Names = ["tick"], WorkerId = "test", LeaseDuration = TimeSpan.FromHours(1) };
+
+        await a.RunDueAsync(ten, TestCancellationToken);
+        await b.RunDueAsync(ten, TestCancellationToken);
+        var tenRun = (await _store.ClaimAsync(claim, TestCancellationToken))!;
+
+        await a.RunDueAsync(ten.AddHours(1), TestCancellationToken);
+        await _store.CompleteAsync(tenRun.Id, tenRun.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
+        await b.RunDueAsync(ten.AddHours(1).AddMilliseconds(500), TestCancellationToken);
+        var elevenRun = (await _store.ClaimAsync(claim, TestCancellationToken))!;
+        Assert.Equal("cron:tick:20260101T110000Z", elevenRun.Id);
+
+        await a.RunDueAsync(ten.AddHours(2), TestCancellationToken);
+        await b.RunDueAsync(ten.AddHours(2), TestCancellationToken);
+
+        Assert.Equal(1, await _store.CountAsync(JobState.Running, "tick", TestCancellationToken));
+        Assert.Equal(0, await _store.CountAsync(JobState.Queued, "tick", TestCancellationToken));
+
+        await _store.CompleteAsync(elevenRun.Id, elevenRun.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
+        await a.RunDueAsync(ten.AddHours(3), TestCancellationToken);
+        Assert.Equal(1, await _store.CountAsync(JobState.Queued, "tick", TestCancellationToken));
+    }
+
+    [Fact]
+    public void Registration_RejectsMistakesEarlyWithClearErrors()
+    {
+        var services = new ServiceCollection();
+
+        var cron = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob<TickJob>("not cron")));
+        Assert.Contains("not a valid CRON expression", cron.Message);
+        Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<JobProbe>()));
+        Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob("* * * * *", new TickJob(_probe))));
+        var legacyArguments = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob("* * * * *", new LegacyCleanupJob(Log))));
+        Assert.Contains("AddCronJob<LegacyJob<LegacyCleanupJob>>(cronExpression)", legacyArguments.Message);
+        var legacy = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<LegacyCleanupJob>()));
+        Assert.Contains("AddLegacyJob<LegacyCleanupJob>()", legacy.Message);
+        Assert.Contains("services.AddJob<LegacyCleanupJob>()", legacy.Message);
+        var duplicate = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddLegacyJob<LegacyCleanupJob>().AddJob<NamedLikeTheLegacyJob>()));
+        Assert.Contains("LegacyJob<LegacyCleanupJob> and NamedLikeTheLegacyJob", duplicate.Message);
+        Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob<TickJob>("* * * * *").AddCronJob<TickJob>("0 * * * *")));
+        Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<ResizeImageJob>().AddJob<OtherResizeImageJob>()));
+        var ignoredName = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<NamedArgumentsJob>()));
+        Assert.Contains("Put the attribute on Slow", ignoredName.Message);
+
+        var noStore = Assert.Throws<InvalidOperationException>(() => services.BuildServiceProvider().GetRequiredService<IJobClient>());
+        Assert.Contains("UseInMemory()", noStore.Message);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithEnqueueOptionsInsteadOfArguments_ThrowsNamingTheCallToMake()
+    {
+        await using var host = await StartAsync(j => j.AddJob<TickJob>());
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new EnqueueOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken: TestCancellationToken));
+
+        Assert.Contains("EnqueueOptions is options, not job arguments", error.Message);
+        Assert.Contains("EnqueueAsync<TJob>()", error.Message);
+        Assert.Equal(0, await host.Jobs.CountAsync(cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfAJobThisWorkerDoesNotRun_WarnsOncePerJob()
+    {
+        await using var host = await StartAsync(j => j.AddJob<TickJob>().AddCronJob("0 * * * *", new ResizeImage("nightly.png", 1)));
+
+        await host.Jobs.EnqueueAsync(new ResizeImage("a.png", 1), cancellationToken: TestCancellationToken);
+        await host.Jobs.EnqueueAsync(new ResizeImage("b.png", 1), cancellationToken: TestCancellationToken);
+        await host.Jobs.EnqueueAsync<TickJob>(cancellationToken: TestCancellationToken);
+
+        var warnings = Log.LogEntries.Where(e => e.LogLevel == LogLevel.Warning).Select(e => e.Message).ToList();
+        Assert.Single(warnings, w => w.StartsWith($"Enqueued job {JobNaming.GetName(typeof(ResizeImage))}, which no job registered in this process runs"));
+        Assert.Single(warnings, w => w.StartsWith($"CRON schedule {JobNaming.GetName(typeof(ResizeImage))} enqueues job"));
+        Assert.Equal(2, warnings.Count);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfAJobNoProcessRuns_WarnsOnceAfterItHasBeenDueAMinute()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new ReadCountingJobStore(_store);
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time), store: store);
+
+        var first = await producer.Jobs.EnqueueAsync(new ResizeImage("a.png", 1), cancellationToken: TestCancellationToken);
+        for (int i = 0; i < 10; i++)
+            await producer.Jobs.EnqueueAsync(new ResizeImage("b.png", 1), cancellationToken: TestCancellationToken);
+        Assert.Empty(NotRunWarnings());
+
+        await WaitForAsync(() => AdvanceAndCheck(time, () => NotRunWarnings().Count == 1));
+        time.Advance(TimeSpan.FromMinutes(5));
+        await producer.Jobs.EnqueueAsync(new ResizeImage("c.png", 1), cancellationToken: TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(5));
+        string warning = Assert.Single(NotRunWarnings());
+        Assert.Contains(first.Id, warning);
+        Assert.Contains("register", warning);
+
+        await using var worker = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        Assert.Equal(JobState.Succeeded, (await first.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+        await WaitForAsync(() => AdvanceAndCheck(time, () => Log.LogEntries.Any(e => e.LogLevel == LogLevel.Information && e.Message.StartsWith($"Job {JobNaming.GetName(typeof(ResizeImage))} is being run"))));
+
+        long reads = store.Reads;
+        await producer.Jobs.EnqueueAsync(new ResizeImage("d.png", 1), cancellationToken: TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(5));
+        await Task.Delay(100, TestCancellationToken);
+        Assert.Equal(reads, store.Reads);
+        Assert.Single(NotRunWarnings());
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfAJobAnotherProcessRuns_ChecksOnceAndDoesNotWarn()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new ReadCountingJobStore(_store);
+        await using var worker = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time), store: store);
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 20; i++)
+            handles.Add(await producer.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", 1), cancellationToken: TestCancellationToken));
+        foreach (var handle in handles)
+            await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        long readsBeforeCheck = store.Reads;
+        await WaitForAsync(() => AdvanceAndCheck(time, () => store.Reads > readsBeforeCheck));
+        time.Advance(TimeSpan.FromMinutes(10));
+        await producer.Jobs.EnqueueAsync(new ResizeImage("late.png", 1), cancellationToken: TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(10));
+        await Task.Delay(100, TestCancellationToken);
+
+        Assert.Equal(readsBeforeCheck + 1, store.Reads);
+        Assert.Empty(NotRunWarnings());
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfAJobWaitingForItsConcurrencyKey_DoesNotWarn()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var worker = await StartAsync(j => j.AddJob<GatedJob>());
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time));
+        var key = new EnqueueOptions { ConcurrencyKey = "org-1" };
+
+        await worker.Jobs.EnqueueAsync(new Gated(), key, TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        var waiting = await producer.Jobs.EnqueueAsync(new Gated(), key, TestCancellationToken);
+        for (int i = 0; i < 5; i++)
+        {
+            time.Advance(TimeSpan.FromMinutes(1));
+            await Task.Delay(50, TestCancellationToken);
+        }
+
+        Assert.Equal(JobState.Queued, (await waiting.GetAsync(TestCancellationToken))!.State);
+        Assert.Empty(NotRunWarnings());
+        _gate.TrySetResult();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OfADelayedJobNoProcessRuns_WaitsUntilAJobIsDueToCheck()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new ReadCountingJobStore(_store);
+        await using var producer = await StartAsync(j => j.Configure(o => o.TimeProvider = time), store: store);
+
+        await producer.Jobs.EnqueueAsync(new ResizeImage("later.png", 1), new EnqueueOptions { Delay = TimeSpan.FromHours(1) }, TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(10));
+        await Task.Delay(100, TestCancellationToken);
+        Assert.Equal(0, store.Reads);
+
+        var now = await producer.Jobs.EnqueueAsync(new ResizeImage("now.png", 1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => AdvanceAndCheck(time, () => NotRunWarnings().Count == 1));
+        Assert.Contains(now.Id, Assert.Single(NotRunWarnings()));
+    }
+
+    private List<string> NotRunWarnings() => Log.LogEntries
+        .Where(e => e.LogLevel == LogLevel.Warning && e.Message.Contains("no job of that name is running"))
+        .Select(e => e.Message)
+        .ToList();
+
+    private static Task<bool> AdvanceAndCheck(FakeTimeProvider time, Func<bool> condition)
+    {
+        if (condition())
+            return Task.FromResult(true);
+
+        time.Advance(TimeSpan.FromSeconds(15));
+        return Task.FromResult(false);
+    }
+
+    [Fact]
+    public async Task AddJob_AfterAddCronJobRegisteredTheJob_AppliesItsOptions()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<SlowTickJob>("0 0 1 1 *").AddJob<SlowTickJob>(new JobTypeOptions { MaxConcurrency = 1 }));
+
+        var handles = new List<JobHandle>();
+        for (int i = 0; i < 3; i++)
+            handles.Add(await host.Jobs.EnqueueAsync<SlowTickJob>(cancellationToken: TestCancellationToken));
+        foreach (var handle in handles)
+            await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(1, _probe.PeakConcurrency);
+    }
+
+    [Fact]
+    public async Task AddJob_WithOptionsFromServices_AppliesThemWhenTheHostStarts()
+    {
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(sp => new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = sp.GetRequiredService<JobSettings>().Attempts, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) } }),
+            s => s.AddSingleton(new JobSettings(Attempts: 2)));
+
+        var job = await (await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken)).WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(2, job.Attempt);
+    }
+
+    [Fact]
+    public void AddJob_WithDifferentOptionsForOneJob_ThrowsNamingBoth()
+    {
+        var services = new ServiceCollection();
+
+        var error = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j
+            .AddCronJob<TickJob>("0 * * * *", new CronJobOptions { JobTypeOptions = new JobTypeOptions { MaxConcurrency = 2 } })
+            .AddJob<TickJob>(new JobTypeOptions { MaxConcurrency = 1 })));
+        services.AddFoundatioJobs(j => j.AddJob<SlowJob>(new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 2 } }).AddJob<SlowJob>(new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 2 } }).AddJob<SlowJob>());
+        var arguments = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob("0 * * * *", new Slow(), new CronJobOptions { JobTypeOptions = new JobTypeOptions { MaxConcurrency = 1 } })));
+
+        Assert.Contains("TickJob is already registered with different JobTypeOptions (MaxConcurrency 2, RetryPolicy not set, then MaxConcurrency 1, RetryPolicy not set)", error.Message);
+        Assert.Contains("AddJob<TJob>(options) in the process that runs it", arguments.Message);
+    }
+
+    [Fact]
+    public void AddJob_OfAJobWithAMissingDependency_FailsWhenTheHostIsBuiltWithValidateOnBuild()
+    {
+        var services = new ServiceCollection();
+        services.AddFoundatioJobs(j => j.UseInMemory().AddJob<NeedsMissingServiceJob>().AddJob<ResizeImageJob>());
+
+        var error = Assert.Throws<AggregateException>(() => services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }));
+
+        Assert.Contains(nameof(NeedsMissingServiceJob), error.Message);
+        Assert.Contains(nameof(IMissingService), error.Message);
+    }
+
+    [Fact]
+    public async Task ServicesConfigure_OfJobWorkerOptions_IsApplied()
+    {
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(), s => s.Configure<JobWorkerOptions>(o => o.DefaultRetryPolicy = RetryPolicy.None));
+
+        var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken);
+
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(1, job.Attempt);
+    }
+
+    [Fact]
+    public async Task JobWorkerOptionsTimeProvider_RunsJobsOnItInsteadOfTheRegisteredClock()
+    {
+        var registered = new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(-30));
+        await using var host = await StartAsync(j => j.UseInMemory().Configure(o => o.TimeProvider = TimeProvider.System).AddJob<ResizeImageJob>(),
+            s => s.AddSingleton<TimeProvider>(registered));
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("later.png", 1), new EnqueueOptions { Delay = TimeSpan.FromMilliseconds(50) }, TestCancellationToken);
+
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.True(job.CreatedAt > DateTimeOffset.UtcNow.AddMinutes(-1));
+    }
+
+    [Fact]
+    public async Task JobsEnqueuedWhileHandlingAMessage_InheritItsCorrelationId()
+    {
+        var transport = new InMemoryMessageTransport();
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), services => services.AddFoundatioMessaging(m => m
+            .UseTransport(transport)
+            .AddConsumer<ResizeImage>(async (message, context, ct) => await context.Services.GetRequiredService<IJobClient>().EnqueueAsync(message, cancellationToken: ct))));
+
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new ResizeImage("from-message.png", 1), new SendOptions { CorrelationId = "order-7" }, TestCancellationToken);
+
+        await WaitForAsync(async () => await host.Jobs.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) == 1);
+        Assert.Equal("order-7", (await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs.Single().CorrelationId);
+        await transport.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Workers_WaitForTheStartupGate()
+    {
+        var gate = new TestStartupGate();
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), s => s.AddSingleton<Foundatio.Utility.IStartupGate>(gate));
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("gated.png", 1), cancellationToken: TestCancellationToken);
+
+        await gate.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        Assert.Equal(JobState.Queued, (await handle.GetAsync(TestCancellationToken))!.State);
+
+        gate.Open(true);
+        Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+    }
+
+    [Fact]
+    public async Task Workers_DoNotStartWhenStartupFails()
+    {
+        var gate = new TestStartupGate();
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), s => s.AddSingleton<Foundatio.Utility.IStartupGate>(gate));
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("never.png", 1), cancellationToken: TestCancellationToken);
+
+        gate.Open(false);
+        var status = host.Services.GetRequiredService<JobsStatus>();
+        await WaitForAsync(() => Task.FromResult(status.GetComponents().Single().State == Foundatio.Utility.ProcessingState.Faulted));
+
+        Assert.Equal(JobState.Queued, (await handle.GetAsync(TestCancellationToken))!.State);
+    }
+
+    private sealed class TestStartupGate : Foundatio.Utility.IStartupGate
+    {
+        private readonly TaskCompletionSource<bool> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Open(bool success) => _result.TrySetResult(success);
+
+        public Task<bool> WaitAsync(CancellationToken cancellationToken)
+        {
+            Waiting.TrySetResult();
+            return _result.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private async Task<TestHost> StartAsync(Action<FoundatioJobsBuilder> configure, Action<IServiceCollection>? services = null, bool startHostedServices = true, IJobStore? store = null)
+    {
+        var collection = new ServiceCollection();
+        collection.AddSingleton<ILoggerFactory>(Log);
+        collection.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+        collection.AddSingleton(_probe);
+        collection.AddSingleton(_keyed);
+        collection.AddSingleton(_gate);
+        services?.Invoke(collection);
+        collection.AddFoundatioJobs(j =>
+        {
+            j.UseStore(store ?? _store).Configure(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
+            configure(j);
+        });
+
+        var provider = collection.BuildServiceProvider();
+        var hosted = startHostedServices ? provider.GetServices<IHostedService>().ToList() : [];
+        foreach (var service in hosted)
+            await service.StartAsync(TestCancellationToken);
+
+        return new TestHost(provider, hosted);
+    }
+
+    private static ActivityListener ListenToFoundatioActivities()
+    {
+        // Read the source before adding the listener: initializing it from ShouldListenTo would create it while the
+        // listener is being added, and the listener would never attach to it.
+        var foundatio = FoundatioDiagnostics.ActivitySource;
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source == foundatio,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
+    }
+
+    private async Task WaitForAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(10));
+        while (!await condition())
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException("The condition was not met in time.");
+
+            await Task.Delay(25, TestCancellationToken);
+        }
+    }
+
+    private sealed class TestHost(ServiceProvider services, IReadOnlyList<IHostedService> hosted) : IAsyncDisposable
+    {
+        public IServiceProvider Services => services;
+        public IJobClient Jobs => services.GetRequiredService<IJobClient>();
+
+        public JobScheduler CreateScheduler() => new(services.GetRequiredService<JobsRuntime>(), services.GetRequiredService<JobClient>());
+
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var service in hosted.Reverse())
+                await service.StopAsync(CancellationToken.None);
+
+            await services.DisposeAsync();
+        }
+    }
+
+    public sealed class JobProbe
+    {
+        private int _running;
+        private int _peak;
+
+        public ConcurrentBag<int> Runs { get; } = [];
+        public ConcurrentQueue<string> Events { get; } = new();
+        public ConcurrentQueue<IJobContext> Contexts { get; } = new();
+        public ConcurrentQueue<(ActivityTraceId TraceId, ActivitySpanId ParentSpanId, string? TraceState, IReadOnlyDictionary<string, string> Headers)> Traces { get; } = new();
+        public string? LegacyResult { get; set; }
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int RunCount;
+        public int PeakConcurrency => Volatile.Read(ref _peak);
+
+        public IDisposable Enter()
+        {
+            int now = Interlocked.Increment(ref _running);
+            int peak;
+            while (now > (peak = Volatile.Read(ref _peak)) && Interlocked.CompareExchange(ref _peak, now, peak) != peak)
+            {
+            }
+
+            return new Exit(this);
+        }
+
+        private sealed class Exit(JobProbe probe) : IDisposable
+        {
+            public void Dispose() => Interlocked.Decrement(ref probe._running);
+        }
+    }
+
+    public record ResizeImage(string File, int Width);
+    public record Flaky(int FailTimes);
+    public record WaitForCancellation(bool CompleteOnSecondRun = false);
+    public record Slow;
+    public record Linger(int Milliseconds);
+
+    public record Overlap;
+
+    [Job(Name = "export")]
+    public record Export(string Format);
+
+    public record DetailedExport(string Format, int Detail) : Export(Format);
+
+    public sealed class ExportJob : IJobHandler<Export>
+    {
+        public Task HandleAsync(Export arguments, IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, arguments.Format, cancellationToken);
+    }
+
+    public sealed class DetailedExportJob : IJobHandler<DetailedExport>
+    {
+        public Task HandleAsync(DetailedExport arguments, IJobContext context, CancellationToken cancellationToken) =>
+            context.ReportProgressAsync(100, $"{arguments.Format} with detail {arguments.Detail}", cancellationToken);
+    }
+
+    /// <summary>Runs until cancelled on its first attempt, recording when it starts and stops; later attempts succeed at once.</summary>
+    public sealed class OverlapJob(JobProbe probe) : IJobHandler<Overlap>
+    {
+        public async Task HandleAsync(Overlap arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            probe.Events.Enqueue($"start {context.Attempt}");
+            if (context.Attempt > 1)
+                return;
+
+            probe.Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                probe.Events.Enqueue($"cancelled {context.Attempt}");
+                throw;
+            }
+        }
+    }
+
+    [Job(Name = "legacy-interval", Interval = "5m")]
+    public sealed class IntervalJob : IJob
+    {
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.Success);
+    }
+
+    [Job(Name = "interval-handler", Interval = "5m")]
+    public sealed class IntervalHandler : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>The system clock moved by <paramref name="skew"/>; timers and timestamps are the system's.</summary>
+    private sealed class SkewedTimeProvider(TimeSpan skew) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + skew;
+    }
+
+    /// <summary>A store that fails on demand: <see cref="ProgressFailures"/> progress reports, or every call once <see cref="Partitioned"/>.</summary>
+    private sealed class FaultyJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        private int _progressFailures;
+        private int _partitioned;
+
+        public bool Partitioned
+        {
+            get => Volatile.Read(ref _partitioned) == 1;
+            set => Volatile.Write(ref _partitioned, value ? 1 : 0);
+        }
+
+        public int ProgressFailures
+        {
+            get => Volatile.Read(ref _progressFailures);
+            init => _progressFailures = value;
+        }
+
+        private IJobStore Store => Partitioned ? throw new TimeoutException("Timeout performing EVALSHA") : Inner;
+
+        public override Task<string?> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => Store.CreateAsync(job, cancellationToken);
+        public override Task<string?> CreateAsync(JobInfo job, TimeSpan availableAfter, CancellationToken cancellationToken = default) => Store.CreateAsync(job, availableAfter, cancellationToken);
+        public override Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => Store.GetAsync(jobId, cancellationToken);
+        public override Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => Store.QueryAsync(query, cancellationToken);
+        public override Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => Store.CountAsync(state, name, cancellationToken);
+        public override Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default) => Store.ClaimAsync(request, cancellationToken);
+        public override Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default) => Store.ClaimBatchAsync(request, maxCount, cancellationToken);
+        public override Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => FailRenewals ? throw new TimeoutException("Timeout performing EVALSHA") : Store.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
+
+        /// <summary>Renewals throw, as if they timed out.</summary>
+        public bool FailRenewals { get; set; }
+
+        public override Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Decrement(ref _progressFailures) >= 0)
+                throw new TimeoutException("Timeout performing EVALSHA");
+
+            return Store.ReportProgressAsync(jobId, claimToken, percent, message, cancellationToken);
+        }
+
+        public override Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default) => Store.CompleteAsync(jobId, claimToken, completion, cancellationToken);
+        public override Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default) => Store.RequestCancellationAsync(jobId, retainFor, cancellationToken);
+        public override Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => Store.DeleteAsync(jobId, cancellationToken);
+    }
+
+    /// <summary>A store whose first renewal never returns, ignoring its token.</summary>
+    private sealed class HangingRenewalJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        private int _renewals;
+
+        public int Renewals => Volatile.Read(ref _renewals);
+
+        public override Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+        {
+            return Interlocked.Increment(ref _renewals) == 1
+                ? new TaskCompletionSource<JobLeaseStatus>().Task
+                : base.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
+        }
+    }
+
+    /// <summary>Records each query.</summary>
+    private sealed class QueryCountingJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        public ConcurrentQueue<JobQuery> Queries { get; } = new();
+
+        public override Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
+        {
+            Queries.Enqueue(query);
+            return base.QueryAsync(query, cancellationToken);
+        }
+    }
+
+    /// <summary>Records each batch claim's requested and claimed counts.</summary>
+    private sealed class ReadCountingJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        private long _reads;
+
+        public long Reads => Interlocked.Read(ref _reads);
+
+        public override Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _reads);
+            return base.GetAsync(jobId, cancellationToken);
+        }
+    }
+
+    private sealed class ClaimCountingJobStore(IJobStore inner) : JobStoreDecorator(inner)
+    {
+        public ConcurrentQueue<(int MaxCount, int Claimed)> Claims { get; } = new();
+
+        public override async Task<IReadOnlyList<JobInfo>> ClaimBatchAsync(JobClaimRequest request, int maxCount, CancellationToken cancellationToken = default)
+        {
+            var jobs = await base.ClaimBatchAsync(request, maxCount, cancellationToken);
+            if (jobs.Count > 0)
+                Claims.Enqueue((maxCount, jobs.Count));
+            return jobs;
+        }
+    }
+
+    public sealed class ResizeImageJob : IJobHandler<ResizeImage>
+    {
+        public async Task HandleAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            await context.ReportProgressAsync(50, "halfway", cancellationToken);
+            await context.ReportProgressAsync(100, $"resized {arguments.File} to {arguments.Width}px", cancellationToken);
+        }
+    }
+
+    public sealed class OtherResizeImageJob : IJobHandler<ResizeImage>
+    {
+        public Task HandleAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    public sealed class FlakyJob(JobProbe probe) : IJobHandler<Flaky>
+    {
+        public Task HandleAsync(Flaky arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            probe.Runs.Add(context.Attempt);
+            if (context.Attempt <= arguments.FailTimes)
+                throw new InvalidOperationException($"failure {context.Attempt}");
+
+            return Task.CompletedTask;
+        }
+    }
+
+    public sealed class WaitForCancellationJob(JobProbe probe) : IJobHandler<WaitForCancellation>
+    {
+        public async Task HandleAsync(WaitForCancellation arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            probe.Contexts.Enqueue(context);
+            if (Interlocked.Increment(ref probe.RunCount) > 1 && arguments.CompleteOnSecondRun)
+                return;
+
+            probe.Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                probe.Cancelled.TrySetResult();
+                throw;
+            }
+        }
+    }
+
+    [Job(Name = "ignored")]
+    public sealed class NamedArgumentsJob : IJobHandler<Slow>
+    {
+        public Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    public sealed class LingerJob(JobProbe probe) : IJobHandler<Linger>
+    {
+        public async Task HandleAsync(Linger arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            await Task.Delay(arguments.Milliseconds, cancellationToken);
+        }
+    }
+
+    public record Keyed(string Project);
+
+    public record ProjectReset(string? ProjectId) : IHaveJobKeys
+    {
+        string? IHaveJobKeys.ConcurrencyKey => ProjectId;
+        string? IHaveJobKeys.DeduplicationKey => ProjectId is null ? null : $"reset:{ProjectId}";
+    }
+
+    public sealed class ProjectResetJob : IJobHandler<ProjectReset>
+    {
+        public Task HandleAsync(ProjectReset arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    public record Stubborn(int Milliseconds);
+
+    /// <summary>Runs for its time whether or not its token is cancelled, recording whether it was.</summary>
+    public sealed class StubbornJob(JobProbe probe) : IJobHandler<Stubborn>
+    {
+        public async Task HandleAsync(Stubborn arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            probe.Runs.Add(context.Attempt);
+            await Task.Delay(arguments.Milliseconds, CancellationToken.None);
+            if (cancellationToken.IsCancellationRequested)
+                probe.Events.Enqueue("cancelled");
+        }
+    }
+
+    public record Gated;
+
+    /// <summary>Tracks how many <see cref="KeyedJob"/> runs of each project overlap.</summary>
+    public sealed class KeyedProbe
+    {
+        private readonly ConcurrentDictionary<string, int> _running = new();
+        private readonly ConcurrentDictionary<string, int> _peaks = new();
+
+        public int PeakFor(string project) => _peaks.GetValueOrDefault(project);
+
+        public void Enter(string project)
+        {
+            int now = _running.AddOrUpdate(project, 1, (_, count) => count + 1);
+            _peaks.AddOrUpdate(project, now, (_, peak) => Math.Max(peak, now));
+        }
+
+        public void Exit(string project) => _running.AddOrUpdate(project, 0, (_, count) => count - 1);
+    }
+
+    public sealed class KeyedJob(JobProbe probe, KeyedProbe keyed) : IJobHandler<Keyed>
+    {
+        public async Task HandleAsync(Keyed arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            keyed.Enter(arguments.Project);
+            try
+            {
+                await Task.Delay(100, cancellationToken);
+            }
+            finally
+            {
+                keyed.Exit(arguments.Project);
+            }
+        }
+    }
+
+    /// <summary>The first run waits for the test to open the gate; the others finish at once.</summary>
+    public sealed class GatedJob(JobProbe probe, TaskCompletionSource gate) : IJobHandler<Gated>
+    {
+        public async Task HandleAsync(Gated arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            if (probe.Started.TrySetResult())
+                await gate.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    public sealed class SlowJob(JobProbe probe) : IJobHandler<Slow>
+    {
+        public async Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            await Task.Delay(100, cancellationToken);
+        }
+    }
+
+    public record JobSettings(int Attempts);
+
+    public interface IMissingService;
+
+    public sealed class NeedsMissingServiceJob(IMissingService missing) : IJobHandler<Slow>
+    {
+        public Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.FromResult(missing);
+    }
+
+    [Job(Name = "slow-tick")]
+    public sealed class SlowTickJob(JobProbe probe) : IJobHandler
+    {
+        public async Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            await Task.Delay(100, cancellationToken);
+        }
+    }
+
+    [Job(Name = "flaky-tick")]
+    public sealed class FlakyTickJob(JobProbe probe) : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
+        {
+            probe.Contexts.Enqueue(context);
+            if (context.Attempt == 1)
+                throw new InvalidOperationException("transient");
+
+            return Task.CompletedTask;
+        }
+    }
+
+    [Job(Name = "tick")]
+    public sealed class TickJob(JobProbe probe) : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
+        {
+            probe.Runs.Add(0);
+            probe.Contexts.Enqueue(context);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Records the activity it runs in and the headers it was enqueued with.</summary>
+    public sealed class TracedJob(JobProbe probe) : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
+        {
+            var activity = Activity.Current;
+            probe.Traces.Enqueue((activity?.TraceId ?? default, activity?.ParentSpanId ?? default, activity?.TraceStateString, context.Headers));
+            return Task.CompletedTask;
+        }
+    }
+
+    [Job(Name = "legacy-cleanup")]
+    public sealed class NamedLikeTheLegacyJob : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>Returns the <see cref="JobResult"/> that <see cref="JobProbe.LegacyResult"/> names; "wait" waits to be cancelled.</summary>
+    [Job(Name = "legacy-result")]
+    public sealed class ResultLegacyJob(JobProbe probe) : IJob
+    {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        {
+            switch (probe.LegacyResult)
+            {
+                case "failed":
+                    return JobResult.FailedWithMessage("disk full");
+                case "exception":
+                    return JobResult.FromException(new InvalidOperationException("boom"));
+                case "cancelled":
+                    return JobResult.CancelledWithMessage("stopped");
+            }
+
+            probe.Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return JobResult.CancelledWithMessage("stopped early");
+            }
+
+            return JobResult.Success;
+        }
+    }
+
+    /// <summary>A <see cref="JobWithLockBase"/> whose lock is always held elsewhere, as with a lock provider that does not wait.</summary>
+    [Job(Name = "legacy-locked")]
+    public sealed class LockedLegacyJob(ILoggerFactory loggerFactory) : JobWithLockBase(loggerFactory)
+    {
+        protected override Task<JobResult> RunInternalAsync(JobContext context) => Task.FromResult(JobResult.Success);
+
+        protected override Task<Foundatio.Lock.ILock?> GetLockAsync(CancellationToken cancellationToken = default) => Task.FromResult<Foundatio.Lock.ILock?>(null);
+    }
+
+    [Job(Name = "legacy-cleanup")]
+    public sealed class LegacyCleanupJob(ILoggerFactory loggerFactory) : JobBase(loggerFactory)
+    {
+        protected override Task<JobResult> RunInternalAsync(JobContext context) => Task.FromResult(JobResult.SuccessWithMessage("cleaned up"));
+    }
+}

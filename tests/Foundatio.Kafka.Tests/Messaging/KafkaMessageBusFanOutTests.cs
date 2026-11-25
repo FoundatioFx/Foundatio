@@ -12,7 +12,7 @@ public class KafkaMessageBusFanOutTests : KafkaMessageBusTestBase
     protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         return new KafkaMessageBus(o => o
-            .BootstrapServers("127.0.0.1:9092")
+            .BootstrapServers(KafkaTestConnection.BootstrapServers)
             .Topic(Topic)
             .TopicReplicationFactor(1)
             .TopicNumberOfPartitions(1)

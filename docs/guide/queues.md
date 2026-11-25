@@ -1,6 +1,10 @@
-# Queues
+# Queues (legacy)
 
 Queues offer First In, First Out (FIFO) message delivery with reliable processing semantics. Foundatio provides multiple queue implementations through the `IQueue<T>` interface.
+
+::: warning Legacy API
+This page covers the original `IQueue<T>`, which remains supported. For new code, send commands with `IMessageClient` and handle them with an `IMessageHandler<T>`: retries, dead letters, lease renewal and concurrency are built in; see [Messaging](./messaging). For background work you track, see [Durable Jobs](./durable-jobs). To move existing queues, see [Migrating](./migrating-to-messaging).
+:::
 
 ## The IQueue Interface
 
@@ -1012,6 +1016,7 @@ var queue = new RedisQueue<WorkItem>(o => {
 ## Next Steps
 
 - [Jobs](./jobs) - Queue processor jobs for automatic background processing with `QueueJobBase<T>`
-- [Messaging](./messaging) - Pub/sub for event-driven patterns
+- [Message Bus (legacy)](./message-bus) - Pub/sub for event-driven patterns
+- [Messaging](./messaging) - Commands and events with handlers, for new code
 - [Locks](./locks) - Coordinate queue processing across instances
 - [Serialization](./serialization) - Serializer configuration and performance

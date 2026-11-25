@@ -122,14 +122,33 @@ public class OrderService
 }
 ```
 
+## Messages and Durable Jobs
+
+For new code, send commands and publish events with `IMessageClient` and handler classes, and run tracked background work as durable jobs with `IJobClient`. Foundatio handles retries, dead letters, concurrency and graceful shutdown:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseServiceName("orders")
+    .UseInMemory()                          // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...), UseAzureStorageQueues(...), UseRabbitMQ(...)
+    .AddSubscriber<OrderPlacedHandler>());  // an IMessageHandler<OrderPlaced>
+
+builder.Services.AddFoundatioJobs(j => j
+    .UseInMemory()                          // or UseRedis(), the shared job store with any transport
+    .AddJob<GenerateReportJob>());          // an IJobHandler<GenerateReport>
+```
+
+See [Messaging](./messaging) and [Durable Jobs](./durable-jobs). The `IQueue<T>` and `IMessageBus` APIs below remain supported; see [Migrating](./migrating-to-messaging) to move existing code.
+
+To test them, add `services.AddFoundatioTestHarness()` in your test host, before or after these registrations. It runs messaging and jobs in memory, whatever transport and store the app configures, and lets a test wait for outcomes or run pending work step by step; see [Testing](./messaging#testing).
+
 ## Switching to Production Implementations
 
 When moving to production, swap in-memory implementations for distributed ones:
 
 ```csharp
-using Foundatio.Redis.Cache;
-using Foundatio.Redis.Messaging;
-using Foundatio.Redis.Queues;
+using Foundatio.Caching;
+using Foundatio.Messaging;
+using Foundatio.Queues;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -140,18 +159,18 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 
 // Use Redis implementations
 builder.Services.AddSingleton<ICacheClient>(sp =>
-    new RedisCacheClient(o => o.ConnectionMultiplexer =
-        sp.GetRequiredService<IConnectionMultiplexer>())
+    new RedisCacheClient(o => o.ConnectionMultiplexer(
+        sp.GetRequiredService<IConnectionMultiplexer>()))
 );
 
 builder.Services.AddSingleton<IMessageBus>(sp =>
-    new RedisMessageBus(o => o.Subscriber =
-        sp.GetRequiredService<IConnectionMultiplexer>().GetSubscriber())
+    new RedisMessageBus(o => o.Subscriber(
+        sp.GetRequiredService<IConnectionMultiplexer>().GetSubscriber()))
 );
 
 builder.Services.AddSingleton<IQueue<WorkItem>>(sp =>
-    new RedisQueue<WorkItem>(o => o.ConnectionMultiplexer =
-        sp.GetRequiredService<IConnectionMultiplexer>())
+    new RedisQueue<WorkItem>(o => o.ConnectionMultiplexer(
+        sp.GetRequiredService<IConnectionMultiplexer>()))
 );
 ```
 
@@ -248,7 +267,8 @@ Now that you have the basics working, explore more advanced features:
 - [Caching](./caching) - Deep dive into caching patterns
 - [Queues](./queues) - Queue processing and behaviors
 - [Locks](./locks) - Distributed locking strategies
-- [Messaging](./messaging) - Pub/sub patterns
+- [Messaging](./messaging) - Commands and events with handlers, retries and dead letters, for new code
+- [Durable Jobs](./durable-jobs) - Stored jobs with arguments, progress, cancellation and CRON schedules
 - [Storage](./storage) - File storage operations
 - [Jobs](./jobs) - Background job processing
 - [Resilience](./resilience) - Retry policies and circuit breakers

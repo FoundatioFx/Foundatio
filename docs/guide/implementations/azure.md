@@ -8,8 +8,10 @@ Foundatio provides Azure implementations for storage, queuing, and messaging usi
 |----------------|-----------|---------|
 | `AzureFileStorage` | `IFileStorage` | Foundatio.AzureStorage |
 | `AzureStorageQueue<T>` | `IQueue<T>` | Foundatio.AzureStorage |
+| `AzureStorageQueueMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.AzureStorage |
 | `AzureServiceBusQueue<T>` | `IQueue<T>` | Foundatio.AzureServiceBus |
 | `AzureServiceBusMessageBus` | `IMessageBus` | Foundatio.AzureServiceBus |
+| `AzureServiceBusMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.AzureServiceBus |
 
 ## Installation
 
@@ -130,9 +132,59 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 
 For additional options, see [AzureServiceBusMessageBusOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBusOptions.cs).
 
+## Messages and Events
+
+`AzureServiceBusMessageTransport` runs [Messaging](/guide/messaging) on Service Bus queues, topics and subscriptions. Register it with `UseAzureServiceBus`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureServiceBus(new AzureServiceBusMessageTransportOptions { ConnectionString = connectionString, Prefix = "prod-" })
+    .AddConsumer<SendReceiptHandler>());
+```
+
+- Queues are named `{Prefix}queue.{name}` and topics `{Prefix}topic.{name}`, since Service Bus queues and topics share one namespace; durable subscriptions are named after the service, and instance subscriptions are created per receiver and removed by Service Bus once idle.
+- Leases are peek-lock locks with the entity's lock duration (`LockDuration`, 1 minute by default), renewed by Foundatio. Delays are scheduled messages; a delayed retry is a scheduled copy.
+- `RequiresSession = true` orders groups with sessions; `RequiresDuplicateDetection = true` drops repeated deduplication ids.
+- `CreateEntities = false` uses entities created ahead of time, for applications without Manage rights.
+
+See [Using Azure Service Bus](/guide/messaging#using-azure-service-bus) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for the mapping, sessions, sizes and limits.
+
+There is no Service Bus or Storage job store: store [Durable Jobs](/guide/durable-jobs#using-redis) in Redis, the only job store instances share, alongside this transport.
+
+### Monitoring Messages
+
+The transport's `GetStatsAsync` reads the queue's or subscription's runtime properties, one administration call.
+
+- **Queued**: `ActiveMessageCount`. Service Bus counts locked messages as active, so messages being handled count here.
+- **Delayed**: a queue's `ScheduledMessageCount`, delayed sends and retries. Null for subscriptions, whose scheduled messages wait in the topic.
+- **InFlight**: null.
+- **DeadLettered**: `DeadLetterMessageCount`.
+
+Instance subscriptions are not counted (null), and a source that does not exist counts as empty. The emulator reports zero for every count, so on it the transport returns null.
+
+### On Azure Storage Queues
+
+`AzureStorageQueueMessageTransport` runs [Messaging](/guide/messaging) on Storage queues. Register it with `UseAzureStorageQueues`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions { ConnectionString = connectionString, Prefix = "prod-" })
+    .AddConsumer<SendReceiptHandler>());
+```
+
+- Storage has no topics: each durable or instance subscription is a queue named after its topic, and a publish lists them and sends a copy to each. Dead letters go to the source's queue name plus `-poison`.
+- Leases, delays and retries are visibility timeouts, of up to 7 days. Messages never expire unless `MessageTimeToLive` is set, and dead letters never expire.
+- A publish is a `List Queues` call and then a send per subscription queue. It isn't atomic: an instance queue removed meanwhile is skipped, and if a send fails the rest still finish and the publish throws, naming the failed queues.
+- The identity needs the Storage Queue Data Contributor role, since receivers create queues and publishes list them.
+- Receivers poll, since Storage can't long-poll, backing off to `MaxPollInterval` (2 seconds) while the queue is empty.
+- Messages can be 46 KiB with their headers. It doesn't order groups or deduplicate.
+- `GetStatsAsync` reports Storage's approximate count as `Queued`, which includes messages being handled and delayed ones, and the `-poison` queue's as `DeadLettered`.
+
+See [Using Azure Storage Queues](/guide/messaging#using-azure-storage-queues) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureStorage#message-transport-preview) for names, polling cost and limits.
+
 ## Running the Tests
 
-The Azure Service Bus provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.AzureServiceBus`, with its tests in `tests/Foundatio.AzureServiceBus.Tests`. The tests run against the [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) at `localhost:5672`, with the queues and topics defined in `build/servicebus-emulator/Config.json`. Start it from the repository root and run them:
+The Azure Service Bus provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.AzureServiceBus`, with its tests in `tests/Foundatio.AzureServiceBus.Tests`. The tests run against the [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) at `localhost:5672`, with the queues and topics defined in `build/servicebus-emulator/Config.json`. The message transport tests create their own entities through the emulator's management API on `localhost:5300` and delete them when each test ends, since the emulator holds at most 50 queues. Start it from the repository root and run them:
 
 ```bash
 docker compose up -d servicebus-emulator
@@ -154,5 +206,6 @@ The tests read their connection string from `ConnectionStrings:AzureStorageConne
 
 - [File Storage Guide](/guide/storage) - Usage patterns
 - [Queues Guide](/guide/queues) - Queue processing patterns
-- [Messaging Guide](/guide/messaging) - Pub/sub patterns
+- [Messaging Guide](/guide/messaging) - Commands and events on this transport
+- [Message Bus Guide](/guide/message-bus) - `IMessageBus` pub/sub (legacy)
 - [Serialization](/guide/serialization) - Configure serialization

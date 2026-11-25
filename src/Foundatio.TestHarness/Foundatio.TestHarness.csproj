@@ -3,6 +3,7 @@
     <TargetFrameworks>net10.0</TargetFrameworks>
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
+    <Description>Conformance test suites for authors of Foundatio providers (caches, queues, message transports, job stores, storage). App tests need only the Foundatio package: services.AddFoundatioTestHarness().</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />

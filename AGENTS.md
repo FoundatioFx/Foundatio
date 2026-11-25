@@ -73,6 +73,7 @@ src
 │   ├── Extensions                    # Extension methods
 │   └── Utility                       # Utility classes
 ├── Foundatio.AzureStorage            # Azure Storage provider
+│   ├── Messaging                     # Message transport on Azure Storage Queues
 │   ├── Queues                        # IQueue<T> implementations for Azure Storage Queues
 │   ├── Storage                       # IFileStorage implementations for Azure Blob Storage
 │   └── Extensions                    # Extension methods

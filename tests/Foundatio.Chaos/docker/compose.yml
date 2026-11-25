@@ -1,0 +1,218 @@
+# Brokers for the chaos workload, reached through toxiproxy so scenarios can cut, slow or reset connections.
+# Ports default to the ones the round-7 chaos run used; override them with the variables below.
+#   docker compose -p pr601-chaos -f tests/Foundatio.Chaos/docker/compose.yml --profile redis --profile kafka up -d
+name: pr601-chaos
+
+x-redis: &redis
+  image: bitnamilegacy/redis-cluster:8.2.1
+  network_mode: host
+  cpuset: "${CHAOS_CPUS:-14-17}"
+  profiles: [redis]
+  depends_on: [toxiproxy]
+
+x-kafka: &kafka
+  image: apache/kafka:4.3.1
+  cpuset: "${CHAOS_CPUS:-14-17}"
+  profiles: [kafka]
+  networks: [chaos]
+
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    network_mode: host
+    cpuset: "${CHAOS_CPUS:-14-17}"
+    command: ["-host", "127.0.0.1", "-port", "28474", "-config", "/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy.json:/config/toxiproxy.json:ro
+
+  redis-0:
+    <<: *redis
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7700
+      - REDIS_CLUSTER_ANNOUNCE_IP=127.0.0.1
+      - REDIS_CLUSTER_ANNOUNCE_PORT=26700
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=17700
+      - REDIS_AOF_ENABLED=${CHAOS_REDIS_AOF:-yes}
+      - REDIS_RDB_POLICY_DISABLED=${CHAOS_REDIS_RDB_DISABLED:-no}
+      - REDIS_NODES=127.0.0.1:7700 127.0.0.1:7701 127.0.0.1:7702 127.0.0.1:7703 127.0.0.1:7704 127.0.0.1:7705
+      - REDIS_EXTRA_FLAGS=--cluster-node-timeout 5000 --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7700", "ping"]
+      interval: 2s
+      retries: 60
+
+  redis-1:
+    <<: *redis
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7701
+      - REDIS_CLUSTER_ANNOUNCE_IP=127.0.0.1
+      - REDIS_CLUSTER_ANNOUNCE_PORT=26701
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=17701
+      - REDIS_AOF_ENABLED=${CHAOS_REDIS_AOF:-yes}
+      - REDIS_RDB_POLICY_DISABLED=${CHAOS_REDIS_RDB_DISABLED:-no}
+      - REDIS_NODES=127.0.0.1:7700 127.0.0.1:7701 127.0.0.1:7702 127.0.0.1:7703 127.0.0.1:7704 127.0.0.1:7705
+      - REDIS_EXTRA_FLAGS=--cluster-node-timeout 5000 --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7701", "ping"]
+      interval: 2s
+      retries: 60
+
+  redis-2:
+    <<: *redis
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7702
+      - REDIS_CLUSTER_ANNOUNCE_IP=127.0.0.1
+      - REDIS_CLUSTER_ANNOUNCE_PORT=26702
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=17702
+      - REDIS_AOF_ENABLED=${CHAOS_REDIS_AOF:-yes}
+      - REDIS_RDB_POLICY_DISABLED=${CHAOS_REDIS_RDB_DISABLED:-no}
+      - REDIS_NODES=127.0.0.1:7700 127.0.0.1:7701 127.0.0.1:7702 127.0.0.1:7703 127.0.0.1:7704 127.0.0.1:7705
+      - REDIS_EXTRA_FLAGS=--cluster-node-timeout 5000 --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7702", "ping"]
+      interval: 2s
+      retries: 60
+
+  redis-3:
+    <<: *redis
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7703
+      - REDIS_CLUSTER_ANNOUNCE_IP=127.0.0.1
+      - REDIS_CLUSTER_ANNOUNCE_PORT=26703
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=17703
+      - REDIS_AOF_ENABLED=${CHAOS_REDIS_AOF:-yes}
+      - REDIS_RDB_POLICY_DISABLED=${CHAOS_REDIS_RDB_DISABLED:-no}
+      - REDIS_NODES=127.0.0.1:7700 127.0.0.1:7701 127.0.0.1:7702 127.0.0.1:7703 127.0.0.1:7704 127.0.0.1:7705
+      - REDIS_EXTRA_FLAGS=--cluster-node-timeout 5000 --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7703", "ping"]
+      interval: 2s
+      retries: 60
+
+  redis-4:
+    <<: *redis
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7704
+      - REDIS_CLUSTER_ANNOUNCE_IP=127.0.0.1
+      - REDIS_CLUSTER_ANNOUNCE_PORT=26704
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=17704
+      - REDIS_AOF_ENABLED=${CHAOS_REDIS_AOF:-yes}
+      - REDIS_RDB_POLICY_DISABLED=${CHAOS_REDIS_RDB_DISABLED:-no}
+      - REDIS_NODES=127.0.0.1:7700 127.0.0.1:7701 127.0.0.1:7702 127.0.0.1:7703 127.0.0.1:7704 127.0.0.1:7705
+      - REDIS_EXTRA_FLAGS=--cluster-node-timeout 5000 --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7704", "ping"]
+      interval: 2s
+      retries: 60
+
+  redis-5:
+    <<: *redis
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_CLUSTER_DYNAMIC_IPS=no
+      - REDIS_PORT_NUMBER=7705
+      - REDIS_CLUSTER_ANNOUNCE_IP=127.0.0.1
+      - REDIS_CLUSTER_ANNOUNCE_PORT=26705
+      - REDIS_CLUSTER_ANNOUNCE_BUS_PORT=17705
+      - REDIS_AOF_ENABLED=${CHAOS_REDIS_AOF:-yes}
+      - REDIS_RDB_POLICY_DISABLED=${CHAOS_REDIS_RDB_DISABLED:-no}
+      - REDIS_NODES=127.0.0.1:7700 127.0.0.1:7701 127.0.0.1:7702 127.0.0.1:7703 127.0.0.1:7704 127.0.0.1:7705
+      - REDIS_CLUSTER_REPLICAS=1
+      - REDIS_CLUSTER_CREATOR=yes
+      - REDIS_EXTRA_FLAGS=--cluster-node-timeout 5000 --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -p 7705 cluster info | grep cluster_state:ok"]
+      interval: 2s
+      retries: 60
+
+  kafka-1:
+    <<: *kafka
+    hostname: kafka-1
+    ports:
+      - "127.0.0.1:19092:19092"
+    environment:
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=controller,broker
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka-1:29093,2@kafka-2:29093,3@kafka-3:29093
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_LISTENERS=CONTROLLER://:29093,INTERNAL://:29092,EXTERNAL://:19092
+      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://kafka-1:29092,EXTERNAL://127.0.0.1:26092
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_HEAP_OPTS=-Xmx512m -Xms256m
+
+  kafka-2:
+    <<: *kafka
+    hostname: kafka-2
+    ports:
+      - "127.0.0.1:19093:19092"
+    environment:
+      - KAFKA_NODE_ID=2
+      - KAFKA_PROCESS_ROLES=controller,broker
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka-1:29093,2@kafka-2:29093,3@kafka-3:29093
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_LISTENERS=CONTROLLER://:29093,INTERNAL://:29092,EXTERNAL://:19092
+      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://kafka-2:29092,EXTERNAL://127.0.0.1:26093
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_HEAP_OPTS=-Xmx512m -Xms256m
+
+  kafka-3:
+    <<: *kafka
+    hostname: kafka-3
+    ports:
+      - "127.0.0.1:19094:19092"
+    environment:
+      - KAFKA_NODE_ID=3
+      - KAFKA_PROCESS_ROLES=controller,broker
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka-1:29093,2@kafka-2:29093,3@kafka-3:29093
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_LISTENERS=CONTROLLER://:29093,INTERNAL://:29092,EXTERNAL://:19092
+      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://kafka-3:29092,EXTERNAL://127.0.0.1:26094
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_HEAP_OPTS=-Xmx512m -Xms256m
+
+  floci:
+    image: floci/floci:2.1.0
+    cpuset: "${CHAOS_CPUS:-14-17}"
+    profiles: [sqs]
+    ports:
+      - "127.0.0.1:26400:4566"
+
+networks:
+  chaos: {}

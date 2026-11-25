@@ -68,9 +68,38 @@ var cached = await cache.GetAsync<User>("user:123");
 
 [Learn more about Caching →](./caching)
 
-### Queues
+### Messaging
 
-Reliable message delivery with at-least-once semantics:
+Commands sent to one consumer, and events published to every interested service, handled by plain classes from DI, with retries, dead letters and durable subscriptions:
+
+```csharp
+services.AddFoundatioMessaging(m => m.UseInMemory().AddSubscriber<OrderPlacedHandler>());
+
+public class OrderPlacedHandler : IMessageHandler<OrderPlaced>
+{
+    public Task HandleAsync(OrderPlaced order, IMessageContext context, CancellationToken ct) => ProcessOrderAsync(order, ct);
+}
+
+await messages.PublishAsync(new OrderPlaced(123));   // IMessageClient from DI
+```
+
+[Learn more about Messaging →](./messaging)
+
+### Durable Jobs
+
+Stored background jobs with arguments, progress, cancellation, retries and CRON schedules:
+
+```csharp
+services.AddFoundatioJobs(j => j.UseInMemory().AddJob<GenerateReportJob>());
+
+var job = await jobs.EnqueueAsync(new GenerateReport("pdf"));   // IJobClient from DI
+```
+
+[Learn more about Durable Jobs →](./durable-jobs)
+
+### Queues (legacy)
+
+Reliable message delivery with at-least-once semantics, through the original `IQueue<T>`; new code sends commands with `IMessageClient` instead:
 
 ```csharp
 IQueue<WorkItem> queue = new InMemoryQueue<WorkItem>();
@@ -100,9 +129,9 @@ if (lck != null)
 
 [Learn more about Locks →](./locks)
 
-### Messaging
+### Message Bus (legacy)
 
-Publish/subscribe messaging:
+Publish/subscribe messaging through the original `IMessageBus`, which `HybridCacheClient` and `CacheLockProvider` use; new code publishes events with `IMessageClient` instead:
 
 ```csharp
 IMessageBus bus = new InMemoryMessageBus();
@@ -110,7 +139,7 @@ await bus.SubscribeAsync<OrderCreated>(msg => ProcessOrder(msg));
 await bus.PublishAsync(new OrderCreated { OrderId = 123 });
 ```
 
-[Learn more about Messaging →](./messaging)
+[Learn more about the Message Bus →](./message-bus)
 
 ### File Storage
 
@@ -124,9 +153,9 @@ var file = await storage.GetFileStreamAsync("reports/2024/report.pdf", StreamMod
 
 [Learn more about Storage →](./storage)
 
-### Jobs
+### Hosted Jobs
 
-Background job processing:
+Continuously running background jobs, hosted with `services.AddJob<T>()`; for stored jobs you enqueue or schedule, use [Durable Jobs](./durable-jobs):
 
 ```csharp
 public class MyJob : JobBase

@@ -1,0 +1,362 @@
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Extensions;
+using Foundatio.Messaging.Transport;
+using Foundatio.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace Foundatio.Messaging;
+
+/// <summary>Configures Foundatio messaging. Every call to <c>AddFoundatioMessaging</c> adds to the same configuration.</summary>
+public sealed class FoundatioMessagingBuilder
+{
+    private readonly MessagingRegistrations _registrations;
+    private readonly bool _forTopics;
+    private bool _transportChosen;
+
+    internal FoundatioMessagingBuilder(IServiceCollection services, MessagingRegistrations registrations, bool forTopics = false)
+    {
+        Services = services;
+        _registrations = registrations;
+        _forTopics = forTopics;
+    }
+
+    /// <summary>The service collection being configured, for provider extensions that register their own services.</summary>
+    public IServiceCollection Services { get; }
+
+    /// <summary>Uses a process-local transport, on <see cref="MessagingOptions.TimeProvider"/>. Messages are lost when the process stops.</summary>
+    public FoundatioMessagingBuilder UseInMemory()
+    {
+        return UseTransport(sp => new InMemoryMessageTransport(MessagingOptions.ResolveTimeProvider(sp)));
+    }
+
+    /// <summary>Uses a transport you create and dispose yourself, for example one shared by several hosts in a test.</summary>
+    /// <remarks>Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness owns the transport.</remarks>
+    public FoundatioMessagingBuilder UseTransport(IMessageTransport transport)
+    {
+        ArgumentNullException.ThrowIfNull(transport);
+        _transportChosen = true;
+        if (TestHarnessRegistration.IsRegistered(Services))
+            return this;
+
+        if (_forTopics)
+        {
+            Services.RemoveAll<TopicTransportRegistration>();
+            Services.AddSingleton(new TopicTransportRegistration(transport));
+            return this;
+        }
+
+        Services.RemoveAll<IMessageTransport>();
+        Services.AddSingleton(transport);
+        return this;
+    }
+
+    /// <summary>Uses a transport created, and disposed, by the service provider.</summary>
+    /// <remarks>Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness owns the transport.</remarks>
+    public FoundatioMessagingBuilder UseTransport(Func<IServiceProvider, IMessageTransport> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _transportChosen = true;
+        if (TestHarnessRegistration.IsRegistered(Services))
+            return this;
+
+        if (_forTopics)
+        {
+            // Created by the service provider, so the provider disposes it, and with it the transport.
+            Services.ReplaceSingleton(sp => new TopicTransportRegistration(factory(sp)));
+            return this;
+        }
+
+        Services.ReplaceSingleton(factory);
+        return this;
+    }
+
+    /// <summary>
+    /// Puts topics on a transport of their own: every publish, every subscriber (service and instance scope), their
+    /// dead letters, and the legacy <see cref="IMessageBus"/> of <see cref="AddLegacyMessageBus"/>. Queues (sends,
+    /// consumers, their dead letters and delays) stay on the transport this builder uses. Choose the topics' transport
+    /// inside <paramref name="configure"/> with the same calls, for example <c>UseRedis()</c>; handlers and settings
+    /// belong outside it.
+    /// </summary>
+    /// <remarks>
+    /// For example, queues on Azure Storage Queues, which are durable and cheap but poll, and events on Redis, which
+    /// pushes them. Each transport is created and disposed like the one <see cref="UseTransport(Func{IServiceProvider, IMessageTransport})"/>
+    /// registers. Ignored when <c>AddFoundatioTestHarness()</c> is registered, before or after this call: the harness
+    /// transport carries both queues and topics.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// services.AddFoundatioMessaging(m => m
+    ///     .UseAzureStorageQueues(storageConnectionString)
+    ///     .ForTopics(t => t.UseRedis())
+    ///     .AddConsumer&lt;SendReceiptHandler&gt;()
+    ///     .AddSubscriber&lt;OrderPlacedHandler&gt;());
+    /// </code>
+    /// </example>
+    /// <exception cref="ArgumentException"><paramref name="configure"/> chose no transport.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="configure"/> registered a handler or changed a setting, which belong outside it.</exception>
+    public FoundatioMessagingBuilder ForTopics(Action<FoundatioMessagingBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        ThrowIfForTopics();
+
+        var topics = new FoundatioMessagingBuilder(Services, _registrations, forTopics: true);
+        configure(topics);
+        if (!topics._transportChosen)
+            throw new ArgumentException("Choose the topics' transport inside ForTopics, for example ForTopics(t => t.UseRedis()) or ForTopics(t => t.UseInMemory()).", nameof(configure));
+
+        return this;
+    }
+
+    /// <summary>
+    /// Names this service's durable subscriptions; see <see cref="MessagingOptions.ServiceName"/>. Required for
+    /// service-scoped subscribers on any transport but the in-memory one.
+    /// </summary>
+    public FoundatioMessagingBuilder UseServiceName(string serviceName)
+    {
+        ThrowIfForTopics();
+        MessageTypeRegistry.ValidateName(serviceName, nameof(serviceName));
+        return Configure(o => o.ServiceName = serviceName);
+    }
+
+    /// <summary>
+    /// Wraps the <see cref="IMessageClient"/> the service provider gives out, so handlers, endpoints and jobs that
+    /// resolve it get <paramref name="decorate"/>'s client, for example a <see cref="MessageClientDecorator"/> that
+    /// fails a publish in a test. Each call wraps the client the calls before it made. The test harness records what
+    /// reaches the inner client, so a send the decorator fails is not recorded. The legacy <see cref="IMessageBus"/> of
+    /// <see cref="AddLegacyMessageBus"/> does not go through it.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// services.AddFoundatioMessaging(m => m.DecorateClient(inner => new FailFirstPublish(inner)));
+    /// </code>
+    /// </example>
+    public FoundatioMessagingBuilder DecorateClient(Func<IMessageClient, IMessageClient> decorate)
+    {
+        ThrowIfForTopics();
+        ArgumentNullException.ThrowIfNull(decorate);
+        _registrations.ClientDecorators.Add((_, inner) => decorate(inner) ?? throw new InvalidOperationException("A DecorateClient callback returned null."));
+        return this;
+    }
+
+    /// <summary>
+    /// Wraps the <see cref="IMessageClient"/> the service provider gives out in a <typeparamref name="TDecorator"/>,
+    /// created with the client it wraps and its other constructor arguments from the service provider; see
+    /// <see cref="DecorateClient(Func{IMessageClient, IMessageClient})"/>.
+    /// </summary>
+    public FoundatioMessagingBuilder DecorateClient<TDecorator>() where TDecorator : class, IMessageClient
+    {
+        ThrowIfForTopics();
+        _registrations.ClientDecorators.Add((services, inner) => ActivatorUtilities.CreateInstance<TDecorator>(services, inner));
+        return this;
+    }
+
+    /// <summary>
+    /// Changes <see cref="MessagingOptions"/>. The same as <c>services.Configure&lt;MessagingOptions&gt;(configure)</c>:
+    /// callbacks from both, and options bound from configuration, run in the order they were added when messaging is
+    /// first resolved.
+    /// </summary>
+    public FoundatioMessagingBuilder Configure(Action<MessagingOptions> configure)
+    {
+        ThrowIfForTopics();
+        ArgumentNullException.ThrowIfNull(configure);
+        Services.Configure(configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Also provides the original <see cref="IMessageBus"/>, <see cref="IMessagePublisher"/> and <see cref="IMessageSubscriber"/>
+    /// on the topics' transport (see <see cref="ForTopics"/>), so existing code, including <c>HybridCacheClient</c> and <c>CacheLockProvider</c>, keeps working.
+    /// Every running instance receives every message, as before.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It does not talk to the original buses, such as <c>RedisMessageBus</c>, so every process that shares a bus must
+    /// switch to it in the same deployment.
+    /// </para>
+    /// <para>
+    /// It shares the message types <see cref="IMessageClient"/> knows, those mapped with <see cref="MapMessage{T}"/>,
+    /// marked with <see cref="MessageAttribute"/>, or handled by a registered handler: <see cref="IMessagePublisher.PublishAsync"/>
+    /// of one also reaches its <see cref="IMessageClient"/> subscribers, and <see cref="IMessageClient.PublishAsync{T}"/>
+    /// of one also reaches its <see cref="IMessageSubscriber.SubscribeAsync{T}"/> subscribers, each once. Other types
+    /// stay on the legacy bus. Between services, each one must know the type.
+    /// </para>
+    /// <para>
+    /// Such a publish is sent twice, to the legacy topic and to the type's topic. To send it once, to the type's topic,
+    /// add the type to <see cref="LegacyMessageBusOptions.MigratedMessageTypes"/> in every process that shares the bus.
+    /// </para>
+    /// </remarks>
+    public FoundatioMessagingBuilder AddLegacyMessageBus(Action<LegacyMessageBusOptions>? configure = null)
+    {
+        ThrowIfForTopics();
+        Services.ReplaceSingleton<IMessageBus>(sp =>
+        {
+            var options = new LegacyMessageBusOptions();
+            if (sp.GetService<Foundatio.Serializer.ISerializer>() is { } serializer)
+                options.Serializer = serializer;
+            options.TimeProvider = MessagingOptions.ResolveTimeProvider(sp);
+            if (sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>() is { } loggerFactory)
+                options.LoggerFactory = loggerFactory;
+            configure?.Invoke(options);
+            return new LegacyMessageBusAdapter(sp.GetRequiredService<MessagingRuntime>(), options);
+        });
+        Services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
+        Services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+        return this;
+    }
+
+    /// <summary>Gives <typeparamref name="T"/> a stable wire name, and optionally its queue and topic. Same as <see cref="MessageAttribute"/>.</summary>
+    public FoundatioMessagingBuilder MapMessage<T>(string name, string? queue = null, string? topic = null) where T : class
+    {
+        ThrowIfForTopics();
+        MessageTypeRegistry.ValidateName(name, nameof(name));
+        _registrations.Maps.Add((typeof(T), name, queue, topic));
+        return this;
+    }
+
+    /// <summary>
+    /// Handles messages sent with <see cref="IMessageClient.SendAsync{T}"/> for every <see cref="IMessageHandler{T}"/>
+    /// that <typeparamref name="THandler"/> implements. Replicas compete, so each message is handled once.
+    /// </summary>
+    /// <remarks>
+    /// Consumers of message types routed to the same queue share its deliveries, so they must set the same
+    /// <see cref="HandlerOptions"/>, or the host fails to start.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
+    public FoundatioMessagingBuilder AddConsumer<THandler>(HandlerOptions? options = null) where THandler : class
+    {
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, ValidateConsumer(options)).ToList(), typeof(THandler));
+    }
+
+    /// <summary>
+    /// Like <see cref="AddConsumer{THandler}(HandlerOptions?)"/>, with options created from the app's services when
+    /// the host starts, for example from configuration bound with <c>IOptions&lt;T&gt;</c>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// m.AddConsumer&lt;SendReceiptHandler&gt;(sp => new HandlerOptions { RetryPolicy = sp.GetRequiredService&lt;IOptions&lt;AppOptions&gt;&gt;().Value.ReceiptRetries });
+    /// </code>
+    /// </example>
+    public FoundatioMessagingBuilder AddConsumer<THandler>(Func<IServiceProvider, HandlerOptions> options) where THandler : class
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, new HandlerOptions(), options).ToList(), typeof(THandler));
+    }
+
+    /// <summary>
+    /// Like <see cref="AddConsumer{THandler}(HandlerOptions?)"/>, for only <typeparamref name="TMessage"/> of the message
+    /// types <typeparamref name="THandler"/> handles: for a class that handles a command and also subscribes to an event,
+    /// so the event gets no queue and the command no subscription.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
+    public FoundatioMessagingBuilder AddConsumer<THandler, TMessage>(HandlerOptions? options = null) where THandler : class, IMessageHandler<TMessage> where TMessage : class
+    {
+        var registrations = MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, ValidateConsumer(options));
+        return AddHandlers(registrations.Where(r => r.MessageType == typeof(TMessage)).ToList(), typeof(THandler));
+    }
+
+    /// <summary>Handles messages sent with <see cref="IMessageClient.SendAsync{T}"/> using a delegate.</summary>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is a <see cref="SubscriptionOptions"/> that sets a Name or Scope, which consumers do not have.</exception>
+    public FoundatioMessagingBuilder AddConsumer<T>(Func<T, IMessageContext, CancellationToken, Task> handler, HandlerOptions? options = null) where T : class
+    {
+        return AddHandlers([MessageHandlerRegistration.ForDelegate(handler, MessageHandlerKind.Consumer, ValidateConsumer(options))]);
+    }
+
+    /// <summary>
+    /// Handles events published with <see cref="IMessageClient.PublishAsync{T}"/> for every <see cref="IMessageHandler{T}"/>
+    /// that <typeparamref name="THandler"/> implements. Each service gets its own copy; use
+    /// <see cref="SubscriptionScope.Instance"/> to give every running instance a copy.
+    /// </summary>
+    /// <remarks>
+    /// Subscribers of one topic in one service share its subscription, and so each delivery: if one throws, all of them
+    /// run again, and they must set the same <see cref="HandlerOptions.RetryPolicy"/>, <see cref="HandlerOptions.LeaseDuration"/>
+    /// and <see cref="HandlerOptions.MaxConcurrency"/>, or the host fails to start. Give a subscriber its own
+    /// <see cref="SubscriptionOptions.Name"/> to isolate it.
+    /// </remarks>
+    public FoundatioMessagingBuilder AddSubscriber<THandler>(SubscriptionOptions? options = null) where THandler : class
+    {
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions())).ToList(), typeof(THandler));
+    }
+
+    /// <summary>
+    /// Like <see cref="AddSubscriber{THandler}(SubscriptionOptions?)"/>, with options created from the app's services
+    /// when the host starts, for example from configuration bound with <c>IOptions&lt;T&gt;</c>.
+    /// </summary>
+    public FoundatioMessagingBuilder AddSubscriber<THandler>(Func<IServiceProvider, SubscriptionOptions> options) where THandler : class
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, new SubscriptionOptions(), options).ToList(), typeof(THandler));
+    }
+
+    /// <summary>
+    /// Like <see cref="AddSubscriber{THandler}(SubscriptionOptions?)"/>, for only <typeparamref name="TMessage"/> of the
+    /// message types <typeparamref name="THandler"/> handles: for a class that subscribes to an event and also handles a
+    /// command, so the command gets no subscription and the event no queue.
+    /// </summary>
+    public FoundatioMessagingBuilder AddSubscriber<THandler, TMessage>(SubscriptionOptions? options = null) where THandler : class, IMessageHandler<TMessage> where TMessage : class
+    {
+        var registrations = MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions()));
+        return AddHandlers(registrations.Where(r => r.MessageType == typeof(TMessage)).ToList(), typeof(THandler));
+    }
+
+    /// <summary>Handles events published with <see cref="IMessageClient.PublishAsync{T}"/> using a delegate.</summary>
+    public FoundatioMessagingBuilder AddSubscriber<T>(Func<T, IMessageContext, CancellationToken, Task> handler, SubscriptionOptions? options = null) where T : class
+    {
+        return AddHandlers([MessageHandlerRegistration.ForDelegate(handler, MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions()))]);
+    }
+
+    /// <param name="registrations">The handlers to add.</param>
+    /// <param name="handlerType">
+    /// The handler class, registered as a scoped service unless the app registered it, so <c>ValidateOnBuild</c> (on by
+    /// default in Development) reports a missing dependency when the host is built, not when a message arrives.
+    /// </param>
+    private FoundatioMessagingBuilder AddHandlers(System.Collections.Generic.IReadOnlyList<MessageHandlerRegistration> registrations, Type? handlerType = null)
+    {
+        ThrowIfForTopics();
+        if (handlerType is not null)
+            Services.TryAddScoped(handlerType);
+
+        foreach (var registration in registrations)
+        {
+            if (registration.Kind == MessageHandlerKind.Consumer && _registrations.Handlers.Any(h => h.Kind == MessageHandlerKind.Consumer && h.MessageType == registration.MessageType))
+                throw new ArgumentException($"{registration.MessageType.Name} already has a consumer. A sent message is handled by exactly one consumer; use AddSubscriber for events several handlers react to.");
+
+            _registrations.Handlers.Add(registration);
+        }
+
+        return this;
+    }
+
+    private void ThrowIfForTopics()
+    {
+        if (_forTopics)
+        {
+            throw new InvalidOperationException("Inside ForTopics, only choose the topics' transport, for example ForTopics(t => t.UseRedis()). "
+                + "Register handlers, map messages and change settings on the builder outside it.");
+        }
+    }
+
+    internal static HandlerOptions ValidateConsumer(HandlerOptions? options)
+    {
+        if (options is SubscriptionOptions { Name: not null } or SubscriptionOptions { Scope: not null })
+        {
+            throw new ArgumentException("A consumer has no subscription, so SubscriptionOptions.Name and Scope do not apply to it: it receives from the queue its message type is "
+                + "routed to, which you set with [Message(Queue = ...)] or MapMessage. Pass HandlerOptions, or register an event handler with AddSubscriber.", nameof(options));
+        }
+
+        return Validate(options ?? new HandlerOptions());
+    }
+
+    internal static T Validate<T>(T options) where T : HandlerOptions
+    {
+        options.Validate();
+        (options.RetryPolicy)?.Validate();
+        if (options is SubscriptionOptions { Name: { } name })
+            MessageTypeRegistry.ValidateName(name, nameof(SubscriptionOptions.Name));
+
+        return options;
+    }
+}

@@ -1,0 +1,592 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Jobs.Store;
+using Foundatio.Messaging;
+using Foundatio.Monitoring;
+using Foundatio.Resilience;
+using Foundatio.Serializer;
+using Foundatio.Utility;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace Foundatio.Jobs;
+
+/// <summary>Claims due jobs this process can run and runs them with bounded concurrency.</summary>
+internal sealed class JobWorker
+{
+    private static readonly TimeSpan MinPollInterval = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan AbortGracePeriod = TimeSpan.FromSeconds(5);
+    // After a full batch, how long a claim waits for more slots to free; after a partial one, how long it waits for work.
+    private static readonly TimeSpan BatchFillWait = TimeSpan.FromMilliseconds(2);
+    private static readonly TimeSpan PartialBatchWait = TimeSpan.FromMilliseconds(5);
+    private const int MaxClaimBatch = 100;
+    private const int MaxBatchFill = 8;
+
+    private readonly JobsRuntime _runtime;
+    private readonly ILogger _logger;
+    private readonly SemaphoreSlim _slots;
+    private readonly ConcurrentDictionary<string, int> _runningByName = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (WorkCounter Counter, string Handler)> _tracking;
+
+    // Every job name, claimed as is unless a job type limits how many of it run at once.
+    private readonly List<string> _allNames;
+    private readonly bool _limitsByName;
+    private readonly CancellationTokenSource _stopClaiming = new();
+    private readonly JobLeaseRenewer _renewer;
+    private readonly int _batchFill;
+    private Task _loop = Task.CompletedTask;
+    private int _running;
+
+    public JobWorker(JobsRuntime runtime)
+    {
+        _runtime = runtime;
+        _logger = runtime.LoggerFactory.CreateLogger<JobWorker>();
+        _slots = new SemaphoreSlim(runtime.Options.MaxConcurrency, runtime.Options.MaxConcurrency);
+        Status = new ProcessingStatusTracker(runtime.TimeProvider);
+        _tracking = runtime.Jobs.Values.ToDictionary(j => j.Name,
+            j => (runtime.Tracker.GetCounter(WorkKind.Job, j.Name, null), JobNaming.GetDisplayName(j.JobType)), StringComparer.Ordinal);
+        _allNames = runtime.Jobs.Values.Select(j => j.Name).ToList();
+        _limitsByName = runtime.Jobs.Values.Any(j => j.Options.MaxConcurrency is not null);
+        _renewer = new JobLeaseRenewer(runtime.Store, runtime.Options.LeaseDuration, runtime.TimeProvider, _logger);
+        _batchFill = Math.Clamp(runtime.Options.MaxConcurrency / 4, 1, MaxBatchFill);
+    }
+
+    /// <summary>Read by health checks. Claim errors are recorded here; they never stop the worker.</summary>
+    public ProcessingStatusTracker Status { get; }
+
+    public int Running => Volatile.Read(ref _running);
+
+    public ProcessingStatus GetStatus()
+    {
+        var running = _runtime.Jobs.Keys.ToDictionary(name => name, name => _runningByName.GetValueOrDefault(name), StringComparer.Ordinal);
+        return Status.GetStatus("worker", running.Values.Sum(), running);
+    }
+
+    /// <summary>Cancels the job's token at once if it is running on this worker, rather than at its next lease renewal.</summary>
+    public bool RequestCancellation(string jobId) => _renewer.RequestCancellation(jobId);
+
+    public void Start()
+    {
+        _logger.LogInformation("Job worker {WorkerId} running {Jobs} (concurrency {MaxConcurrency})", _runtime.WorkerId, String.Join(", ", _runtime.Jobs.Keys), _runtime.Options.MaxConcurrency);
+        WarnAboutIgnoredJobAttributeProperties();
+        Status.MarkRunning();
+        _loop = Task.Run(RunClaimLoopAsync, CancellationToken.None);
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        Status.MarkStopped();
+        _stopClaiming.Cancel();
+        await _loop.AnyContext();
+
+        if (!await WaitForRunningAsync(_runtime.Options.ShutdownTimeout, cancellationToken).AnyContext())
+        {
+            _logger.LogWarning("Cancelling {Count} running jobs at shutdown; they will run again without using an attempt", Volatile.Read(ref _running));
+            _renewer.AbortAll();
+            await WaitForRunningAsync(AbortGracePeriod, CancellationToken.None).AnyContext();
+        }
+    }
+
+    private async Task RunClaimLoopAsync()
+    {
+        try
+        {
+            await ClaimLoopAsync().AnyContext();
+        }
+        catch (Exception ex)
+        {
+            Status.MarkFaulted(ex);
+            _logger.LogCritical(ex, "Job worker {WorkerId} stopped claiming jobs after an unexpected error", _runtime.WorkerId);
+        }
+    }
+
+    /// <summary>
+    /// Waits for a free slot, then claims as many jobs as there are free slots in one store call, so a worker is not
+    /// limited to one job per round trip to the store. While a backlog drains (the last batch was full), it waits a
+    /// moment for a few slots to free before claiming, so claims take several jobs rather than one per finished job.
+    /// After a partial batch the store has nothing more due, so it waits a moment for work before asking again.
+    /// </summary>
+    private async Task ClaimLoopAsync()
+    {
+        var token = _stopClaiming.Token;
+        var idle = MinPollInterval;
+        bool lastBatchFull = false;
+
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await _slots.WaitAsync(token).AnyContext();
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            int slots = 1;
+            while (slots < MaxClaimBatch && await _slots.WaitAsync(0, CancellationToken.None).AnyContext())
+                slots++;
+
+            if (lastBatchFull && slots < _batchFill)
+                slots += await WaitForSlotsAsync(_batchFill - slots, token).AnyContext();
+
+            var names = _allNames;
+            Dictionary<string, int>? maxPerName = null;
+            if (_limitsByName)
+                (names, maxPerName) = GetClaimableNames(slots);
+
+            IReadOnlyList<JobInfo> jobs = [];
+            var workAvailable = _runtime.WorkAvailable;
+            long claimSent = _runtime.TimeProvider.GetTimestamp();
+            try
+            {
+                if (names.Count > 0)
+                {
+                    var request = new JobClaimRequest { Names = names, WorkerId = _runtime.WorkerId, LeaseDuration = _runtime.Options.LeaseDuration, MaxPerName = maxPerName };
+                    jobs = await _runtime.Store.ClaimBatchAsync(request, slots, token).AnyContext();
+                }
+
+                Status.RecordSuccess();
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                _slots.Release(slots);
+                break;
+            }
+            catch (Exception ex)
+            {
+                Status.RecordFailure(ex);
+                _logger.LogError(ex, "Error claiming jobs");
+                idle = _runtime.Options.PollInterval;
+            }
+
+            if (jobs.Count < slots)
+                _slots.Release(slots - jobs.Count);
+
+            lastBatchFull = jobs.Count == slots;
+            if (jobs.Count == 0)
+            {
+                await WaitForWorkAsync(workAvailable, idle, _runtime.TimeProvider, token).AnyContext();
+                idle = TimeSpan.FromTicks(Math.Min(idle.Ticks * 2, _runtime.Options.PollInterval.Ticks));
+                continue;
+            }
+
+            if (token.IsCancellationRequested)
+            {
+                // Shutdown began while the claim was in flight: hand the jobs back for another worker rather than start them now.
+                foreach (var job in jobs)
+                    await CompleteAsync(job, JobCompletion.Release()).AnyContext();
+
+                _slots.Release(jobs.Count);
+                break;
+            }
+
+            idle = MinPollInterval;
+            foreach (var job in jobs)
+            {
+                Interlocked.Increment(ref _running);
+                _runningByName.AddOrUpdate(job.Name, 1, (_, count) => count + 1);
+                // On the thread pool, as Task.Run would, without a task and delegate nobody awaits.
+                ThreadPool.QueueUserWorkItem(static state => _ = state.Worker.RunClaimedAsync(state.Job, state.ClaimSent), (Worker: this, Job: job, ClaimSent: claimSent), preferLocal: false);
+            }
+
+            // Claiming again at once would most likely find nothing; a job enqueued or a key freed here signals sooner.
+            if (!lastBatchFull)
+                await WaitForWorkAsync(workAvailable, PartialBatchWait, TimeProvider.System, token).AnyContext();
+        }
+    }
+
+    /// <summary>Takes up to <paramref name="wanted"/> more slots as they free within <see cref="BatchFillWait"/>. Returns how many it took.</summary>
+    private async Task<int> WaitForSlotsAsync(int wanted, CancellationToken cancellationToken)
+    {
+        int taken = 0;
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            while (taken < wanted)
+            {
+                var remaining = BatchFillWait - Stopwatch.GetElapsedTime(started);
+                if (remaining <= TimeSpan.Zero || !await _slots.WaitAsync(remaining, cancellationToken).AnyContext())
+                    break;
+
+                taken++;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        return taken;
+    }
+
+    /// <summary>The job names under their type's concurrency limit, and how many jobs of each limited one a claim may take.</summary>
+    private (List<string> Names, Dictionary<string, int>? MaxPerName) GetClaimableNames(int slots)
+    {
+        var names = new List<string>(_allNames.Count);
+        Dictionary<string, int>? maxPerName = null;
+        foreach (var registration in _runtime.Jobs.Values)
+        {
+            if (registration.Options.MaxConcurrency is not { } limit)
+            {
+                names.Add(registration.Name);
+                continue;
+            }
+
+            int room = limit - _runningByName.GetValueOrDefault(registration.Name);
+            if (room <= 0)
+                continue;
+
+            names.Add(registration.Name);
+            if (room < slots)
+                (maxPerName ??= new Dictionary<string, int>(StringComparer.Ordinal))[registration.Name] = room;
+        }
+
+        return (names, maxPerName);
+    }
+
+    private async Task RunClaimedAsync(JobInfo claimed, long claimSent)
+    {
+        try
+        {
+            await RunAsync(claimed, claimSent).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error running job {JobId}", claimed.Id);
+        }
+        finally
+        {
+            _runningByName.AddOrUpdate(claimed.Name, 0, (_, count) => count - 1);
+            Interlocked.Decrement(ref _running);
+            _slots.Release();
+            // A limited job type has room again, or the job's concurrency key is free for the next job waiting for it.
+            if (_runtime.Jobs[claimed.Name].Options.MaxConcurrency is not null || claimed.ConcurrencyKey is not null)
+                _runtime.SignalWorkAvailable();
+        }
+    }
+
+    /// <param name="job">The claimed job.</param>
+    /// <param name="leaseStarted">A <see cref="TimeProvider"/> timestamp taken before the claim was sent; the lease runs from no earlier than this.</param>
+    private async Task RunAsync(JobInfo job, long leaseStarted)
+    {
+        var registration = _runtime.Jobs[job.Name];
+        var policy = registration.Options.RetryPolicy ?? _runtime.Options.DefaultRetryPolicy;
+        using var logScope = _logger.BeginScope(new LogScopeState("job.id", job.Id, "job.name", job.Name));
+        var (counter, handler) = _tracking[job.Name];
+
+        if (job.CancellationRequested)
+        {
+            await CompleteWithoutRunningAsync(job, counter, JobCompletion.Cancelled(_runtime.Options.RetainFailedFor, "Cancelled before it started")).AnyContext();
+            return;
+        }
+
+        if (job.Attempt > policy.MaxAttempts)
+        {
+            await CompleteWithoutRunningAsync(job, counter, JobCompletion.Failed(_runtime.Options.RetainFailedFor,
+                $"Gave up after {policy.MaxAttempts} attempts; the last attempt stopped without finishing (its worker crashed or lost the lease).")).AnyContext();
+            return;
+        }
+
+        object? arguments = null;
+        if (registration.ArgumentsType is { } argumentsType)
+        {
+            try
+            {
+                arguments = _runtime.Serializer.Deserialize(job.Payload, argumentsType) ?? throw new InvalidOperationException("The arguments deserialized to null.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not deserialize the arguments of job {JobId}", job.Id);
+                await CompleteWithoutRunningAsync(job, counter, JobCompletion.Failed(_runtime.Options.RetainFailedFor, $"Could not deserialize the arguments: {ex.Message}")).AnyContext();
+                return;
+            }
+        }
+
+        var context = new JobRunContext(job, _runtime.Store, _runtime.TimeProvider, _logger);
+        using var activity = StartActivity(job);
+        long started = Stopwatch.GetTimestamp();
+
+        Exception? error = null;
+        var previous = JobRunContext.Current;
+        JobRunContext.Current = context;
+        _runtime.Tracker.Start(context, counter, handler);
+        using var running = _renewer.Track(job, leaseStarted);
+        try
+        {
+            await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
+            await registration.Invoke(scope.ServiceProvider, arguments, context, running.Token).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            error = ex;
+        }
+        finally
+        {
+            JobRunContext.Current = previous;
+            _runtime.Tracker.Stop(context);
+        }
+
+        await _renewer.UntrackAsync(running).AnyContext();
+        if (running.IsRevoked)
+        {
+            RecordLost(job, context, error, started);
+            return;
+        }
+
+        try
+        {
+            await context.FlushAsync(CancellationToken.None).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not save the progress of job {JobId}", job.Id);
+        }
+
+        JobCompletion completion;
+        if (error is null)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Job {JobName} {JobId} succeeded", job.Name, job.Id);
+            completion = JobCompletion.Succeeded(GetRetainSucceededFor(job, registration));
+        }
+        else
+        {
+            completion = Decide(job, policy, error, running);
+        }
+
+        // A run that outlived the lease this worker could prove is recorded unless another worker has claimed the job since.
+        if (!await CompleteAsync(job, completion, context, logFenced: !running.IsLost).AnyContext() && running.IsLost)
+        {
+            RecordLost(job, context, error, started);
+            return;
+        }
+
+        if (JobsInstruments.Completed.Enabled || JobsInstruments.Duration.Enabled)
+            RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
+        _runtime.Tracker.Complete(context, ToWorkOutcome(completion), DescribeError(completion));
+        if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt && activity is not null)
+        {
+            if (error is not null)
+                activity.SetTag(MessagingInstruments.ErrorType, error.GetType().FullName ?? error.GetType().Name);
+            activity.SetErrorStatus(error, completion.Error);
+        }
+    }
+
+    private void RecordLost(JobInfo job, JobRunContext context, Exception? error, long started)
+    {
+        _logger.LogWarning(error, "Job {JobId} lost its lease while running; its result is not recorded and another worker may run it again", job.Id);
+        RecordRun(job, "lost", started);
+        _runtime.Tracker.Complete(context, WorkOutcome.Cancelled, "The lease was lost; another worker may run the job again");
+    }
+
+    /// <summary>The job's span, continuing the trace it was enqueued under; null, without parsing or naming it, when nothing listens.</summary>
+    private static Activity? StartActivity(JobInfo job)
+    {
+        if (!FoundatioDiagnostics.ActivitySource.HasListeners())
+            return null;
+
+        ActivityContext.TryParse(job.Headers.GetValueOrDefault(KnownHeaders.TraceParent), job.Headers.GetValueOrDefault(KnownHeaders.TraceState), out var parent);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"job {job.Name}", ActivityKind.Consumer, parent);
+        if (activity is not { IsAllDataRequested: true })
+            return activity;
+
+        activity.SetTag(JobsInstruments.JobId, job.Id);
+        activity.SetTag(JobsInstruments.JobName, job.Name);
+        if (job.CorrelationId is not null)
+            activity.SetTag(MessagingInstruments.ConversationId, job.CorrelationId);
+        return activity;
+    }
+
+    /// <summary>Records the result of a job that ends without running, and counts it.</summary>
+    private async Task CompleteWithoutRunningAsync(JobInfo job, WorkCounter counter, JobCompletion completion)
+    {
+        await CompleteAsync(job, completion).AnyContext();
+        _runtime.Tracker.Record(counter, ToWorkOutcome(completion), job.Id, job.Attempt, job.CorrelationId, DescribeError(completion));
+    }
+
+    private static WorkOutcome ToWorkOutcome(JobCompletion completion) => completion.State switch
+    {
+        JobState.Succeeded => WorkOutcome.Succeeded,
+        JobState.Failed => WorkOutcome.Failed,
+        JobState.Queued when !completion.RefundAttempt => WorkOutcome.Retried,
+        _ => WorkOutcome.Cancelled
+    };
+
+    private static string? DescribeError(JobCompletion completion) => completion.State switch
+    {
+        JobState.Succeeded => null,
+        JobState.Queued when completion.RefundAttempt => "Interrupted by shutdown; the job will run again",
+        JobState.Cancelled => completion.Message ?? "Cancelled",
+        _ => completion.Error
+    };
+
+    private static void RecordRun(JobInfo job, string outcome, long started)
+    {
+        var tags = new TagList { { JobsInstruments.JobName, job.Name }, { MessagingInstruments.Outcome, outcome } };
+        JobsInstruments.Completed.Add(1, tags);
+        JobsInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
+    }
+
+    /// <summary>
+    /// Legacy <see cref="JobAttribute"/> settings for hosted jobs have no effect on durable jobs; say so instead of ignoring
+    /// them silently. Not for a <see cref="LegacyJob{TJob}"/> with a CRON schedule: the schedule replaces them, and they
+    /// stay for where the same class runs as a hosted job.
+    /// </summary>
+    private void WarnAboutIgnoredJobAttributeProperties()
+    {
+        var scheduled = _runtime.Registrations.Schedules.Values.Select(s => s.JobName).ToHashSet(StringComparer.Ordinal);
+        var jobTypes = _runtime.Jobs
+            .Where(j => JobNaming.GetNamedType(j.Value.JobType) == j.Value.JobType || !scheduled.Contains(j.Key))
+            .Select(j => JobNaming.GetNamedType(j.Value.JobType))
+            .Distinct();
+
+        foreach (var jobType in jobTypes)
+        {
+            if (jobType.GetCustomAttribute<JobAttribute>() is not { } attribute)
+                continue;
+
+            var ignored = new List<string>();
+            if (!attribute.IsContinuous)
+                ignored.Add(nameof(JobAttribute.IsContinuous));
+            if (attribute.Interval is not null)
+                ignored.Add(nameof(JobAttribute.Interval));
+            if (attribute.InitialDelay is not null)
+                ignored.Add(nameof(JobAttribute.InitialDelay));
+            if (attribute.IterationLimit != -1)
+                ignored.Add(nameof(JobAttribute.IterationLimit));
+            if (attribute.InstanceCount != 1)
+                ignored.Add(nameof(JobAttribute.InstanceCount));
+
+            if (ignored.Count > 0)
+            {
+                _logger.LogWarning("[Job] sets {Properties} on {JobType}, which durable jobs ignore: a durable job runs once each time it is enqueued or its AddCronJob schedule fires, "
+                    + "and JobTypeOptions.MaxConcurrency limits how many run at once", String.Join(", ", ignored), jobType.Name);
+            }
+        }
+    }
+
+    /// <summary>Decides how a run that threw <paramref name="error"/> ends: cancelled, released at shutdown, retried or failed.</summary>
+    private JobCompletion Decide(JobInfo job, RetryPolicy policy, Exception error, RunningJob running)
+    {
+        if (error is OperationCanceledException)
+        {
+            // Cancelled because the lease could not be renewed: run again, as a worker that reclaims it after the lease would.
+            if (running.IsLost && !running.CancellationRequested && !running.Aborted)
+                return JobCompletion.Retry(TimeSpan.Zero, "The lease could not be renewed in time, so the run was cancelled");
+
+            if (running.CancellationRequested)
+            {
+                _logger.LogInformation("Job {JobName} {JobId} was cancelled", job.Name, job.Id);
+                return JobCompletion.Cancelled(_runtime.Options.RetainFailedFor);
+            }
+
+            if (running.Aborted)
+            {
+                _logger.LogInformation("Job {JobName} {JobId} was interrupted by shutdown and will run again", job.Name, job.Id);
+                return JobCompletion.Release();
+            }
+        }
+
+        string description = $"{error.GetType().Name}: {error.Message}";
+        try
+        {
+            if (policy.CanRetry(error, job.Attempt))
+            {
+                var delay = policy.GetDelay(job.Attempt);
+                _logger.LogWarning(error, "Job {JobName} {JobId} failed on attempt {Attempt} of {MaxAttempts}; retrying in {Delay}", job.Name, job.Id, job.Attempt, policy.MaxAttempts, delay);
+                return JobCompletion.Retry(delay, description);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The retry policy of job {JobName} threw; failing job {JobId}", job.Name, job.Id);
+            return JobCompletion.Failed(_runtime.Options.RetainFailedFor, $"The retry policy threw {ex.GetType().Name}: {ex.Message} while handling {description}");
+        }
+
+        _logger.LogError(error, "Job {JobName} {JobId} failed after {Attempt} attempts", job.Name, job.Id, job.Attempt);
+        return JobCompletion.Failed(_runtime.Options.RetainFailedFor, description);
+    }
+
+    /// <summary>How long a succeeded <paramref name="job"/> is kept: its CRON schedule's retention, its type's, or the worker's.</summary>
+    private TimeSpan GetRetainSucceededFor(JobInfo job, JobRegistration registration)
+    {
+        return (GetSchedule(job)?.Options.RetainSucceededFor ?? registration.Options.RetainSucceededFor) ?? _runtime.Options.RetainSucceededFor;
+    }
+
+    private CronSchedule? GetSchedule(JobInfo job)
+    {
+        return job.ScheduleName is { } name && _runtime.Registrations.Schedules.TryGetValue(name, out var schedule) && schedule.JobName == job.Name ? schedule : null;
+    }
+
+    /// <param name="job">The claimed job.</param>
+    /// <param name="completion">How the run ended.</param>
+    /// <param name="context">The run's context, whose last progress message the store holds as the job's message unless <paramref name="completion"/> sets one.</param>
+    /// <param name="logFenced">Whether to warn when another worker's claim keeps the result from being recorded.</param>
+    /// <returns>Whether the store recorded the result.</returns>
+    private async Task<bool> CompleteAsync(JobInfo job, JobCompletion completion, JobRunContext? context = null, bool logFenced = true)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                if (!await _runtime.Store.CompleteAsync(job.Id, job.ClaimToken!, completion, CancellationToken.None).AnyContext())
+                {
+                    if (logFenced)
+                        _logger.LogWarning("Could not record the result of job {JobId}: another worker has claimed it", job.Id);
+
+                    return false;
+                }
+
+                _runtime.Observer?.OnCompleted(context is null ? job : job with { Message = context.Message ?? job.Message, Progress = context.Progress ?? job.Progress }, completion);
+                return true;
+            }
+            catch (Exception ex) when (attempt < 3)
+            {
+                _logger.LogWarning(ex, "Error recording the result of job {JobId}; retrying", job.Id);
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt)).AnyContext();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not record the result of job {JobId}; it will run again when its lease expires", job.Id);
+                return false;
+            }
+        }
+    }
+
+    private static async Task WaitForWorkAsync(Task workAvailable, TimeSpan delay, TimeProvider timeProvider, CancellationToken cancellationToken)
+    {
+        if (workAvailable.IsCompleted)
+            return;
+
+        using var delaySource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        await Task.WhenAny(workAvailable, Task.Delay(delay, timeProvider, delaySource.Token)).AnyContext();
+        delaySource.Cancel();
+    }
+
+    private async Task<bool> WaitForRunningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var deadline = Stopwatch.GetTimestamp() + (long)(timeout.TotalSeconds * Stopwatch.Frequency);
+        while (Volatile.Read(ref _running) > 0)
+        {
+            if (Stopwatch.GetTimestamp() >= deadline || cancellationToken.IsCancellationRequested)
+                return false;
+
+            try
+            {
+                await Task.Delay(25, cancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}

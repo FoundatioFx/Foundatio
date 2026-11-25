@@ -39,6 +39,28 @@ public class SystemTextJsonSerializer : ITextSerializer
         return result;
     }
 
+    /// <summary>The same bytes as <see cref="Serialize"/> writes, without a stream and the copy out of it.</summary>
+    internal byte[] SerializeToUtf8Bytes(object? value)
+    {
+        return JsonSerializer.SerializeToUtf8Bytes(value, value?.GetType() ?? typeof(object), _serializeOptions);
+    }
+
+    /// <summary>The same result as <see cref="Deserialize(Stream, Type)"/> over these bytes, read in place.</summary>
+    internal object? Deserialize(ReadOnlySpan<byte> data, Type objectType)
+    {
+        // A stream read skips a UTF-8 byte order mark; reading the bytes directly does not.
+        if (data.StartsWith(Utf8ByteOrderMark))
+            data = data[Utf8ByteOrderMark.Length..];
+
+        object? result = JsonSerializer.Deserialize(data, objectType, _deserializeOptions);
+        if (result is JsonElement jsonElement)
+            return ConvertJsonElement(jsonElement);
+
+        return result;
+    }
+
+    private static ReadOnlySpan<byte> Utf8ByteOrderMark => [0xEF, 0xBB, 0xBF];
+
     private static object? ConvertJsonElement(JsonElement element)
     {
         return element.ValueKind switch

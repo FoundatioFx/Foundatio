@@ -9,6 +9,8 @@ Foundatio provides in-memory implementations for all core abstractions. These ar
 | `InMemoryCacheClient` | `ICacheClient` | Foundatio |
 | `InMemoryQueue<T>` | `IQueue<T>` | Foundatio |
 | `InMemoryMessageBus` | `IMessageBus` | Foundatio |
+| `InMemoryMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio |
+| `InMemoryJobStore` | `IJobStore` ([Durable Jobs](/guide/durable-jobs)) | Foundatio |
 | `InMemoryFileStorage` | `IFileStorage` | Foundatio |
 | `CacheLockProvider` | `ILockProvider` | Foundatio |
 
@@ -404,6 +406,21 @@ services.AddSingleton<ILockProvider>(sp =>
         sp.GetRequiredService<ICacheClient>(),
         sp.GetRequiredService<IMessageBus>()));
 ```
+
+## Messages and Durable Jobs
+
+`UseInMemory()` runs [Messaging](/guide/messaging) on `InMemoryMessageTransport` and stores [Durable Jobs](/guide/durable-jobs) in `InMemoryJobStore`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseInMemory()
+    .AddConsumer<SendReceiptHandler>());
+builder.Services.AddFoundatioJobs(j => j
+    .UseInMemory()
+    .AddJob<GenerateReportJob>());
+```
+
+Both live in the process: messages and jobs are lost when it stops, and other instances never see them, so each instance runs its own CRON occurrences. For more than one instance, pick a broker [transport](/guide/messaging#transports) and store jobs in [Redis](/guide/durable-jobs#using-redis), the only shared job store, whatever the transport. In tests, `AddFoundatioTestHarness()` uses both for you; see [Testing](/guide/messaging#testing).
 
 ## Complete In-Memory Setup
 

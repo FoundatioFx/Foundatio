@@ -7,6 +7,7 @@ Foundatio provides RabbitMQ messaging for pub/sub with durable delivery. [View s
 | Implementation | Interface | Package |
 |----------------|-----------|---------|
 | `RabbitMQMessageBus` | `IMessageBus` | Foundatio.RabbitMQ |
+| `RabbitMQMessageTransport` | `IMessageTransport` ([Messaging](/guide/messaging)) | Foundatio.RabbitMQ |
 
 ## Installation
 
@@ -47,7 +48,7 @@ For additional options, see [RabbitMQMessageBusOptions source](https://github.co
 
 ## Delayed message delivery
 
-You can schedule delivery using `DeliveryDelay` on publish options (see the [messaging guide](/guide/messaging)).
+You can schedule delivery using `DeliveryDelay` on publish options (see the [message bus guide](/guide/message-bus)).
 
 **Behavior depends on the broker and the deprecated plugin:**
 
@@ -55,7 +56,36 @@ You can schedule delivery using `DeliveryDelay` on publish options (see the [mes
 2. **RabbitMQ before 4.3 without the plugin** — Delayed sends fall back to the in-memory scheduler in `MessageBusBase`. **Not durable** across process restarts.
 3. **RabbitMQ 4.3 and later** — The delayed-exchange probe is skipped (the plugin is incompatible). The same in-memory fallback applies automatically.
 
-For durable delayed delivery on newer brokers, plan a migration (for example TTL + dead-letter exchanges or an external scheduler). See the [Foundatio.RabbitMQ README](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.RabbitMQ/README.md) for the full note.
+For durable delayed delivery on newer brokers, use `RabbitMQMessageTransport` (below), whose delays wait in delay queues on the broker, or an external scheduler. See the [Foundatio.RabbitMQ README](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.RabbitMQ/README.md) for the full note.
+
+## Messages and Events
+
+`RabbitMQMessageTransport` runs [Messaging](/guide/messaging) on RabbitMQ 4 (tested on 4.2, 4.3 and 4.4). Register it with `UseRabbitMQ`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseRabbitMQ("amqp://guest:guest@localhost:5672")
+    .AddConsumer<SendReceiptHandler>());
+```
+
+Queues and subscriptions are quorum queues, topics are fanout exchanges, and instance subscriptions are exclusive queues the broker removes with their connection. Delays wait in 28 shared levels of delay queues on the broker, so they need no plugin and survive restarts; each queue, subscription or topic that gets a delayed message also gets a landing queue that delivers its due messages, so a target that refuses messages holds up only its own delays, and one target's delays arrive at up to several thousand a second. A broker that ran an earlier preview from before landing queues with the same `Prefix` needs its `<prefix>.delay` exchange's bindings copied to `<prefix>.delay.final` before that exchange is deleted, or its waiting delays are dropped: see **Upgrading from an earlier preview** in the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ#message-transport-preview). Leases never expire: a delivery stays with its receiver's channel until it is settled, so raise the broker's `consumer_timeout` (30 minutes by default) for handlers that run longer. Groups are not ordered and messages are not deduplicated.
+
+See [Using RabbitMQ](/guide/messaging#using-rabbitmq) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ#message-transport-preview) for options, names and limits.
+
+There is no RabbitMQ job store: store [Durable Jobs](/guide/durable-jobs#using-redis) in Redis, the only job store instances share, alongside this transport.
+
+## Monitoring
+
+`RabbitMQMessageTransport.GetStatsAsync(source)` counts a queue's or durable subscription's messages without declaring anything:
+
+| Count | On RabbitMQ |
+| ----- | ----------- |
+| `Queued` | The queue's ready messages. |
+| `DeadLettered` | The dead-letter queue's ready messages, or every message in it with the management API. |
+| `InFlight` | `null`, or with `ManagementEndpoint` set, the queue's unacknowledged messages, including those a receiver has buffered and not handed out yet. |
+| `Delayed` | `null`: delayed messages and retries wait in delay queues that every source shares. |
+
+Without the management API, the counts come from passive declares, one round trip each, and are current; messages delivered and not settled are then counted nowhere, because AMQP does not report them. With it, every count lags by up to the broker's statistics interval (5 seconds by default). A source that does not exist counts as empty; an instance subscription returns `null`.
 
 ## Running the Tests
 
@@ -65,8 +95,15 @@ The RabbitMQ provider lives in the [Foundatio repository](https://github.com/Fou
 dotnet test --project tests/Foundatio.RabbitMQ.Tests/Foundatio.RabbitMQ.Tests.csproj
 ```
 
+The message transport tests start one broker of their own through Aspire and remove it when the run ends. Set `RABBITMQ_TRANSPORT_IMAGE_TAG` (for example `4.2-management`) to test another version, or `RABBITMQ_TRANSPORT_CONNECTION_STRING` (and `RABBITMQ_TRANSPORT_MANAGEMENT_URI`) to use a broker you started:
+
+```bash
+dotnet test --project tests/Foundatio.RabbitMQ.Tests/Foundatio.RabbitMQ.Tests.csproj --filter-class "*RabbitMQMessageTransport*"
+```
+
 ## Next Steps
 
 - [Quorum Queue Migration](/guide/implementations/rabbitmq-quorum-migration) - Migrate from classic to quorum queues
-- [Messaging Guide](/guide/messaging) - Pub/sub patterns and best practices
+- [Messaging Guide](/guide/messaging) - Commands and events on this transport
+- [Message Bus Guide](/guide/message-bus) - `IMessageBus` pub/sub (legacy)
 - [Serialization](/guide/serialization) - Configure serialization

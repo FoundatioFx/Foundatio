@@ -672,7 +672,7 @@ if (lck is not null)
 ## Next Steps
 
 - [Caching](./caching) - Cache implementations used by locks
-- [Messaging](./messaging) - Message bus used for lock coordination
+- [Message Bus](./message-bus) - Message bus used for lock coordination
 - [Jobs](./jobs) - Background jobs with distributed locking
 - [Resilience](./resilience) - Retry policies for lock acquisition
 - [Serialization](./serialization) - Serializer configuration and performance

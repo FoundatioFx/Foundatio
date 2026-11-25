@@ -1,4 +1,8 @@
-# Jobs
+# Hosted Jobs (IJob)
+
+::: tip Durable jobs
+This page covers `IJob` and its base classes, hosted with `services.AddJob<T>()`, which remain the way to run a continuous loop. For stored jobs you enqueue or schedule, with arguments, progress, cancellation, retries and CRON, see [Durable Jobs](./durable-jobs); queue jobs (`QueueJobBase<T>`) become [message handlers](./messaging). To move existing jobs, see [Migrating](./migrating-to-messaging).
+:::
 
 Jobs allow you to run long-running processes without worrying about them being terminated prematurely. Foundatio provides several base classes that handle the boilerplate of continuous execution, cancellation, locking, queue processing, and hosting integration — so you focus on your business logic.
 
@@ -40,7 +44,7 @@ You can implement `IJob` directly, but in practice you'll derive from one of the
 
 [View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Jobs/JobBase.cs)
 
-`JobBase` provides structured logging (`_logger`), a `TimeProvider`, and a `ResiliencePolicyProvider`. All base classes accept optional `TimeProvider` and `IResiliencePolicyProvider` constructor parameters (defaulting to `TimeProvider.System` and `DefaultResiliencePolicyProvider.Instance`). You override `RunInternalAsync` and receive a `JobContext`:
+`JobBase` provides structured logging (`_logger`), a `TimeProvider`, and a `ResiliencePolicyProvider`. All base classes accept optional `TimeProvider` and `IResiliencePolicyProvider` constructor parameters (defaulting to `TimeProvider.System` and `DefaultResiliencePolicyProvider.Instance`). Nothing registers either service by default, so keep them optional (`= null`) in your job's constructor, as the samples here do, or the job fails to resolve; register them (for example with `AddResilience`) to override the defaults. You override `RunInternalAsync` and receive a `JobContext`:
 
 ```csharp
 using Foundatio.Jobs;
@@ -48,9 +52,9 @@ using Foundatio.Jobs;
 public class CleanupJob : JobBase
 {
     public CleanupJob(
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory) { }
 
     protected override async Task<JobResult> RunInternalAsync(JobContext context)
@@ -109,19 +113,19 @@ public class MaintenanceJob : JobWithLockBase
     public MaintenanceJob(
         ICacheClient cache,
         IMessageBus messageBus,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory) : base(timeProvider, resiliencePolicyProvider, loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null) : base(timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _lockProvider = new CacheLockProvider(cache, messageBus, loggerFactory);
     }
 
     protected override Task<ILock?> GetLockAsync(CancellationToken cancellationToken)
     {
-        // Pass an already-cancelled token so AcquireAsync attempts the lock
+        // Pass an already-cancelled token so TryAcquireAsync attempts the lock
         // exactly once without waiting. If the lock is held by another instance,
         // it returns null immediately and this run is skipped.
-        return _lockProvider.AcquireAsync(
+        return _lockProvider.TryAcquireAsync(
             nameof(MaintenanceJob),
             timeUntilExpires: TimeSpan.FromMinutes(15),
             cancellationToken: new CancellationToken(true));
@@ -136,12 +140,12 @@ public class MaintenanceJob : JobWithLockBase
 }
 ```
 
-> **Why `new CancellationToken(true)`?** `ILockProvider.AcquireAsync` uses the cancellation token to decide whether to wait for a busy lock. A token that is already cancelled tells the provider "try once — if the lock is held, return `null` immediately." This is the standard pattern for jobs that run on an interval and should simply skip the current iteration if another instance is already running.
+> **Why `TryAcquireAsync` with `new CancellationToken(true)`?** `ILockProvider.TryAcquireAsync` uses the cancellation token to decide whether to wait for a busy lock. A token that is already cancelled tells the provider "try once — if the lock is held, return `null` immediately." `AcquireAsync` would throw `LockAcquisitionTimeoutException` instead. This is the standard pattern for jobs that run on an interval and should simply skip the current iteration if another instance is already running.
 
 **`JobWithLockBase` vs manual locking in `JobBase`:**
 
 - Use **`JobWithLockBase`** when the *entire run* must be single-instance. The lock wraps the full execution and is released automatically — even on exceptions. Set `timeUntilExpires` in `GetLockAsync` to at least 2-3x your expected run duration so the lock self-heals after a crash but doesn't expire during normal operation.
-- Use **manual `ILockProvider.AcquireAsync`** inside `JobBase` when you need finer-grained control — for example, locking individual resources while allowing the job itself to run on multiple servers:
+- Use **manual `ILockProvider.TryAcquireAsync`** inside `JobBase` when you need finer-grained control — for example, locking individual resources while allowing the job itself to run on multiple servers:
 
 ```csharp
 public class ResourceSyncJob : JobBase
@@ -152,9 +156,9 @@ public class ResourceSyncJob : JobBase
     public ResourceSyncJob(
         ILockProvider locker,
         IResourceRepository repository,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _locker = locker;
@@ -173,7 +177,7 @@ public class ResourceSyncJob : JobBase
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            await using var lck = await _locker.AcquireAsync(
+            await using var lck = await _locker.TryAcquireAsync(
                 $"resource-sync:{resource.Id}",
                 cancellationToken: new CancellationToken(true));
 
@@ -283,9 +287,9 @@ public class OrderProcessorJob : QueueJobBase<OrderWorkItem>
     public OrderProcessorJob(
         IQueue<OrderWorkItem> queue,
         IOrderService orderService,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _orderService = orderService;
@@ -565,9 +569,9 @@ Configure job behavior declaratively with the `[Job]` attribute. These values be
 public class MyJob : JobBase
 {
     public MyJob(
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory) { }
 
     protected override Task<JobResult> RunInternalAsync(JobContext context)
@@ -785,9 +789,9 @@ public class ImportJob : JobBase
 
     public ImportJob(
         IMessageBus messageBus,
-        TimeProvider timeProvider,
-        IResiliencePolicyProvider resiliencePolicyProvider,
-        ILoggerFactory loggerFactory)
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null)
         : base(timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _messageBus = messageBus;

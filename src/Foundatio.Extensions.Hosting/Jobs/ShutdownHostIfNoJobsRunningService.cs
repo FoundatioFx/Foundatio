@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Startup;
+using Foundatio.Jobs;
+using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -12,6 +14,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
+/// <summary>
+/// Stops the host once nothing is left running: no hosted job registered with it, no message handler receiving and
+/// no durable job worker or CRON scheduler. Message handlers, the job worker and the scheduler run until the host
+/// stops, so a process that has any of them keeps running.
+/// </summary>
 public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable
 {
     private Timer? _timer;
@@ -67,12 +74,20 @@ public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable
             return;
 
         int runningJobCount = _jobs.Count(s => s.IsRunning);
-        if (runningJobCount != 0)
+        if (runningJobCount != 0 || IsProcessing())
             return;
 
         _timer?.Change(Timeout.Infinite, 0);
         _logger.LogInformation("Stopping host due to no running jobs");
         _lifetime.StopApplication();
+    }
+
+    /// <summary>Whether a message handler, the job worker or the CRON scheduler is starting or running.</summary>
+    private bool IsProcessing()
+    {
+        var messaging = _serviceProvider.GetService<MessagingStatus>()?.GetProcessors() ?? [];
+        var jobs = _serviceProvider.GetService<JobsStatus>()?.GetComponents() ?? [];
+        return messaging.Concat(jobs).Any(c => c.State is ProcessingState.Starting or ProcessingState.Running);
     }
 
     public void Dispose()

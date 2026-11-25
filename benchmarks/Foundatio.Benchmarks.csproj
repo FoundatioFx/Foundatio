@@ -11,16 +11,19 @@
     <Optimize>true</Optimize>
     <Configuration>Release</Configuration>
     <IsPackable>false</IsPackable>
-    <NoWarn>$(NoWarn);CS8002</NoWarn>
+    <NoWarn>$(NoWarn);CS8002;FOUNDATIO0001</NoWarn>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\build\Foundatio.snk</AssemblyOriginatorKeyFile>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Foundatio.Redis.Benchmarks/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Foundatio.Redis.Benchmarks/**;Foundatio.Messaging.Benchmarks/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.8"/>
     <PackageReference Include="RhoMicro.BdnLogging" Version="1.0.3" />
     <PackageReference Include="Polly" Version="8.9.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\tests\Shared\TransportSpiExtensions.cs" Link="TransportSpiExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\src\Foundatio\Foundatio.csproj" />

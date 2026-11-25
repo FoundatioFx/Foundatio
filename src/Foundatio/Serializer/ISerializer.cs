@@ -104,6 +104,9 @@ public static class SerializerExtensions
         if (data.Length == 0)
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
+        if (AsSystemTextJson(serializer) is { } json)
+            return json.Deserialize(data, objectType);
+
         using var stream = new MemoryStream(data);
         return serializer.Deserialize(stream, objectType);
     }
@@ -140,6 +143,9 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(objectType);
         if (data.IsEmpty)
             throw new ArgumentException("Data cannot be empty.", nameof(data));
+
+        if (AsSystemTextJson(serializer) is { } json)
+            return json.Deserialize(data.Span, objectType);
 
         // Fast path: if the memory is backed by a managed array we can hand it straight to a
         // MemoryStream without copying. Otherwise fall back to a stream over the memory.
@@ -204,6 +210,9 @@ public static class SerializerExtensions
     {
         ArgumentNullException.ThrowIfNull(serializer);
 
+        if (AsSystemTextJson(serializer) is { } json)
+            return json.SerializeToUtf8Bytes(value);
+
         // Serialize null values - underlying serializers handle this correctly
         // (produces "null" for JSON, nil marker for MessagePack)
         using var stream = new MemoryStream();
@@ -211,4 +220,11 @@ public static class SerializerExtensions
 
         return stream.ToArray();
     }
+
+    /// <summary>
+    /// The built-in JSON serializer, which reads and writes byte arrays without a stream, or null for any other,
+    /// including a type derived from it, which may serialize differently.
+    /// </summary>
+    private static SystemTextJsonSerializer? AsSystemTextJson(ISerializer serializer)
+        => serializer.GetType() == typeof(SystemTextJsonSerializer) ? (SystemTextJsonSerializer)serializer : null;
 }

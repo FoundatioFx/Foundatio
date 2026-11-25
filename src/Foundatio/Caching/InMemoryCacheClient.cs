@@ -784,20 +784,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return entry;
             }, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
+                if (existingEntry.Value is not IDictionary<string, DateTime?> current)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a dictionary");
 
                 oldSize = existingEntry.Size;
-
+                var dictionary = CopyList(current);
                 ExpireListValues(dictionary, existingKey);
-
                 dictionary[stringValue] = expiresAt;
-                existingEntry.Value = dictionary;
-                existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
 
-                newSize = existingEntry.Size;
-                return existingEntry;
+                var updated = CreateListEntry(dictionary);
+                newSize = updated.Size;
+                return updated;
             });
 
             UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
@@ -824,22 +821,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return entry;
             }, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is not IDictionary<T, DateTime?> dictionary)
+                if (existingEntry.Value is not IDictionary<T, DateTime?> current)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
 
                 oldSize = existingEntry.Size;
-
+                var dictionary = CopyList(current);
                 ExpireListValues(dictionary, existingKey);
-
                 foreach (var kvp in items)
                     dictionary[kvp.Key] = kvp.Value;
 
-                existingEntry.Value = dictionary;
-                existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-
-                newSize = existingEntry.Size;
-                return existingEntry;
+                var updated = CreateListEntry(dictionary);
+                newSize = updated.Size;
+                return updated;
             });
 
             UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
@@ -847,6 +840,48 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             await StartMaintenanceAsync().AnyContext();
             return items.Count;
         }
+    }
+
+    /// <summary>
+    /// Returns a new entry without <paramref name="items"/> and the list's expired values, or <paramref name="existingEntry"/>
+    /// when nothing changes. The existing list is never modified, so concurrent updates retry instead of losing each other's values.
+    /// </summary>
+    private CacheEntry RemoveFromList<T>(string existingKey, CacheEntry existingEntry, IReadOnlyCollection<T> items, out long removed, out long oldSize, out long newSize) where T : notnull
+    {
+        removed = 0;
+        oldSize = existingEntry.Size;
+        newSize = oldSize;
+        if (existingEntry.Value is not IDictionary<T, DateTime?> { Count: > 0 } current)
+            return existingEntry;
+
+        var dictionary = CopyList(current);
+        int expired = ExpireListValues(dictionary, existingKey);
+        foreach (var value in items)
+        {
+            if (dictionary.Remove(value))
+                removed++;
+        }
+
+        if (expired == 0 && removed == 0)
+            return existingEntry;
+
+        if (removed > 0)
+            _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+
+        var updated = CreateListEntry(dictionary);
+        newSize = updated.Size;
+        return updated;
+    }
+
+    /// <summary>A copy of a list's values, keeping its comparer, so an update never changes a list another caller may be reading.</summary>
+    private static Dictionary<T, DateTime?> CopyList<T>(IDictionary<T, DateTime?> list) where T : notnull
+        => list is Dictionary<T, DateTime?> dictionary ? new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer) : new Dictionary<T, DateTime?>(list);
+
+    /// <summary>A new entry for an updated list, expiring with its last value, or at once when it is empty.</summary>
+    private CacheEntry CreateListEntry<T>(Dictionary<T, DateTime?> list) where T : notnull
+    {
+        DateTime? expiresAt = list.Count == 0 ? DateTime.MinValue : list.Values.Contains(null) ? null : list.Values.Max();
+        return new CacheEntry(list, expiresAt, _timeProvider, _shouldClone, _hasSizeCalculator ? CalculateEntrySize(list) : 0);
     }
 
     private int ExpireListValues<T>(IDictionary<T, DateTime?> dictionary, string existingKey)
@@ -874,41 +909,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values is string stringValue)
         {
             var items = new HashSet<string>([stringValue]);
-            _memory.TryUpdate(key, (existingKey, existingEntry) =>
-            {
-                if (existingEntry.Value is IDictionary<string, DateTime?> { Count: > 0 } dictionary)
-                {
-                    oldSize = existingEntry.Size;
-                    int expired = ExpireListValues(dictionary, existingKey);
-
-                    foreach (string value in items)
-                    {
-                        if (dictionary.Remove(value))
-                            Interlocked.Increment(ref removed);
-                    }
-
-                    if (expired > 0 || removed > 0)
-                    {
-                        existingEntry.Value = dictionary;
-                        if (dictionary.Count > 0)
-                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                        else
-                            existingEntry.ExpiresAt = DateTime.MinValue;
-
-                        existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-                        newSize = existingEntry.Size;
-                    }
-                    else
-                    {
-                        newSize = oldSize;
-                    }
-                }
-
-                if (removed > 0)
-                    _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
-
-                return existingEntry;
-            });
+            _memory.TryUpdate(key, (existingKey, existingEntry) => RemoveFromList(existingKey, existingEntry, items, out removed, out oldSize, out newSize));
 
             if (_shouldTrackMemory && oldSize != newSize)
                 UpdateMemorySize(newSize - oldSize);
@@ -921,42 +922,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (items.Count == 0)
                 return Task.FromResult<long>(0);
 
-            _memory.TryUpdate(key, (existingKey, existingEntry) =>
-            {
-                if (existingEntry.Value is IDictionary<T, DateTime?> { Count: > 0 } dictionary)
-                {
-                    oldSize = existingEntry.Size;
-
-                    int expired = ExpireListValues(dictionary, existingKey);
-
-                    foreach (var value in items)
-                    {
-                        if (dictionary.Remove(value))
-                            Interlocked.Increment(ref removed);
-                    }
-
-                    if (expired > 0 || removed > 0)
-                    {
-                        existingEntry.Value = dictionary;
-                        if (dictionary.Count > 0)
-                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                        else
-                            existingEntry.ExpiresAt = DateTime.MinValue;
-
-                        existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-                        newSize = existingEntry.Size;
-                    }
-                    else
-                    {
-                        newSize = oldSize;
-                    }
-                }
-
-                if (removed > 0)
-                    _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
-
-                return existingEntry;
-            });
+            _memory.TryUpdate(key, (existingKey, existingEntry) => RemoveFromList(existingKey, existingEntry, items, out removed, out oldSize, out newSize));
 
             if (_shouldTrackMemory && oldSize != newSize)
                 UpdateMemorySize(newSize - oldSize);
