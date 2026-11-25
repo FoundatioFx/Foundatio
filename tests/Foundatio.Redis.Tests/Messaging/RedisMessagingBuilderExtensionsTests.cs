@@ -57,6 +57,33 @@ public class RedisMessagingBuilderExtensionsTests(ITestOutputHelper output) : Te
     }
 
     [Fact]
+    public async Task AddLegacyMessageBus_WhenTheHostStops_DeletesItsInstanceSubscription()
+    {
+        // Arrange
+        var muxer = SharedConnection.GetMuxer(Log);
+        Assert.SkipWhen(muxer is null, "RedisConnectionString is not configured.");
+        string prefix = $"foundatio-tests:legacy-stop-{Guid.NewGuid():N}";
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(Log);
+        services.AddSingleton<IConnectionMultiplexer>(muxer);
+        services.AddFoundatioMessaging(m => m.UseRedis(new RedisMessageTransportOptions { Prefix = prefix }).AddLegacyMessageBus());
+        await using var provider = services.BuildServiceProvider();
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        foreach (var hostedService in hostedServices)
+            await hostedService.StartAsync(TestCancellationToken);
+        await provider.GetRequiredService<IMessageBus>().SubscribeAsync<Ping>(_ => { }, TestCancellationToken);
+        string instances = $"{prefix}:{{t:messages}}:instances";
+        Assert.Equal(1, await muxer.GetDatabase().SortedSetLengthAsync(instances));
+
+        // Act
+        foreach (var hostedService in Enumerable.Reverse(hostedServices))
+            await hostedService.StopAsync(CancellationToken.None);
+
+        // Assert
+        Assert.Equal(0, await muxer.GetDatabase().SortedSetLengthAsync(instances));
+    }
+
+    [Fact]
     public async Task UseRedis_WithAConnectionAndOptions_KeepsWhatTheOptionsSetAndFillsTheRestFromServices()
     {
         // Arrange

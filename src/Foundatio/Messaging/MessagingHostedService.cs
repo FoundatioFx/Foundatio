@@ -9,8 +9,8 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.Messaging;
 
 /// <summary>
-/// Starts a processor for every source that registered handlers. When the host begins stopping, they stop receiving
-/// at once, together with the job worker, and then drain while the host stops its other services.
+/// Starts a processor for every source that registered handlers. When the host begins stopping, they and the legacy
+/// bus's stop receiving at once, together with the job worker, and then drain while the host stops its other services.
 /// </summary>
 internal sealed class MessagingHostedService : IHostedLifecycleService, IDisposable
 {
@@ -87,7 +87,9 @@ internal sealed class MessagingHostedService : IHostedLifecycleService, IDisposa
         if (_runtime.HostState != ProcessingState.Faulted)
             _runtime.HostState = ProcessingState.Stopped;
 
-        await _runtime.StopAllAsync(cancellationToken).AnyContext();
+        // The legacy bus's instance subscriptions go too, or they would keep getting a copy of every publish until they expire.
+        var legacyBus = _runtime.LegacyBus?.StopReceivingAsync(_runtime.Options.ShutdownTimeout, cancellationToken) ?? Task.CompletedTask;
+        await Task.WhenAll(_runtime.StopAllAsync(cancellationToken), legacyBus).AnyContext();
     }
 
     private async Task StartWhenTheGateOpensAsync()

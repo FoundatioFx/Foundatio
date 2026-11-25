@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Azure.Storage.Queues;
@@ -57,6 +58,42 @@ public class AzureStorageQueueMessagingBuilderExtensionsTests(ITestOutputHelper 
     }
 
     [Fact]
+    public async Task AddLegacyMessageBus_WhenTheHostStops_DeletesItsInstanceSubscriptionQueue()
+    {
+        // Arrange
+        string prefix = $"fl{Guid.NewGuid():N}"[..10] + "-";
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(Log);
+        services.AddFoundatioMessaging(m => m
+            .UseAzureStorageQueues(new AzureStorageQueueMessageTransportOptions { ConnectionString = AzureStorageQueueMessageTransportTests.GetConnectionString(), Prefix = prefix })
+            .UseServiceName("helpers")
+            .AddLegacyMessageBus());
+        await using var provider = services.BuildServiceProvider();
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        foreach (var hostedService in hostedServices)
+            await hostedService.StartAsync(TestCancellationToken);
+
+        var service = new QueueServiceClient(AzureStorageQueueMessageTransportTests.GetConnectionString());
+        try
+        {
+            await provider.GetRequiredService<IMessageBus>().SubscribeAsync<Ping>(_ => { }, TestCancellationToken);
+            Assert.Single(await ListQueuesAsync(service, prefix), name => name.Contains("-legacy-bus-", StringComparison.Ordinal));
+
+            // Act
+            foreach (var hostedService in Enumerable.Reverse(hostedServices))
+                await hostedService.StopAsync(TestCancellationToken);
+
+            // Assert
+            Assert.Empty(await ListQueuesAsync(service, prefix));
+        }
+        finally
+        {
+            foreach (string queue in await ListQueuesAsync(service, prefix))
+                await service.DeleteQueueAsync(queue, TestCancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task UseAzureStorageQueues_WithoutAConnection_UsesTheRegisteredQueueServiceClient()
     {
         var service = new QueueServiceClient("UseDevelopmentStorage=true");
@@ -80,6 +117,15 @@ public class AzureStorageQueueMessagingBuilderExtensionsTests(ITestOutputHelper 
         var ex = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IMessageTransport>());
 
         Assert.Contains("QueueServiceClient", ex.Message, StringComparison.Ordinal);
+    }
+
+    private async Task<List<string>> ListQueuesAsync(QueueServiceClient service, string prefix)
+    {
+        var names = new List<string>();
+        await foreach (var queue in service.GetQueuesAsync(prefix: prefix, cancellationToken: TestCancellationToken))
+            names.Add(queue.Name);
+
+        return names;
     }
 
     public sealed record Ping(string Text);

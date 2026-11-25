@@ -199,7 +199,15 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
 
         _disposed.Cancel();
         _subscribers.Clear();
+        await StopReceivingAsync(TimeSpan.Zero, CancellationToken.None).AnyContext();
+    }
 
+    /// <summary>
+    /// Stops the processors receiving for its subscribers, which deletes their instance subscriptions, as the host
+    /// stops. Publishing still works, and a later subscribe starts receiving again.
+    /// </summary>
+    internal async Task StopReceivingAsync(TimeSpan drainTimeout, CancellationToken cancellationToken)
+    {
         MessageProcessor[] processors;
         await _startLock.WaitAsync(CancellationToken.None).AnyContext();
         try
@@ -217,7 +225,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
             _startLock.Release();
         }
 
-        await Task.WhenAll(processors.Select(p => p.StopAsync(TimeSpan.Zero))).AnyContext();
+        await Task.WhenAll(processors.Select(p => p.StopAsync(drainTimeout, cancellationToken))).AnyContext();
     }
 
     /// <summary>

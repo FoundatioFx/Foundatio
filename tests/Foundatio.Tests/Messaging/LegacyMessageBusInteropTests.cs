@@ -223,6 +223,28 @@ public class LegacyMessageBusInteropTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task StopAsync_OfTheHost_DeletesTheLegacyBusInstanceSubscriptionsAndKeepsPublishing()
+    {
+        // Arrange
+        var transport = new InMemoryMessageTransport();
+        _transports.Add(transport);
+        var host = await StartHostAsync(m => m.UseTransport(transport).MapMessage<InteropEvent>("interop-event")
+            .AddSubscriber<InteropEvent>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Scope = SubscriptionScope.Instance }));
+        var bus = host.Services.GetRequiredService<IMessageBus>();
+        await bus.SubscribeAsync<InteropEvent>(_ => { }, TestCancellationToken);
+        Assert.Equal(1, transport.CountSubscriptions("messages"));
+        Assert.Equal(2, transport.CountSubscriptions("interop-event"));
+
+        // Act
+        await host.StopAsync(TestCancellationToken);
+
+        // Assert
+        Assert.Equal(0, transport.CountSubscriptions("messages"));
+        Assert.Equal(0, transport.CountSubscriptions("interop-event"));
+        await bus.PublishAsync(new InteropEvent(1), cancellationToken: TestCancellationToken);
+    }
+
+    [Fact]
     public async Task AddLegacyMessageBus_WithANullMigratedType_FailsWhenTheBusIsResolved()
     {
         var host = await StartHostAsync(m => m.AddLegacyMessageBus(o => o.MigratedMessageTypes.Add(null!)));

@@ -251,6 +251,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         return (due, delayed, inFlight);
     }
 
+    /// <summary>The number of subscriptions to <paramref name="topic"/>: durable ones and one per open instance subscription receiver.</summary>
+    internal int CountSubscriptions(string topic) => _topics.TryGetValue(topic, out var subscriptions) ? subscriptions.Count : 0;
+
     /// <summary>The number of pending and in-flight messages in a source.</summary>
     public int GetMessageCount(MessageSource source)
     {
