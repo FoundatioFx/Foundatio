@@ -60,6 +60,12 @@ internal sealed class MessageAdmin : IMessageAdmin
         return MessageSource.Subscription(_runtime.Types.GetRoute(typeof(T)).Topic, name ?? _runtime.ServiceName);
     }
 
+    public string GetTransportName(MessageSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return MessagingInstruments.GetSystemName(_runtime.GetTransport(source));
+    }
+
     public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);

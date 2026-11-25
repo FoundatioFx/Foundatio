@@ -39,6 +39,17 @@ public interface IMessageAdmin
     MessageSource GetSubscription<T>(string? name = null) where T : class;
 
     /// <summary>
+    /// The name of the transport that carries <paramref name="source"/>, as the <c>messaging.system</c> of its metrics
+    /// and traces: the OpenTelemetry name of its broker (<c>kafka</c>, <c>rabbitmq</c>, <c>aws_sqs</c>, <c>servicebus</c>),
+    /// or the lowercase name of its class without <c>MessageTransport</c> (<c>redis</c>, <c>azurestoragequeue</c>,
+    /// <c>inmemory</c>). A queue is on the queue transport, a subscription of either scope on the one
+    /// <see cref="FoundatioMessagingBuilder.ForTopics"/> set, if any, and a dead-letter source on its source's. Lets a
+    /// test check how the app's messaging is configured, for example
+    /// <c>Assert.Equal("redis", admin.GetTransportName(admin.GetSubscription&lt;OrderPlaced&gt;()))</c>.
+    /// </summary>
+    string GetTransportName(MessageSource source);
+
+    /// <summary>
     /// Counts the messages of a queue or durable subscription that are queued, delayed, in flight and dead-lettered, as
     /// the transport reports them. The counts are approximate and may lag sends and settlements by a few seconds; each is
     /// null when the transport cannot tell. Returns null when the transport cannot count the source at all, as with

@@ -153,6 +153,24 @@ public class TopicTransportTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task GetTransportName_WithTopicsOnTheirOwnTransport_NamesTheTransportOfEachSource()
+    {
+        await using var queues = new RecordedTransport();
+        await using var topics = new InMemoryMessageTransport();
+        await using var host = await MessagingTestHost.StartAsync(queues.Transport, Log, "split", m => m.MapMessage<OrderPlaced>("split.order-placed").ForTopics(t => t.UseTransport(topics)));
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var queue = admin.GetQueue<PlaceOrder>();
+        var subscription = admin.GetSubscription<OrderPlaced>();
+
+        Assert.Equal("intercepting", admin.GetTransportName(queue));
+        Assert.Equal("intercepting", admin.GetTransportName(MessageSource.DeadLetter(queue)));
+        Assert.Equal("inmemory", admin.GetTransportName(subscription));
+        Assert.Equal("inmemory", admin.GetTransportName(MessageSource.DeadLetter(subscription)));
+        Assert.Equal("inmemory", admin.GetTransportName(MessageSource.InstanceSubscription(subscription.Topic!, "web")));
+        Assert.Throws<ArgumentNullException>(() => admin.GetTransportName(null!));
+    }
+
+    [Fact]
     public async Task LegacyMessageBus_WithTopicsOnTheirOwnTransport_PublishesAndSubscribesOnTheTopicTransport()
     {
         await using var queues = new RecordedTransport();

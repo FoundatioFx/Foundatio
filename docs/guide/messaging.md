@@ -185,7 +185,7 @@ builder.Services.AddFoundatioMessaging(m => m
 
 - Processes that share a topic must all put topics on the same transport, and the same goes for queues.
 - Each transport's limits apply to its own traffic: `MaxPublishDelay` and the message size of the topics' transport to publishes, those of the queues' transport to sends.
-- `IMessageAdmin`, `IWorkMonitor` backlogs, health checks and the `messaging.system` of metrics and traces read each source on its own transport; replayed dead letters go back to their source's transport.
+- `IMessageAdmin`, `IWorkMonitor` backlogs, health checks and the `messaging.system` of metrics and traces read each source on its own transport; replayed dead letters go back to their source's transport. To test your split, build the app's services without the harness and check `IMessageAdmin.GetTransportName(source)`, the `messaging.system` of metrics and traces, for example `Assert.Equal("redis", admin.GetTransportName(admin.GetSubscription<EntityChanged>()))`.
 - The service provider creates and disposes each transport, except one you pass as an instance. The [test harness](#testing) ignores `ForTopics`, as it does `Use...` calls: its in-memory transport, or `Transport`, carries both.
 - Topics can't be split further, by message type: a type's topic is on the topics' transport.
 
