@@ -339,6 +339,8 @@ builder.Services.AddHealthChecks()
     .AddFoundatioCronJob("cleanup", succeededWithin: TimeSpan.FromHours(2));  // a schedule succeeded recently, on any instance (read from the store)
 ```
 
+- `AddFoundatioCronJob<TJob>(succeededWithin)` names the schedule for you; a legacy job's schedule is named after `TJob` (`JobNames.Of<TJob>()`). A new schedule is Healthy until it is overdue. The check reads kept jobs: with `RetainSucceededFor = 0`, a success is kept only until the next occurrence or `MisfireThreshold`, so give schedules further apart than that a retention of at least `succeededWithin`. Test a `ForTopics` split with `IMessageAdmin.GetTransportName(source)`.
+
 - Use these for readiness, not liveness: a broker outage would restart every pod. On a liveness probe pass `failureStatus: HealthStatus.Degraded`. The host fails to start if a check's feature isn't registered.
 
 - Starting (waiting for startup actions) = Healthy; retried receive/claim/schedule errors = Degraded with last error; Unhealthy (or `failureStatus`) only if a loop stopped, startup failed, or errors lasted `unhealthyAfter` (default 5 min). Handler/job exceptions never affect health. `MessagingStatus` / `JobsStatus` expose the raw `ProcessingStatus` snapshots.
